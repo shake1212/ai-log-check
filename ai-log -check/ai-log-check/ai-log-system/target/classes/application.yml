@@ -1,0 +1,48 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: ai-log-system
+  datasource:
+    url: jdbc:h2:mem:ailogdb
+    username: sa
+    password: password
+    driverClassName: org.h2.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+# JWT配置
+jwt:
+  secret: 8Zz5tw0Ionm3XPZZfN0NOml3z9FMfmpgXwovR9fp6ryDIoGRM8EPHAB6iHsc0fb
+  expiration: 86400000 # 24小时
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.security.ailogsystem: DEBUG
+    org.springframework.web: INFO
+    org.hibernate: INFO
+
+# 模型配置
+ai:
+  model:
+    base-path: models/
+    anomaly-detection:
+      default-model: isolation_forest
+      threshold: 0.75
+      training-frequency: DAILY
+    data-retention-days: 90 
