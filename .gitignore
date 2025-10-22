@@ -1,0 +1,116 @@
+# 编译输出目录
+target/
+build/
+dist/
+out/
+
+# 依赖目录
+node_modules/
+.pnpm-store/
+
+# IDE配置文件
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# 操作系统生成的文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 日志文件
+*.log
+*.log.*
+logs/
+log/
+
+# 临时文件
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 配置文件（包含敏感信息）
+application-local.yml
+application-dev.yml
+application-prod.yml
+*.env
+*.env.local
+*.env.development
+*.env.production
+
+# 测试报告
+surefire-reports/
+test-results/
+coverage/
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Gradle
+.gradle/
+gradlew
+gradlew.bat
+
+# 前端构建文件
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+
+# 运行时文件
+*.pid
+*.seed
+*.pid.lock
+
+# 包管理器锁文件（可选，根据需要决定是否忽略）
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# 备份文件
+*.bak
+*.backup
+*.orig
+
+# 压缩文件
+*.zip
+*.tar.gz
+*.rar
+
+# 文档生成文件
+docs/_build/
+site/
+
+# 本地开发脚本
+start-dev.bat
+start-dev.sh
+verify-structure.bat
+
+# 数据库连接测试文件
+TestDbConnection.java
+test-db-connection.java
+fix_admin_password.sql
+
+# 数据库目录（如果包含敏感数据）
+database/
+back-system/database/
+
+# 特定于项目的忽略文件
+back-system/logs/
+back-system/target/
+ai-log-system/node_modules/
