@@ -1,0 +1,140 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: ai-log-system
+  datasource:
+    url: jdbc:mysql://localhost:3306/ai_log_system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 连接池配置
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+      auto-commit: false
+      pool-name: "AiLogSystem-Pool"
+      
+      # 连接测试配置
+      connection-test-query: "SELECT 1"
+      validation-timeout: 5000
+      
+      # 性能优化配置
+      data-source-properties:
+        cachePrepStmts: true
+        prepStmtCacheSize: 250
+        prepStmtCacheSqlLimit: 2048
+        useServerPrepStmts: true
+        useLocalSessionState: true
+        rewriteBatchedStatements: true
+        cacheResultSetMetadata: true
+        cacheServerConfiguration: true
+        elideSetAutoCommits: true
+        maintainTimeStats: false
+        
+        # MySQL特定配置
+        useSSL: false
+        serverTimezone: Asia/Shanghai
+        allowPublicKeyRetrieval: true
+        autoReconnect: true
+        failOverReadOnly: false
+        maxReconnects: 10
+        
+      # 连接池监控配置
+      register-mbeans: false
+  jpa:
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+        connection:
+          provider_disables_autocommit: true
+        jdbc:
+          batch_size: 20
+          batch_versioned_data: true
+        order_inserts: true
+        order_updates: true
+        batch_fetch_style: dynamic
+        generate_statistics: false
+        cache:
+          use_second_level_cache: false
+          use_query_cache: false
+    open-in-view: false
+
+# JWT配置
+jwt:
+  secret: 8Zz5tw0Ionm3XPZZfN0NOml3z9FMfmpgXwovR9fp6ryDIoGRM8EPHAB6iHsc0fb
+  expiration: 86400000 # 24小时
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.security.ailogsystem: DEBUG
+    org.springframework.web: INFO
+    org.hibernate: INFO
+    org.springframework.jdbc: DEBUG
+    com.zaxxer.hikari: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/ai-log-system.log
+    max-size: 10MB
+    max-history: 30
+
+# 数据库管理配置
+database:
+  monitoring:
+    enabled: true
+    health-check-interval: 30000  # 30秒
+    slow-query-threshold: 2000    # 2秒
+    connection-test-timeout: 5000 # 5秒
+  
+  pool:
+    monitoring:
+      enabled: true
+      metrics-enabled: true
+      jmx-enabled: true
+    
+  migration:
+    enabled: true
+    auto-migrate: true
+    baseline-on-migrate: true
+
+# 管理端点配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# AI模型配置已注释 - 当前项目不使用AI模块
+# ai:
+#   model:
+#     base-path: models/
+#     anomaly-detection:
+#       default-model: isolation_forest
+#       threshold: 0.75
+#       training-frequency: DAILY
+#     data-retention-days: 90 
