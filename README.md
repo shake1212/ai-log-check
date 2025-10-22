@@ -1,75 +1,131 @@
 # AI网络安全日志异常检测与预警系统
 
-基于深度学习的网络安全日志异常检测与预警系统前端界面。
+基于深度学习的网络安全日志异常检测与预警系统，包含完整的前后端实现。
 
 ## 技术栈
 
-- 前端框架：UmiJS、React
-- UI组件库：Ant Design
-- 图表库：Ant Design Charts
-- 后端框架：Spring Boot（未包含在本仓库）
-- 数据库：OceanBase（兼容达梦）（未包含在本仓库）
+- **前端框架**：UmiJS、React、TypeScript
+- **UI组件库**：Ant Design
+- **图表库**：Ant Design Charts
+- **后端框架**：Spring Boot
+- **数据库**：MySQL（兼容达梦数据库）
+- **构建工具**：Maven、pnpm
 
-## 功能模块
+## 核心功能
 
-系统包含以下核心功能模块：
+### 🎯 事件查询和统计
+- 综合统计信息展示
+- 时间范围统计分析
+- 来源和级别统计
+- 用户和IP分布统计
+- 异常趋势分析
 
-1. **实时监控面板**：展示日志流、异常热力图、系统健康状态
-2. **异常预警列表**：按类型/时间筛选预警记录
-3. **日志详情查看**：展示原始日志及AI检测详情
-4. **预警处理反馈**：标记处理状态并提交备注
-5. **模型参数配置**：动态调整阈值与规则策略
-6. **系统管理后台**：RBAC权限管理、操作日志审计
+### 📊 批量操作管理
+- 批量日志保存和更新
+- 异步批量处理
+- 批量删除和清理
+- 批量异常标记
+- 高效查询和统计
 
-## 开发指南
+### 🔧 WMI采集系统
+- WMI数据自动采集
+- 异常处理和重试机制
+- 多种重试策略配置
+- 采集任务管理
+- 主机配置管理
 
-### 安装依赖
+### 🛡️ 数据库事务管理
+- 完善的事务管理机制
+- 自定义异常处理
+- 全局异常处理器
+- 数据完整性保护
+- 连接池优化
 
-```bash
-pnpm install
+## 项目结构
+
+```
+ai-log-check/
+├── ai-log-system/          # 前端React项目
+│   ├── src/
+│   │   ├── pages/         # 页面组件
+│   │   ├── components/    # 通用组件
+│   │   ├── services/      # API服务
+│   │   └── utils/         # 工具函数
+│   └── package.json
+├── back-system/           # 后端Spring Boot项目
+│   ├── src/main/java/    # Java源码
+│   │   ├── controller/   # 控制器层
+│   │   ├── service/      # 服务层
+│   │   ├── repository/   # 数据访问层
+│   │   ├── model/        # 数据模型
+│   │   └── config/       # 配置类
+│   └── pom.xml
+└── README.md
 ```
 
-### 启动开发服务器
+## 快速开始
+
+### 后端启动
 
 ```bash
+cd back-system
+mvn clean install
+mvn spring-boot:run
+```
+
+### 前端启动
+
+```bash
+cd ai-log-system
+pnpm install
 pnpm dev
 ```
 
-### 构建生产版本
+## API接口
 
-```bash
-pnpm build
-```
+### 事件查询统计
+- `GET /api/events/statistics/comprehensive` - 获取综合统计
+- `GET /api/events/statistics/range` - 获取时间范围统计
+- `GET /api/events/statistics/sources` - 获取来源统计
 
-## 系统截图
+### 批量操作
+- `POST /api/logs/batch/save` - 批量保存日志
+- `POST /api/logs/batch/update` - 批量更新日志
+- `DELETE /api/logs/batch/delete` - 批量删除日志
 
-- 实时监控面板
-- 异常预警列表
-- 日志详情查看
-- 模型参数配置
-- 系统管理后台
+### WMI采集
+- `GET /api/wmi/hosts` - 获取WMI主机列表
+- `POST /api/wmi/tasks` - 创建采集任务
+- `GET /api/wmi/results` - 获取采集结果
 
 ## 部署说明
 
-1. 构建前端代码：`pnpm build`
-2. 将生成的`dist`目录部署到Web服务器
-3. 配置后端API地址
+### 生产环境部署
 
-## 接口文档
+1. **后端部署**：
+   ```bash
+   cd back-system
+   mvn clean package -Pprod
+   java -jar target/ai-log-system.jar
+   ```
 
-主要API接口：
+2. **前端部署**：
+   ```bash
+   cd ai-log-system
+   pnpm build
+   # 将dist目录部署到Web服务器
+   ```
 
-- `/api/logs` - 获取日志数据
-- `/api/alerts` - 获取预警数据
-- `/api/alert/update` - 更新预警处理状态
-- `/api/config` - 获取/更新模型配置
+### 数据库配置
+
+修改 `back-system/src/main/resources/application.yml` 中的数据库连接配置。
 
 ## 开发团队
 
-- 前端开发：XXX
-- 后端开发：XXX
-- 算法支持：XXX
+- **全栈开发**：AI Assistant
+- **项目架构**：Spring Boot + React
+- **数据库设计**：MySQL/OceanBase
 
 ## 许可证
 
-[MIT](LICENSE) 
+[MIT](LICENSE)

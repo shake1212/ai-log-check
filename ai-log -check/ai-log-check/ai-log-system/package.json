@@ -1,0 +1,23 @@
+{
+  "private": true,
+  "author": "shake <2092236551@qq.com>",
+  "scripts": {
+    "dev": "umi dev",
+    "build": "umi build",
+    "postinstall": "umi setup",
+    "setup": "umi setup",
+    "start": "npm run dev"
+  },
+  "dependencies": {
+    "@ant-design/charts": "^2.3.0",
+    "@ant-design/icons": "^6.0.0",
+    "@ant-design/pro-components": "^2.8.7",
+    "antd": "^5.25.2",
+    "umi": "^4.4.11"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.33",
+    "@types/react-dom": "^18.0.11",
+    "typescript": "^5.0.3"
+  }
+}
