@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { websocketService, WebSocketMessage, MessageHandler } from '../services/websocketService';
+import { simpleWebSocketService, SimpleWebSocketMessage, MessageHandler } from '../services/simpleWebSocketService';
 
-export interface UseWebSocketOptions {
+export interface UseSimpleWebSocketOptions {
   autoConnect?: boolean;
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: Event) => void;
 }
 
-export interface UseWebSocketReturn {
+export interface UseSimpleWebSocketReturn {
   isConnected: boolean;
   connectionState: number;
   connect: () => Promise<void>;
   disconnect: () => void;
-  sendMessage: (message: Partial<WebSocketMessage>) => void;
+  sendMessage: (message: Partial<SimpleWebSocketMessage>) => void;
   onMessage: (type: string, handler: MessageHandler) => void;
   offMessage: (type: string, handler: MessageHandler) => void;
   sendHeartbeat: () => void;
@@ -21,10 +21,10 @@ export interface UseWebSocketReturn {
 }
 
 /**
- * WebSocket Hook
- * 提供WebSocket连接和消息处理功能
+ * 简化版WebSocket Hook
+ * 核心设计理念：快速上手、易于维护
  */
-export const useWebSocket = (options: UseWebSocketOptions = {}): UseWebSocketReturn => {
+export const useSimpleWebSocket = (options: UseSimpleWebSocketOptions = {}): UseSimpleWebSocketReturn => {
   const {
     autoConnect = true,
     onConnect,
@@ -38,8 +38,8 @@ export const useWebSocket = (options: UseWebSocketOptions = {}): UseWebSocketRet
 
   // 更新连接状态
   const updateConnectionState = useCallback(() => {
-    const connected = websocketService.isConnected();
-    const state = websocketService.getConnectionState();
+    const connected = simpleWebSocketService.isConnected();
+    const state = simpleWebSocketService.getConnectionState();
     setIsConnected(connected);
     setConnectionState(state);
   }, []);
@@ -47,30 +47,30 @@ export const useWebSocket = (options: UseWebSocketOptions = {}): UseWebSocketRet
   // 连接WebSocket
   const connect = useCallback(async () => {
     try {
-      await websocketService.connect();
+      await simpleWebSocketService.connect();
       updateConnectionState();
       onConnect?.();
     } catch (error) {
-      console.error('WebSocket连接失败:', error);
+      console.error('简化版WebSocket连接失败:', error);
       onError?.(error as Event);
     }
   }, [onConnect, onError, updateConnectionState]);
 
   // 断开WebSocket连接
   const disconnect = useCallback(() => {
-    websocketService.disconnect();
+    simpleWebSocketService.disconnect();
     updateConnectionState();
     onDisconnect?.();
   }, [onDisconnect, updateConnectionState]);
 
   // 发送消息
-  const sendMessage = useCallback((message: Partial<WebSocketMessage>) => {
-    websocketService.send(message);
+  const sendMessage = useCallback((message: Partial<SimpleWebSocketMessage>) => {
+    simpleWebSocketService.send(message);
   }, []);
 
   // 注册消息处理器
   const onMessage = useCallback((type: string, handler: MessageHandler) => {
-    websocketService.onMessage(type, handler);
+    simpleWebSocketService.onMessage(type, handler);
     
     // 保存处理器引用，用于清理
     if (!handlersRef.current.has(type)) {
@@ -81,7 +81,7 @@ export const useWebSocket = (options: UseWebSocketOptions = {}): UseWebSocketRet
 
   // 移除消息处理器
   const offMessage = useCallback((type: string, handler: MessageHandler) => {
-    websocketService.offMessage(type, handler);
+    simpleWebSocketService.offMessage(type, handler);
     
     // 从引用中移除
     const handlers = handlersRef.current.get(type);
@@ -95,12 +95,12 @@ export const useWebSocket = (options: UseWebSocketOptions = {}): UseWebSocketRet
 
   // 发送心跳
   const sendHeartbeat = useCallback(() => {
-    websocketService.sendHeartbeat();
+    simpleWebSocketService.sendHeartbeat();
   }, []);
 
   // 发送Ping
   const sendPing = useCallback(() => {
-    websocketService.sendPing();
+    simpleWebSocketService.sendPing();
   }, []);
 
   // 初始化连接状态
@@ -119,33 +119,12 @@ export const useWebSocket = (options: UseWebSocketOptions = {}): UseWebSocketRet
       // 清理所有注册的处理器
       handlersRef.current.forEach((handlers, type) => {
         handlers.forEach(handler => {
-          websocketService.offMessage(type, handler);
+          simpleWebSocketService.offMessage(type, handler);
         });
       });
       handlersRef.current.clear();
     };
   }, [autoConnect, connect]);
-
-  // 注册连接状态变化监听
-  useEffect(() => {
-    const handleConnect = () => {
-      updateConnectionState();
-      onConnect?.();
-    };
-
-    const handleError = (error: Event) => {
-      updateConnectionState();
-      onError?.(error);
-    };
-
-    websocketService.onConnect(handleConnect);
-    websocketService.onError(handleError);
-
-    return () => {
-      // 注意：这里不能直接调用offConnect和offError，因为WebSocketService没有提供这些方法
-      // 在实际使用中，应该避免在useEffect中注册全局处理器
-    };
-  }, [onConnect, onError, updateConnectionState]);
 
   return {
     isConnected,
@@ -160,4 +139,4 @@ export const useWebSocket = (options: UseWebSocketOptions = {}): UseWebSocketRet
   };
 };
 
-export default useWebSocket;
+export default useSimpleWebSocket;
