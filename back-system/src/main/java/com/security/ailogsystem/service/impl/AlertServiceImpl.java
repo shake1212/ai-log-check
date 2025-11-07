@@ -1,142 +1,293 @@
+// service/impl/AlertServiceImpl.java
 package com.security.ailogsystem.service.impl;
 
-import com.security.ailogsystem.dto.AlertDTO;
-import com.security.ailogsystem.model.Alert;
-import com.security.ailogsystem.repository.AlertRepository;
+import com.security.ailogsystem.entity.SecurityAlert;
+import com.security.ailogsystem.repository.SecurityAlertRepository;
 import com.security.ailogsystem.service.AlertService;
+import com.security.ailogsystem.service.WebSocketService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
-@Transactional
 public class AlertServiceImpl implements AlertService {
 
+    private static final Logger logger = LoggerFactory.getLogger(AlertServiceImpl.class);
+
     @Autowired
-    private AlertRepository alertRepository;
+    private SecurityAlertRepository alertRepository;
+
+    @Autowired
+    private WebSocketService webSocketService;
 
     @Override
-    public AlertDTO createAlert(AlertDTO alertDTO) {
-        Alert alert = new Alert();
-        alert.setAlertId(alertDTO.getId());
-        alert.setTimestamp(alertDTO.getTimestamp());
-        alert.setSource(alertDTO.getSource());
-        alert.setType(alertDTO.getType());
-        alert.setLevel(alertDTO.getLevel());
-        alert.setDescription(alertDTO.getDescription());
-        alert.setStatus(alertDTO.getStatus());
-        alert.setAssignee(alertDTO.getAssignee());
-        alert.setResolution(alertDTO.getResolution());
-        alert.setAiConfidence(alertDTO.getAiConfidence() != null ? 
-            java.math.BigDecimal.valueOf(alertDTO.getAiConfidence()) : null);
-        
-        Alert savedAlert = alertRepository.save(alert);
-        return convertToDTO(savedAlert);
-    }
+    public SecurityAlert createAlert(SecurityAlert alert) {
+        try {
+            alert.setCreatedTime(LocalDateTime.now());
+            alert.setHandled(false);
 
-    @Override
-    @Transactional(readOnly = true)
-    public AlertDTO getAlertById(String id) {
-        Alert alert = alertRepository.findByAlertId(id)
-                .orElseThrow(() -> new RuntimeException("Alert not found with id: " + id));
-        return convertToDTO(alert);
-    }
+            SecurityAlert savedAlert = alertRepository.save(alert);
 
-    @Override
-    @Transactional(readOnly = true)
-    public Page<AlertDTO> getAllAlerts(Pageable pageable) {
-        Page<Alert> alerts = alertRepository.findAll(pageable);
-        return alerts.map(this::convertToDTO);
-    }
+            logger.info("创建安全警报: {} - {}", savedAlert.getAlertType(), savedAlert.getDescription());
 
-    @Override
-    @Transactional(readOnly = true)
-    public Page<AlertDTO> getAlertsByStatus(Alert.AlertStatus status, Pageable pageable) {
-        Page<Alert> alerts = alertRepository.findByStatus(status, pageable);
-        return alerts.map(this::convertToDTO);
-    }
+            // 发送WebSocket通知
+            webSocketService.sendSecurityAlert(savedAlert);
 
-    @Override
-    @Transactional(readOnly = true)
-    public Page<AlertDTO> searchAlerts(String source, String type, String level, 
-                                      Alert.AlertStatus status, LocalDateTime startTime, 
-                                      LocalDateTime endTime, String keyword, Pageable pageable) {
-        // 这里可以实现更复杂的搜索逻辑
-        Page<Alert> alerts = alertRepository.findAll(pageable);
-        return alerts.map(this::convertToDTO);
-    }
+            return savedAlert;
 
-    @Override
-    public AlertDTO updateAlertStatus(String id, Alert.AlertStatus status, String assignee, String resolution) {
-        Alert alert = alertRepository.findByAlertId(id)
-                .orElseThrow(() -> new RuntimeException("Alert not found with id: " + id));
-        
-        alert.setStatus(status);
-        alert.setAssignee(assignee);
-        alert.setResolution(resolution);
-        
-        Alert updatedAlert = alertRepository.save(alert);
-        return convertToDTO(updatedAlert);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<AlertDTO> getRecentAlerts(int limit) {
-        List<Alert> alerts = alertRepository.findTop10ByOrderByTimestampDesc();
-        return alerts.stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public Map<String, Long> getAlertStatistics() {
-        Map<String, Long> statistics = new HashMap<>();
-        
-        // 按状态统计
-        for (Alert.AlertStatus status : Alert.AlertStatus.values()) {
-            long count = alertRepository.countByStatus(status);
-            statistics.put("status_" + status.name().toLowerCase(), count);
+        } catch (Exception e) {
+            logger.error("创建警报失败", e);
+            throw new RuntimeException("创建警报失败", e);
         }
-        
-        // 按级别统计
-        statistics.put("level_high", alertRepository.countByLevel("HIGH"));
-        statistics.put("level_medium", alertRepository.countByLevel("MEDIUM"));
-        statistics.put("level_low", alertRepository.countByLevel("LOW"));
-        
+    }
+
+    @Override
+    public List<SecurityAlert> createAlerts(List<SecurityAlert> alerts) {
+        try {
+            alerts.forEach(alert -> {
+                alert.setCreatedTime(LocalDateTime.now());
+                alert.setHandled(false);
+            });
+
+            List<SecurityAlert> savedAlerts = alertRepository.saveAll(alerts);
+
+            logger.info("批量创建 {} 个安全警报", savedAlerts.size());
+
+            // 发送WebSocket通知
+            savedAlerts.forEach(webSocketService::sendSecurityAlert);
+
+            return savedAlerts;
+
+        } catch (Exception e) {
+            logger.error("批量创建警报失败", e);
+            throw new RuntimeException("批量创建警报失败", e);
+        }
+    }
+
+    @Override
+    public List<SecurityAlert> getUnhandledAlerts() {
+        try {
+            return alertRepository.findByHandledFalseOrderByCreatedTimeDesc();
+        } catch (Exception e) {
+            logger.error("获取未处理警报失败", e);
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public List<SecurityAlert> getAlertsByLevel(SecurityAlert.AlertLevel level) {
+        try {
+            return alertRepository.findByAlertLevelOrderByCreatedTimeDesc(level);
+        } catch (Exception e) {
+            logger.error("按级别获取警报失败", e);
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public boolean markAlertAsHandled(Long alertId) {
+        try {
+            Optional<SecurityAlert> alertOpt = alertRepository.findById(alertId);
+            if (alertOpt.isPresent()) {
+                SecurityAlert alert = alertOpt.get();
+                alert.setHandled(true);
+                alertRepository.save(alert);
+
+                logger.info("标记警报为已处理: {}", alertId);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            logger.error("标记警报为已处理失败: {}", alertId, e);
+            return false;
+        }
+    }
+
+    @Override
+    public int markAlertsAsHandled(List<Long> alertIds) {
+        try {
+            List<SecurityAlert> alerts = alertRepository.findAllById(alertIds);
+            alerts.forEach(alert -> alert.setHandled(true));
+            List<SecurityAlert> savedAlerts = alertRepository.saveAll(alerts);
+
+            logger.info("批量标记 {} 个警报为已处理", savedAlerts.size());
+            return savedAlerts.size();
+
+        } catch (Exception e) {
+            logger.error("批量标记警报为已处理失败", e);
+            return 0;
+        }
+    }
+
+    @Override
+    public boolean deleteAlert(Long alertId) {
+        try {
+            if (alertRepository.existsById(alertId)) {
+                alertRepository.deleteById(alertId);
+                logger.info("删除警报: {}", alertId);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            logger.error("删除警报失败: {}", alertId, e);
+            return false;
+        }
+    }
+
+    @Override
+    public Map<String, Object> getAlertStatistics(LocalDateTime startTime, LocalDateTime endTime) {
+        Map<String, Object> statistics = new HashMap<>();
+
+        try {
+            // 获取警报总数
+            Long totalAlerts = alertRepository.countByCreatedTimeBetween(startTime, endTime);
+            statistics.put("totalAlerts", totalAlerts);
+
+            // 获取未处理警报数
+            Long unhandledAlerts = alertRepository.countByHandledFalseAndCreatedTimeBetween(startTime, endTime);
+            statistics.put("unhandledAlerts", unhandledAlerts);
+
+            // 按级别统计
+            Map<String, Long> alertsByLevel = new HashMap<>();
+            for (SecurityAlert.AlertLevel level : SecurityAlert.AlertLevel.values()) {
+                Long count = alertRepository.countByAlertLevelAndCreatedTimeBetween(level, startTime, endTime);
+                alertsByLevel.put(level.toString(), count);
+            }
+            statistics.put("alertsByLevel", alertsByLevel);
+
+            // 按类型统计
+            List<Object[]> alertsByType = alertRepository.countAlertsByType(startTime, endTime);
+            Map<String, Long> alertsByTypeMap = alertsByType.stream()
+                    .collect(Collectors.toMap(
+                            arr -> (String) arr[0],
+                            arr -> (Long) arr[1]
+                    ));
+            statistics.put("alertsByType", alertsByTypeMap);
+
+            // 获取最近的高危警报
+            List<SecurityAlert> recentCriticalAlerts = alertRepository
+                    .findByAlertLevelAndCreatedTimeAfterOrderByCreatedTimeDesc(
+                            SecurityAlert.AlertLevel.CRITICAL,
+                            LocalDateTime.now().minusHours(24)
+                    );
+            statistics.put("recentCriticalAlerts", recentCriticalAlerts);
+
+        } catch (Exception e) {
+            logger.error("获取警报统计失败", e);
+        }
+
         return statistics;
     }
 
     @Override
-    public void deleteAlert(String id) {
-        Alert alert = alertRepository.findByAlertId(id)
-                .orElseThrow(() -> new RuntimeException("Alert not found with id: " + id));
-        alertRepository.delete(alert);
+    public int cleanupExpiredAlerts(int retentionDays) {
+        try {
+            LocalDateTime threshold = LocalDateTime.now().minusDays(retentionDays);
+            List<SecurityAlert> expiredAlerts = alertRepository.findByCreatedTimeBefore(threshold);
+
+            if (!expiredAlerts.isEmpty()) {
+                alertRepository.deleteAll(expiredAlerts);
+                logger.info("清理了 {} 条过期警报", expiredAlerts.size());
+                return expiredAlerts.size();
+            }
+        } catch (Exception e) {
+            logger.error("清理过期警报失败", e);
+        }
+
+        return 0;
     }
 
-    private AlertDTO convertToDTO(Alert alert) {
-        AlertDTO dto = new AlertDTO();
-        dto.setId(alert.getAlertId());
-        dto.setTimestamp(alert.getTimestamp());
-        dto.setSource(alert.getSource());
-        dto.setType(alert.getType());
-        dto.setLevel(alert.getLevel());
-        dto.setDescription(alert.getDescription());
-        dto.setStatus(alert.getStatus());
-        dto.setAssignee(alert.getAssignee());
-        dto.setResolution(alert.getResolution());
-        dto.setAiConfidence(alert.getAiConfidence() != null ? 
-            alert.getAiConfidence().doubleValue() : null);
-        dto.setLogEntryId(alert.getLogEntry() != null ? 
-            alert.getLogEntry().getId().toString() : null);
-        return dto;
+    // 新增方法的实现
+
+    @Override
+    public SecurityAlert getAlertById(Long id) {
+        try {
+            return alertRepository.findById(id).orElse(null);
+        } catch (Exception e) {
+            logger.error("根据ID获取警报失败: {}", id, e);
+            return null;
+        }
+    }
+
+    @Override
+    public Page<SecurityAlert> getAllAlerts(Pageable pageable) {
+        try {
+            return alertRepository.findAll(pageable);
+        } catch (Exception e) {
+            logger.error("获取所有警报失败", e);
+            return Page.empty();
+        }
+    }
+
+    @Override
+    public Page<SecurityAlert> getAlertsByStatus(Boolean handled, Pageable pageable) {
+        try {
+            if (handled == null) {
+                return alertRepository.findAll(pageable);
+            }
+            return alertRepository.findByHandled(handled, pageable);
+        } catch (Exception e) {
+            logger.error("根据状态获取警报失败", e);
+            return Page.empty();
+        }
+    }
+
+    @Override
+    public Page<SecurityAlert> searchAlerts(String keyword, SecurityAlert.AlertLevel level,
+                                            String alertType, Boolean handled,
+                                            LocalDateTime startTime, LocalDateTime endTime,
+                                            Pageable pageable) {
+        try {
+            return alertRepository.searchAlerts(keyword, level, alertType, handled, startTime, endTime, pageable);
+        } catch (Exception e) {
+            logger.error("搜索警报失败", e);
+            return Page.empty();
+        }
+    }
+
+    @Override
+    public boolean updateAlertStatus(Long alertId, Boolean handled, String handledBy, String handledNote) {
+        try {
+            Optional<SecurityAlert> alertOpt = alertRepository.findById(alertId);
+            if (alertOpt.isPresent()) {
+                SecurityAlert alert = alertOpt.get();
+                alert.setHandled(handled);
+                // 这里可以添加处理人和处理备注字段
+                alertRepository.save(alert);
+
+                logger.info("更新警报状态: {} -> {}", alertId, handled);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            logger.error("更新警报状态失败: {}", alertId, e);
+            return false;
+        }
+    }
+
+    @Override
+    public List<SecurityAlert> getRecentAlerts(int count) {
+        try {
+            List<SecurityAlert> recentAlerts = alertRepository.findTop10ByOrderByCreatedTimeDesc();
+            return recentAlerts.stream().limit(count).collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("获取最近警报失败", e);
+            return Collections.emptyList();
+        }
+    }
+
+    @Override
+    public Map<String, Object> getAlertStatistics() {
+        // 默认获取最近30天的统计
+        LocalDateTime endTime = LocalDateTime.now();
+        LocalDateTime startTime = endTime.minusDays(30);
+        return getAlertStatistics(startTime, endTime);
     }
 }

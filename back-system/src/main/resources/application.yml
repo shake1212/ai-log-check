@@ -4,6 +4,14 @@ server:
     context-path: /api
 
 spring:
+  # WebSocket 配置
+  websocket:
+    enabled: true
+    allowed-origins: "*"
+    message-size-limit: 65536
+    send-buffer-size-limit: 524288
+    send-time-limit: 10000
+
   application:
     name: ai-log-system
   datasource:
@@ -12,7 +20,6 @@ spring:
     password: 123456
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      # 连接池配置
       maximum-pool-size: 20
       minimum-idle: 5
       connection-timeout: 30000
@@ -21,12 +28,8 @@ spring:
       leak-detection-threshold: 60000
       auto-commit: false
       pool-name: "AiLogSystem-Pool"
-      
-      # 连接测试配置
       connection-test-query: "SELECT 1"
       validation-timeout: 5000
-      
-      # 性能优化配置
       data-source-properties:
         cachePrepStmts: true
         prepStmtCacheSize: 250
@@ -38,17 +41,19 @@ spring:
         cacheServerConfiguration: true
         elideSetAutoCommits: true
         maintainTimeStats: false
-        
-        # MySQL特定配置
         useSSL: false
         serverTimezone: Asia/Shanghai
         allowPublicKeyRetrieval: true
         autoReconnect: true
         failOverReadOnly: false
         maxReconnects: 10
-        
-      # 连接池监控配置
       register-mbeans: false
+
+  # JDK 21 虚拟线程支持（可选）
+  threads:
+    virtual:
+      enabled: true
+
   jpa:
     database-platform: org.hibernate.dialect.MySQL8Dialect
     hibernate:
@@ -75,7 +80,7 @@ spring:
 # JWT配置
 jwt:
   secret: 8Zz5tw0Ionm3XPZZfN0NOml3z9FMfmpgXwovR9fp6ryDIoGRM8EPHAB6iHsc0fb
-  expiration: 86400000 # 24小时
+  expiration: 86400000
 
 # 日志配置
 logging:
@@ -88,6 +93,8 @@ logging:
     com.zaxxer.hikari: DEBUG
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.springframework.web.socket: DEBUG
+    org.springframework.messaging: DEBUG
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
@@ -96,26 +103,36 @@ logging:
     max-size: 10MB
     max-history: 30
 
-# 数据库管理配置
+# WebSocket 特定配置
+websocket:
+  endpoint: /ws
+  allowed-origins: "*"
+  broker:
+    enable-simple: true
+    application-destination-prefix: /app
+    user-destination-prefix: /user
+    simple-broker-prefixes: /topic,/queue
+  message-size-limit: 65536
+  send-buffer-size-limit: 524288
+  send-time-limit: 10000
+
+# 其他配置保持不变...
 database:
   monitoring:
     enabled: true
-    health-check-interval: 30000  # 30秒
-    slow-query-threshold: 2000    # 2秒
-    connection-test-timeout: 5000 # 5秒
-  
+    health-check-interval: 30000
+    slow-query-threshold: 2000
+    connection-test-timeout: 5000
   pool:
     monitoring:
       enabled: true
       metrics-enabled: true
       jmx-enabled: true
-    
   migration:
     enabled: true
     auto-migrate: true
     baseline-on-migrate: true
 
-# 管理端点配置
 management:
   endpoints:
     web:
@@ -124,17 +141,19 @@ management:
   endpoint:
     health:
       show-details: always
-  metrics:
-    export:
-      prometheus:
+  prometheus:
+    metrics:
+      export:
         enabled: true
 
-# AI模型配置已注释 - 当前项目不使用AI模块
-# ai:
-#   model:
-#     base-path: models/
-#     anomaly-detection:
-#       default-model: isolation_forest
-#       threshold: 0.75
-#       training-frequency: DAILY
-#     data-retention-days: 90 
+log:
+  collection:
+    enabled: true
+    interval: 30000
+    batch-size: 100
+    retention-days: 30
+  security:
+    critical-event-ids: 4625,4720,4728,4732,4733,4738
+    brute-force:
+      threshold: 5
+      window-minutes: 10

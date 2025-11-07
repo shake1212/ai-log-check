@@ -1,154 +1,267 @@
+// service/impl/WebSocketServiceImpl.java
 package com.security.ailogsystem.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.security.ailogsystem.entity.SecurityLog;
+import com.security.ailogsystem.entity.SecurityAlert;
 import com.security.ailogsystem.service.WebSocketService;
-import com.security.ailogsystem.websocket.WebSocketHandler;
 import com.security.ailogsystem.websocket.WebSocketMessage;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
-/**
- * WebSocket服务实现类
- * 
- * @author AI Log System
- * @version 1.0
- */
-@Slf4j
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
 @Service
 public class WebSocketServiceImpl implements WebSocketService {
 
+    private static final Logger logger = LoggerFactory.getLogger(WebSocketServiceImpl.class);
+
     @Autowired
-    private WebSocketHandler webSocketHandler;
+    private SimpMessagingTemplate messagingTemplate;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Map<String, String> activeSessions = new ConcurrentHashMap<>();
+    private final Map<String, String> userSessions = new ConcurrentHashMap<>();
+    private final AtomicInteger connectionCount = new AtomicInteger(0);
+    private final AtomicInteger onlineUserCount = new AtomicInteger(0);
 
     @Override
-    public void sendMessageToUser(String userId, WebSocketMessage message) {
-        try {
-            webSocketHandler.sendMessageToUser(userId, message);
-            log.debug("发送消息给用户成功 - UserId: {}, MessageType: {}", userId, message.getType());
-        } catch (Exception e) {
-            log.error("发送消息给用户失败 - UserId: {}, Error: {}", userId, e.getMessage(), e);
+    public void broadcastNewLogs(List<SecurityLog> logs) {
+        if (logs == null || logs.isEmpty()) {
+            return;
         }
+
+        try {
+            Map<String, Object> message = new HashMap<>();
+            message.put("type", "NEW_LOGS");
+            message.put("count", logs.size());
+            message.put("logs", logs.subList(0, Math.min(logs.size(), 10))); // 只发送前10条
+            message.put("timestamp", System.currentTimeMillis());
+
+            messagingTemplate.convertAndSend("/topic/logs", message);
+
+            logger.debug("广播 {} 条新日志", logs.size());
+
+        } catch (Exception e) {
+            logger.error("广播日志失败", e);
+        }
+    }
+
+    @Override
+    public void sendLog(SecurityLog log) {
+        try {
+            Map<String, Object> message = new HashMap<>();
+            message.put("type", "SINGLE_LOG");
+            message.put("log", log);
+            message.put("timestamp", System.currentTimeMillis());
+
+            messagingTemplate.convertAndSend("/topic/logs", message);
+
+        } catch (Exception e) {
+            logger.error("发送单个日志失败", e);
+        }
+    }
+
+    @Override
+    public void sendSecurityAlert(SecurityAlert alert) {
+        try {
+            Map<String, Object> alertMessage = new HashMap<>();
+            alertMessage.put("type", "SECURITY_ALERT");
+            alertMessage.put("id", alert.getId());
+            alertMessage.put("level", alert.getAlertLevel().toString());
+            alertMessage.put("alertType", alert.getAlertType());
+            alertMessage.put("description", alert.getDescription());
+            alertMessage.put("timestamp", alert.getCreatedTime());
+
+            if (alert.getSecurityLog() != null) {
+                alertMessage.put("eventId", alert.getSecurityLog().getEventId());
+                alertMessage.put("source", alert.getSecurityLog().getSourceName());
+                alertMessage.put("computerName", alert.getSecurityLog().getComputerName());
+            }
+
+            messagingTemplate.convertAndSend("/topic/alerts", alertMessage);
+
+            logger.info("发送安全警报: {} - {}", alert.getAlertLevel(), alert.getAlertType());
+
+        } catch (Exception e) {
+            logger.error("发送安全警报失败", e);
+        }
+    }
+
+    @Override
+    public void sendStatistics(Map<String, Object> stats) {
+        try {
+            Map<String, Object> message = new HashMap<>();
+            message.put("type", "STATISTICS");
+            message.put("data", stats);
+            message.put("timestamp", System.currentTimeMillis());
+
+            messagingTemplate.convertAndSend("/topic/stats", message);
+
+            logger.debug("发送统计信息");
+
+        } catch (Exception e) {
+            logger.error("发送统计信息失败", e);
+        }
+    }
+
+    @Override
+    public void sendSystemNotification(String message, String level) {
+        try {
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("type", "SYSTEM_NOTIFICATION");
+            notification.put("level", level);
+            notification.put("message", message);
+            notification.put("timestamp", System.currentTimeMillis());
+
+            messagingTemplate.convertAndSend("/topic/notifications", notification);
+
+            logger.info("发送系统通知: {} - {}", level, message);
+
+        } catch (Exception e) {
+            logger.error("发送系统通知失败", e);
+        }
+    }
+
+    @Override
+    public Map<String, Object> getConnectionStatus() {
+        Map<String, Object> status = new HashMap<>();
+        status.put("activeConnections", connectionCount.get());
+        status.put("onlineUsers", onlineUserCount.get());
+        status.put("activeSessions", activeSessions.size());
+        status.put("userSessions", userSessions.size());
+        status.put("sessionDetails", new HashMap<>(activeSessions));
+        status.put("lastUpdate", System.currentTimeMillis());
+
+        return status;
+    }
+
+    @Override
+    public void disconnectSession(String sessionId) {
+        try {
+            if (activeSessions.containsKey(sessionId)) {
+                String userId = activeSessions.get(sessionId);
+                activeSessions.remove(sessionId);
+                userSessions.remove(userId);
+                connectionCount.decrementAndGet();
+                onlineUserCount.decrementAndGet();
+                logger.info("断开WebSocket会话: {} - 用户: {}", sessionId, userId);
+            }
+        } catch (Exception e) {
+            logger.error("断开会话失败: {}", sessionId, e);
+        }
+    }
+
+    // 新增方法的实现
+
+    @Override
+    public int getConnectionCount() {
+        return connectionCount.get();
+    }
+
+    @Override
+    public int getOnlineUserCount() {
+        return onlineUserCount.get();
     }
 
     @Override
     public void broadcastMessage(WebSocketMessage message) {
         try {
-            webSocketHandler.broadcastMessage(message);
-            log.debug("广播消息成功 - MessageType: {}", message.getType());
+            messagingTemplate.convertAndSend("/topic/broadcast", message);
+            logger.info("广播消息: {}", message.getContent());
         } catch (Exception e) {
-            log.error("广播消息失败 - Error: {}", e.getMessage(), e);
+            logger.error("广播消息失败", e);
         }
     }
 
     @Override
-    public void broadcastMessageToUsers(String userType, WebSocketMessage message) {
+    public void sendMessageToUser(String userId, WebSocketMessage message) {
         try {
-            webSocketHandler.broadcastMessageToUsers(userType, message);
-            log.debug("广播消息给用户类型成功 - UserType: {}, MessageType: {}", userType, message.getType());
+            messagingTemplate.convertAndSendToUser(userId, "/queue/messages", message);
+            logger.info("发送消息给用户 {}: {}", userId, message.getContent());
         } catch (Exception e) {
-            log.error("广播消息给用户类型失败 - UserType: {}, Error: {}", userType, e.getMessage(), e);
+            logger.error("发送消息给用户失败: {}", userId, e);
         }
     }
 
     @Override
     public void sendSystemInfo(String content) {
-        WebSocketMessage message = WebSocketMessage.systemInfo(content);
-        broadcastMessage(message);
+        try {
+            WebSocketMessage message = WebSocketMessage.builder()
+                    .type(WebSocketMessage.MessageType.SYSTEM_INFO)
+                    .content(content)
+                    .timestamp(LocalDateTime.now())
+                    .sender("system")
+                    .build();
+
+            broadcastMessage(message);
+            logger.info("发送系统信息: {}", content);
+        } catch (Exception e) {
+            logger.error("发送系统信息失败", e);
+        }
     }
 
     @Override
     public void sendSystemError(String content) {
-        WebSocketMessage message = WebSocketMessage.systemError(content);
-        broadcastMessage(message);
-    }
+        try {
+            WebSocketMessage message = WebSocketMessage.builder()
+                    .type(WebSocketMessage.MessageType.SYSTEM_ERROR)
+                    .content(content)
+                    .timestamp(LocalDateTime.now())
+                    .sender("system")
+                    .build();
 
-    @Override
-    public void sendLogUpdate(Object data) {
-        WebSocketMessage message = WebSocketMessage.logUpdate(data);
-        broadcastMessage(message);
-    }
-
-    @Override
-    public void sendLogAnomaly(Object data) {
-        WebSocketMessage message = WebSocketMessage.logAnomaly(data);
-        broadcastMessage(message);
-    }
-
-    @Override
-    public void sendNewAlert(Object data) {
-        WebSocketMessage message = WebSocketMessage.newAlert(data);
-        broadcastMessage(message);
-    }
-
-    @Override
-    public void sendAlertUpdate(Object data) {
-        WebSocketMessage message = WebSocketMessage.builder()
-                .type(WebSocketMessage.MessageType.ALERT_UPDATE)
-                .content("预警状态更新")
-                .data(data)
-                .timestamp(java.time.LocalDateTime.now())
-                .sender("system")
-                .build();
-        broadcastMessage(message);
-    }
-
-    @Override
-    public void sendAlertResolved(Object data) {
-        WebSocketMessage message = WebSocketMessage.builder()
-                .type(WebSocketMessage.MessageType.ALERT_RESOLVED)
-                .content("预警已解决")
-                .data(data)
-                .timestamp(java.time.LocalDateTime.now())
-                .sender("system")
-                .build();
-        broadcastMessage(message);
-    }
-
-    @Override
-    public void sendMonitorData(String monitorType, Object data) {
-        WebSocketMessage.MessageType messageType;
-        String content;
-        
-        switch (monitorType.toLowerCase()) {
-            case "cpu":
-                messageType = WebSocketMessage.MessageType.MONITOR_CPU;
-                content = "CPU监控数据";
-                break;
-            case "memory":
-                messageType = WebSocketMessage.MessageType.MONITOR_MEMORY;
-                content = "内存监控数据";
-                break;
-            case "disk":
-                messageType = WebSocketMessage.MessageType.MONITOR_DISK;
-                content = "磁盘监控数据";
-                break;
-            case "network":
-                messageType = WebSocketMessage.MessageType.MONITOR_NETWORK;
-                content = "网络监控数据";
-                break;
-            default:
-                messageType = WebSocketMessage.MessageType.CUSTOM;
-                content = "监控数据: " + monitorType;
-                break;
+            broadcastMessage(message);
+            logger.error("发送系统错误: {}", content);
+        } catch (Exception e) {
+            logger.error("发送系统错误失败", e);
         }
-        
-        WebSocketMessage message = WebSocketMessage.builder()
-                .type(messageType)
-                .content(content)
-                .data(data)
-                .timestamp(java.time.LocalDateTime.now())
-                .sender("system")
-                .build();
-        broadcastMessage(message);
     }
 
-    @Override
-    public int getConnectionCount() {
-        return webSocketHandler.getConnectionCount();
+    /**
+     * 添加活动会话（由WebSocket处理器调用）
+     */
+    public void addActiveSession(String sessionId, String userInfo) {
+        activeSessions.put(sessionId, userInfo);
+        userSessions.put(userInfo, sessionId);
+        connectionCount.incrementAndGet();
+        onlineUserCount.incrementAndGet();
+        logger.debug("新增WebSocket会话: {} - {}", sessionId, userInfo);
     }
 
-    @Override
-    public int getOnlineUserCount() {
-        return webSocketHandler.getOnlineUserCount();
+    /**
+     * 移除活动会话（由WebSocket处理器调用）
+     */
+    public void removeActiveSession(String sessionId) {
+        if (activeSessions.containsKey(sessionId)) {
+            String userInfo = activeSessions.get(sessionId);
+            activeSessions.remove(sessionId);
+            userSessions.remove(userInfo);
+            connectionCount.decrementAndGet();
+            onlineUserCount.decrementAndGet();
+            logger.debug("移除WebSocket会话: {} - {}", sessionId, userInfo);
+        }
+    }
+
+    /**
+     * 获取用户会话ID
+     */
+    public String getUserSessionId(String userId) {
+        return userSessions.get(userId);
+    }
+
+    /**
+     * 检查用户是否在线
+     */
+    public boolean isUserOnline(String userId) {
+        return userSessions.containsKey(userId);
     }
 }

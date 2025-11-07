@@ -1,102 +1,245 @@
+// controller/AlertController.java
 package com.security.ailogsystem.controller;
 
-import com.security.ailogsystem.dto.AlertDTO;
-import com.security.ailogsystem.model.Alert;
+import com.security.ailogsystem.entity.SecurityAlert;
 import com.security.ailogsystem.service.AlertService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.validation.Valid;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/alerts")
-@Tag(name = "告警管理", description = "异常预警管理接口")
+@RequestMapping("/api/alerts")
+@CrossOrigin(origins = "*")
 public class AlertController {
 
-    private final AlertService alertService;
-
     @Autowired
-    public AlertController(AlertService alertService) {
-        this.alertService = alertService;
-    }
+    private AlertService alertService;
 
+    /**
+     * 创建警报
+     */
     @PostMapping
-    @Operation(summary = "创建告警", description = "创建新的告警")
-    public ResponseEntity<AlertDTO> createAlert(@Valid @RequestBody AlertDTO alertDTO) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(alertService.createAlert(alertDTO));
+    public ResponseEntity<SecurityAlert> createAlert(@RequestBody SecurityAlert alert) {
+        try {
+            SecurityAlert createdAlert = alertService.createAlert(alert);
+            return ResponseEntity.ok(createdAlert);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
+    /**
+     * 根据ID获取警报
+     */
     @GetMapping("/{id}")
-    @Operation(summary = "获取告警详情", description = "根据ID获取告警详情")
-    public ResponseEntity<AlertDTO> getAlertById(@PathVariable String id) {
-        return ResponseEntity.ok(alertService.getAlertById(id));
+    public ResponseEntity<SecurityAlert> getAlertById(@PathVariable Long id) {
+        try {
+            SecurityAlert alert = alertService.getAlertById(id);
+            if (alert != null) {
+                return ResponseEntity.ok(alert);
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
+    /**
+     * 获取所有警报（分页）
+     */
     @GetMapping
-    @Operation(summary = "获取所有告警", description = "分页获取所有告警")
-    public ResponseEntity<Page<AlertDTO>> getAllAlerts(Pageable pageable) {
-        return ResponseEntity.ok(alertService.getAllAlerts(pageable));
+    public ResponseEntity<Page<SecurityAlert>> getAllAlerts(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "createdTime") String sort,
+            @RequestParam(defaultValue = "desc") String direction) {
+
+        try {
+            Sort.Direction sortDirection = direction.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
+            Pageable pageable = PageRequest.of(page, size, Sort.by(sortDirection, sort));
+
+            Page<SecurityAlert> alerts = alertService.getAllAlerts(pageable);
+            return ResponseEntity.ok(alerts);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
-    @GetMapping("/status/{status}")
-    @Operation(summary = "按状态获取告警", description = "根据状态分页获取告警")
-    public ResponseEntity<Page<AlertDTO>> getAlertsByStatus(
-            @PathVariable Alert.AlertStatus status, Pageable pageable) {
-        return ResponseEntity.ok(alertService.getAlertsByStatus(status, pageable));
+    /**
+     * 获取未处理警报
+     */
+    @GetMapping("/unhandled")
+    public ResponseEntity<List<SecurityAlert>> getUnhandledAlerts() {
+        try {
+            List<SecurityAlert> alerts = alertService.getUnhandledAlerts();
+            return ResponseEntity.ok(alerts);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
+    /**
+     * 根据状态获取警报
+     */
+    @GetMapping("/status/{handled}")
+    public ResponseEntity<Page<SecurityAlert>> getAlertsByStatus(
+            @PathVariable Boolean handled,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        try {
+            Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdTime"));
+            Page<SecurityAlert> alerts = alertService.getAlertsByStatus(handled, pageable);
+            return ResponseEntity.ok(alerts);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    /**
+     * 搜索警报
+     */
     @GetMapping("/search")
-    @Operation(summary = "搜索告警", description = "根据条件搜索告警")
-    public ResponseEntity<Page<AlertDTO>> searchAlerts(
-            @Parameter(description = "告警来源") @RequestParam(required = false) String source,
-            @Parameter(description = "告警类型") @RequestParam(required = false) String type,
-            @Parameter(description = "告警级别") @RequestParam(required = false) String level,
-            @Parameter(description = "告警状态") @RequestParam(required = false) Alert.AlertStatus status,
-            @Parameter(description = "开始时间") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
-            @Parameter(description = "结束时间") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
-            @Parameter(description = "关键字") @RequestParam(required = false) String keyword,
-            Pageable pageable) {
-        return ResponseEntity.ok(alertService.searchAlerts(source, type, level, status, startTime, endTime, keyword, pageable));
+    public ResponseEntity<Page<SecurityAlert>> searchAlerts(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) SecurityAlert.AlertLevel level,
+            @RequestParam(required = false) String alertType,
+            @RequestParam(required = false) Boolean handled,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        try {
+            Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdTime"));
+            Page<SecurityAlert> alerts = alertService.searchAlerts(keyword, level, alertType, handled, startTime, endTime, pageable);
+            return ResponseEntity.ok(alerts);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
+    /**
+     * 更新警报状态
+     */
     @PutMapping("/{id}/status")
-    @Operation(summary = "更新告警状态", description = "更新告警的状态、处理人和解决方案")
-    public ResponseEntity<AlertDTO> updateAlertStatus(
-            @PathVariable String id,
-            @Parameter(description = "告警状态") @RequestParam Alert.AlertStatus status,
-            @Parameter(description = "处理人") @RequestParam(required = false) String assignee,
-            @Parameter(description = "解决方案") @RequestParam(required = false) String resolution) {
-        return ResponseEntity.ok(alertService.updateAlertStatus(id, status, assignee, resolution));
+    public ResponseEntity<Void> updateAlertStatus(
+            @PathVariable Long id,
+            @RequestParam Boolean handled,
+            @RequestParam(required = false) String handledBy,
+            @RequestParam(required = false) String handledNote) {
+
+        try {
+            boolean success = alertService.updateAlertStatus(id, handled, handledBy, handledNote);
+            if (success) {
+                return ResponseEntity.ok().build();
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
+    /**
+     * 标记警报为已处理
+     */
+    @PutMapping("/{id}/handle")
+    public ResponseEntity<Void> handleAlert(@PathVariable Long id) {
+        try {
+            boolean success = alertService.markAlertAsHandled(id);
+            if (success) {
+                return ResponseEntity.ok().build();
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    /**
+     * 获取最近警报
+     */
     @GetMapping("/recent")
-    @Operation(summary = "获取最近告警", description = "获取最近的N条告警")
-    public ResponseEntity<List<AlertDTO>> getRecentAlerts(
-            @Parameter(description = "数量限制") @RequestParam(defaultValue = "10") int limit) {
-        return ResponseEntity.ok(alertService.getRecentAlerts(limit));
+    public ResponseEntity<List<SecurityAlert>> getRecentAlerts(
+            @RequestParam(defaultValue = "10") int count) {
+
+        try {
+            List<SecurityAlert> alerts = alertService.getRecentAlerts(count);
+            return ResponseEntity.ok(alerts);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
+    /**
+     * 获取警报统计
+     */
     @GetMapping("/statistics")
-    @Operation(summary = "获取告警统计", description = "获取告警统计信息")
-    public ResponseEntity<Map<String, Long>> getAlertStatistics() {
-        return ResponseEntity.ok(alertService.getAlertStatistics());
+    public ResponseEntity<Map<String, Object>> getAlertStatistics(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+
+        try {
+            Map<String, Object> statistics;
+            if (startTime != null && endTime != null) {
+                statistics = alertService.getAlertStatistics(startTime, endTime);
+            } else {
+                statistics = alertService.getAlertStatistics();
+            }
+            return ResponseEntity.ok(statistics);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
+    /**
+     * 删除警报
+     */
     @DeleteMapping("/{id}")
-    @Operation(summary = "删除告警", description = "根据ID删除告警")
-    public ResponseEntity<Void> deleteAlert(@PathVariable String id) {
-        alertService.deleteAlert(id);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<Void> deleteAlert(@PathVariable Long id) {
+        try {
+            boolean success = alertService.deleteAlert(id);
+            if (success) {
+                return ResponseEntity.ok().build();
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
-} 
+
+    /**
+     * 批量处理警报
+     */
+    @PutMapping("/batch/handle")
+    public ResponseEntity<Map<String, Object>> batchHandleAlerts(@RequestBody List<Long> alertIds) {
+        try {
+            int handledCount = alertService.markAlertsAsHandled(alertIds);
+            Map<String, Object> result = Map.of(
+                    "success", true,
+                    "handledCount", handledCount,
+                    "message", "成功处理 " + handledCount + " 个警报"
+            );
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            Map<String, Object> result = Map.of(
+                    "success", false,
+                    "message", "批量处理失败"
+            );
+            return ResponseEntity.badRequest().body(result);
+        }
+    }
+}

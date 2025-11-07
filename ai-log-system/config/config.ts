@@ -50,7 +50,7 @@ export default defineConfig({
         },
         { 
           path: '/alerts', 
-          component: '@/pages/alerts/index',
+          component: '@/pages/alerts/alerts',
           name: 'alerts',
           icon: 'AlertOutlined',
         },
@@ -62,7 +62,7 @@ export default defineConfig({
         },
         { 
           path: '/logs', 
-          component: '@/pages/logs/index',
+          component: '@/pages/logs/logs',
           name: 'logs',
           icon: 'FileTextOutlined',
         },
@@ -72,30 +72,30 @@ export default defineConfig({
           name: 'models',
           icon: 'RobotOutlined',
         },
-            {
-              path: '/settings',
-              component: '@/pages/settings/index',
-              name: 'settings',
-              icon: 'SettingOutlined',
-            },
-            {
-              path: '/wmi',
-              component: '@/pages/wmi/index',
-              name: 'wmi',
-              icon: 'DatabaseOutlined',
-            },
-            {
-              path: '/wmi-management',
-              component: '@/pages/wmi-management/index',
-              name: 'wmi-management',
-              icon: 'SettingOutlined',
-            },
-            {
-              path: '/database',
-              component: '@/pages/database/index',
-              name: 'database',
-              icon: 'DatabaseOutlined',
-            },
+        {
+          path: '/settings',
+          component: '@/pages/settings/index',
+          name: 'settings',
+          icon: 'SettingOutlined',
+        },
+        {
+          path: '/wmi',
+          component: '@/pages/wmi/index',
+          name: 'wmi',
+          icon: 'DatabaseOutlined',
+        },
+        {
+          path: '/wmi-management',
+          component: '@/pages/wmi-management/index',
+          name: 'wmi-management',
+          icon: 'SettingOutlined',
+        },
+        // {
+        //   path: '/database',
+        //   component: '@/pages/database/',
+        //   name: 'database',
+        //   icon: 'DatabaseOutlined',
+        // },
         { 
           path: '/system', 
           component: '@/pages/system/index',
@@ -172,4 +172,4 @@ export default defineConfig({
       },
     });
   },
-}); 
+});

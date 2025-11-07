@@ -1,3 +1,4 @@
+// websocket/WebSocketMessage.java
 package com.security.ailogsystem.websocket;
 
 import lombok.AllArgsConstructor;
@@ -9,197 +10,73 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * WebSocket消息实体
- * 
- * @author AI Log System
- * @version 1.0
+ * WebSocket消息实体类
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class WebSocketMessage {
-    
-    /**
-     * 消息类型
-     */
-    private MessageType type;
-    
-    /**
-     * 消息内容
-     */
-    private String content;
-    
-    /**
-     * 消息数据
-     */
-    private Object data;
-    
-    /**
-     * 时间戳
-     */
-    private LocalDateTime timestamp;
-    
-    /**
-     * 发送者
-     */
-    private String sender;
-    
-    /**
-     * 接收者（可选）
-     */
-    private String receiver;
-    
-    /**
-     * 额外属性
-     */
-    private Map<String, Object> attributes;
-    
+
     /**
      * 消息类型枚举
      */
     public enum MessageType {
-        // 系统消息
         SYSTEM_INFO("系统信息"),
         SYSTEM_ERROR("系统错误"),
-        SYSTEM_WARNING("系统警告"),
-        
-        // 日志相关
+        SECURITY_ALERT("安全警报"),
         LOG_UPDATE("日志更新"),
-        LOG_ANOMALY("异常日志"),
-        LOG_STATISTICS("日志统计"),
-        
-        // 预警相关
-        ALERT_NEW("新预警"),
-        ALERT_UPDATE("预警更新"),
-        ALERT_RESOLVED("预警解决"),
-        
-        // 实时监控
-        MONITOR_CPU("CPU监控"),
-        MONITOR_MEMORY("内存监控"),
-        MONITOR_DISK("磁盘监控"),
-        MONITOR_NETWORK("网络监控"),
-        
-        // 用户操作
-        USER_LOGIN("用户登录"),
-        USER_LOGOUT("用户登出"),
-        USER_ACTION("用户操作"),
-        
-        // 心跳
-        HEARTBEAT("心跳"),
-        PING("Ping"),
-        PONG("Pong"),
-        
-        // 自定义消息
+        STATISTICS_UPDATE("统计更新"),
         CUSTOM("自定义消息");
-        
+
         private final String description;
-        
+
         MessageType(String description) {
             this.description = description;
         }
-        
+
         public String getDescription() {
             return description;
         }
     }
-    
+
     /**
-     * 创建系统信息消息
+     * 消息类型
      */
-    public static WebSocketMessage systemInfo(String content) {
-        return WebSocketMessage.builder()
-                .type(MessageType.SYSTEM_INFO)
-                .content(content)
-                .timestamp(LocalDateTime.now())
-                .sender("system")
-                .build();
-    }
-    
+    private MessageType type;
+
     /**
-     * 创建系统错误消息
+     * 消息内容
      */
-    public static WebSocketMessage systemError(String content) {
-        return WebSocketMessage.builder()
-                .type(MessageType.SYSTEM_ERROR)
-                .content(content)
-                .timestamp(LocalDateTime.now())
-                .sender("system")
-                .build();
-    }
-    
+    private String content;
+
     /**
-     * 创建日志更新消息
+     * 消息时间戳
      */
-    public static WebSocketMessage logUpdate(Object data) {
-        return WebSocketMessage.builder()
-                .type(MessageType.LOG_UPDATE)
-                .content("日志数据更新")
-                .data(data)
-                .timestamp(LocalDateTime.now())
-                .sender("system")
-                .build();
-    }
-    
+    private LocalDateTime timestamp;
+
     /**
-     * 创建异常日志消息
+     * 发送者
      */
-    public static WebSocketMessage logAnomaly(Object data) {
-        return WebSocketMessage.builder()
-                .type(MessageType.LOG_ANOMALY)
-                .content("检测到异常日志")
-                .data(data)
-                .timestamp(LocalDateTime.now())
-                .sender("system")
-                .build();
-    }
-    
+    private String sender;
+
     /**
-     * 创建新预警消息
+     * 接收者（可选，为空表示广播）
      */
-    public static WebSocketMessage newAlert(Object data) {
-        return WebSocketMessage.builder()
-                .type(MessageType.ALERT_NEW)
-                .content("新预警产生")
-                .data(data)
-                .timestamp(LocalDateTime.now())
-                .sender("system")
-                .build();
-    }
-    
+    private String receiver;
+
     /**
-     * 创建心跳消息
+     * 扩展数据
      */
-    public static WebSocketMessage heartbeat() {
-        return WebSocketMessage.builder()
-                .type(MessageType.HEARTBEAT)
-                .content("heartbeat")
-                .timestamp(LocalDateTime.now())
-                .sender("system")
-                .build();
-    }
-    
+    private Map<String, Object> extraData;
+
     /**
-     * 创建Ping消息
+     * 消息ID
      */
-    public static WebSocketMessage ping() {
-        return WebSocketMessage.builder()
-                .type(MessageType.PING)
-                .content("ping")
-                .timestamp(LocalDateTime.now())
-                .sender("system")
-                .build();
-    }
-    
+    private String messageId;
+
     /**
-     * 创建Pong消息
+     * 优先级（1-10，10为最高）
      */
-    public static WebSocketMessage pong() {
-        return WebSocketMessage.builder()
-                .type(MessageType.PONG)
-                .content("pong")
-                .timestamp(LocalDateTime.now())
-                .sender("system")
-                .build();
-    }
+    private Integer priority;
 }

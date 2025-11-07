@@ -42,41 +42,61 @@ const { Option } = Select;
 const { TabPane } = Tabs;
 const { Title, Text } = Typography;
 
-// 事件数据接口
+// 修正的事件数据接口 - 根据实际数据库字段调整
 interface EventData {
-  id: string;
+  id: number;
   timestamp: string;
-  source: string;
-  level: string;
-  content: string;
-  ipAddress?: string;
-  userId?: string;
-  action?: string;
-  isAnomaly: boolean;
-  anomalyScore?: number;
-  anomalyReason?: string;
+  eventType: string;        // 对应 event_type
+  severity: string;         // 对应 severity
+  level?: string;           // 对应 level
+  normalizedMessage?: string; // 对应 normalized_message
+  rawMessage?: string;      // 对应 raw_message
+  sourceIp?: string;        // 对应 source_ip
+  userId?: string;          // 对应 user_id
+  userName?: string;        // 对应 user_name
+  isAnomaly: boolean;       // 对应 is_anomaly
+  anomalyScore?: number;    // 对应 anomaly_score
+  anomalyReason?: string;   // 对应 anomaly_reason
+  status?: string;          // 对应 status
+  sourceSystem?: string;    // 对应 source_system
+  hostName?: string;        // 对应 host_name
+  // 添加可能存在的其他字段
+  description?: string;     // 可能对应 normalized_message 或 raw_message
 }
 
-// 统计数据接口
+// 查询参数接口
+interface QueryParams {
+  startTime: dayjs.Dayjs;
+  endTime: dayjs.Dayjs;
+  eventType: string;
+  severity: string;
+  keyword: string;
+  isAnomaly: boolean | undefined;
+}
+
+// 统计数据接口 - 简化版本，根据实际返回调整
 interface EventStatistics {
-  basic: {
+  totalEvents?: number;
+  anomalyEvents?: number;
+  normalEvents?: number;
+  anomalyRate?: number;
+  todayEvents?: number;
+  yesterdayEvents?: number;
+  thisWeekEvents?: number;
+  lastWeekEvents?: number;
+  thisMonthEvents?: number;
+  lastMonthEvents?: number;
+  sourceStatistics?: Record<string, number>;
+  levelStatistics?: Record<string, number>;
+  // 基本统计字段
+  basic?: {
     totalEvents: number;
     totalAlerts: number;
     anomalyEvents: number;
     normalEvents: number;
     anomalyRate: number;
   };
-  timeRange: {
-    todayEvents: number;
-    yesterdayEvents: number;
-    thisWeekEvents: number;
-    lastWeekEvents: number;
-    thisMonthEvents: number;
-    lastMonthEvents: number;
-  };
-  sourceStatistics: Record<string, number>;
-  levelStatistics: Record<string, number>;
-  anomaly: {
+  anomaly?: {
     totalAnomalies: number;
     pendingAlerts: number;
     resolvedAlerts: number;
@@ -105,79 +125,185 @@ const EventsPage: React.FC = () => {
   });
 
   // 查询参数
-  const [queryParams, setQueryParams] = useState({
+  const [queryParams, setQueryParams] = useState<QueryParams>({
     startTime: dayjs().subtract(7, 'day'),
     endTime: dayjs(),
-    source: '',
-    level: '',
+    eventType: '',
+    severity: '',
     keyword: '',
-    isAnomaly: undefined as boolean | undefined
+    isAnomaly: undefined
   });
 
-  // 获取综合统计
+  // 获取统计信息 - 使用正确的API路径
   const fetchStatistics = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/events/statistics/comprehensive');
-      const data = await response.json();
-      setStatistics(data);
+      const params = new URLSearchParams({
+        startTime: queryParams.startTime.format('YYYY-MM-DDTHH:mm:ss'),
+        endTime: queryParams.endTime.format('YYYY-MM-DDTHH:mm:ss'),
+      });
+
+      const response = await fetch(`/api/events/statistics?${params}`);
+      if (response.ok) {
+        const data = await response.json();
+        setStatistics(data);
+      } else {
+        console.error('统计API响应失败:', response.status, response.statusText);
+        message.error('获取统计信息失败');
+      }
     } catch (error) {
+      console.error('获取统计信息错误:', error);
       message.error('获取统计信息失败');
     } finally {
       setLoading(false);
     }
   };
 
-  // 获取事件列表
-  const fetchEvents = async (params = {}) => {
+  // 获取事件列表 - 使用POST请求，添加错误处理
+  const fetchEvents = async (page = pagination.current, pageSize = pagination.pageSize) => {
     try {
       setLoading(true);
-      const searchParams = new URLSearchParams({
-        page: (pagination.current - 1).toString(),
-        size: pagination.pageSize.toString(),
-        ...queryParams,
-        startTime: queryParams.startTime?.format('YYYY-MM-DDTHH:mm:ss'),
-        endTime: queryParams.endTime?.format('YYYY-MM-DDTHH:mm:ss'),
-        ...params
+      
+      const queryDTO = {
+        page: page - 1, // 后端从0开始
+        size: pageSize,
+        startTime: queryParams.startTime.format('YYYY-MM-DDTHH:mm:ss'),
+        endTime: queryParams.endTime.format('YYYY-MM-DDTHH:mm:ss'),
+        eventType: queryParams.eventType || undefined,
+        severity: queryParams.severity || undefined,
+        keyword: queryParams.keyword || undefined,
+        isAnomaly: queryParams.isAnomaly
+      };
+
+      // 清理undefined值
+      Object.keys(queryDTO).forEach(key => {
+        if (queryDTO[key as keyof typeof queryDTO] === undefined) {
+          delete queryDTO[key as keyof typeof queryDTO];
+        }
       });
 
-      const response = await fetch(`/api/events/search/advanced?${searchParams}`);
-      const data = await response.json();
-      
-      setEvents(data.content || []);
-      setPagination(prev => ({
-        ...prev,
-        total: data.totalElements || 0
-      }));
+      const response = await fetch('/api/events/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(queryDTO)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setEvents(data.content || data || []); // 兼容不同返回格式
+        setPagination(prev => ({
+          ...prev,
+          current: page,
+          pageSize,
+          total: data.totalElements || data.total || 0
+        }));
+      } else {
+        console.error('事件搜索API响应失败:', response.status, response.statusText);
+        message.error('获取事件列表失败');
+      }
     } catch (error) {
+      console.error('获取事件列表错误:', error);
       message.error('获取事件列表失败');
     } finally {
       setLoading(false);
     }
   };
 
-  // 获取趋势数据
+  // 获取趋势数据 - 使用正确的API路径
   const fetchTrends = async () => {
     try {
       const params = new URLSearchParams({
-        startTime: queryParams.startTime?.format('YYYY-MM-DDTHH:mm:ss'),
-        endTime: queryParams.endTime?.format('YYYY-MM-DDTHH:mm:ss'),
-        granularity: 'hour'
+        startTime: queryParams.startTime.format('YYYY-MM-DDTHH:mm:ss'),
+        endTime: queryParams.endTime.format('YYYY-MM-DDTHH:mm:ss'),
       });
 
-      const response = await fetch(`/api/events/trends?${params}`);
-      const data = await response.json();
-      setTrends(data);
+      const response = await fetch(`/api/events/statistics/timeseries?${params}`);
+      if (response.ok) {
+        const data = await response.json();
+        setTrends(data);
+      } else {
+        console.error('趋势数据API响应失败:', response.status, response.statusText);
+        // 不显示错误消息，因为趋势数据不是主要功能
+      }
     } catch (error) {
-      message.error('获取趋势数据失败');
+      console.error('获取趋势数据错误:', error);
+    }
+  };
+
+  // 获取最近事件（备用方案）
+  const fetchRecentEvents = async () => {
+    try {
+      const response = await fetch('/api/events/recent?limit=50');
+      if (response.ok) {
+        const data = await response.json();
+        setEvents(data || []);
+        setPagination(prev => ({
+          ...prev,
+          total: data.length || 0
+        }));
+      }
+    } catch (error) {
+      console.error('获取最近事件错误:', error);
+    }
+  };
+
+  // 手动触发日志收集
+  const triggerLogCollection = async () => {
+    try {
+      const response = await fetch('/api/events/collect', {
+        method: 'POST'
+      });
+      if (response.ok) {
+        message.success('日志收集任务已启动');
+      } else {
+        message.error('触发日志收集失败');
+      }
+    } catch (error) {
+      message.error('触发日志收集失败');
+    }
+  };
+
+  // 清理旧数据
+  const cleanupOldEvents = async () => {
+    try {
+      const response = await fetch('/api/events/cleanup?daysToKeep=30', {
+        method: 'POST'
+      });
+      if (response.ok) {
+        message.success('已清理30天前的旧数据');
+      } else {
+        message.error('清理旧数据失败');
+      }
+    } catch (error) {
+      message.error('清理旧数据失败');
+    }
+  };
+
+  // 更新事件状态
+  const updateEventStatus = async (id: number, status: string) => {
+    try {
+      const response = await fetch(`/api/events/${id}/status?status=${status}`, {
+        method: 'PUT'
+      });
+      if (response.ok) {
+        message.success('事件状态更新成功');
+        fetchEvents(); // 刷新列表
+      } else {
+        message.error('更新事件状态失败');
+      }
+    } catch (error) {
+      message.error('更新事件状态失败');
     }
   };
 
   // 搜索处理
   const handleSearch = () => {
     setPagination(prev => ({ ...prev, current: 1 }));
-    fetchEvents();
+    fetchEvents(1);
     fetchTrends();
+    fetchStatistics();
   };
 
   // 重置查询
@@ -185,67 +311,98 @@ const EventsPage: React.FC = () => {
     setQueryParams({
       startTime: dayjs().subtract(7, 'day'),
       endTime: dayjs(),
-      source: '',
-      level: '',
+      eventType: '',
+      severity: '',
       keyword: '',
       isAnomaly: undefined
     });
   };
 
-  // 表格列定义
+  // 获取显示文本 - 处理可能的空值
+  const getDisplayText = (text: string | undefined): string => {
+    return text || '-';
+  };
+
+  // 表格列定义 - 根据实际字段调整
   const columns: ColumnsType<EventData> = [
     {
       title: '时间',
       dataIndex: 'timestamp',
       key: 'timestamp',
       width: 180,
-      render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm:ss')
+      render: (text) => text ? dayjs(text).format('YYYY-MM-DD HH:mm:ss') : '-'
     },
     {
-      title: '来源',
-      dataIndex: 'source',
-      key: 'source',
-      width: 120,
-      render: (text) => <Tag color="blue">{text}</Tag>
+      title: '事件类型',
+      dataIndex: 'eventType',
+      key: 'eventType',
+      width: 150,
+      render: (text) => <Tag color="blue">{getDisplayText(text)}</Tag>
     },
     {
-      title: '级别',
-      dataIndex: 'level',
-      key: 'level',
-      width: 80,
-      render: (level) => {
+      title: '严重程度',
+      dataIndex: 'severity',
+      key: 'severity',
+      width: 100,
+      render: (severity) => {
         const colors = {
+          LOW: 'green',
+          MEDIUM: 'orange',
+          HIGH: 'red',
+          CRITICAL: 'purple',
           INFO: 'blue',
           WARN: 'orange',
           ERROR: 'red',
           DEBUG: 'gray'
         };
-        return <Tag color={colors[level as keyof typeof colors]}>{level}</Tag>;
+        return <Tag color={colors[severity as keyof typeof colors] || 'default'}>
+          {getDisplayText(severity)}
+        </Tag>;
       }
     },
     {
-      title: '内容',
-      dataIndex: 'content',
-      key: 'content',
-      ellipsis: true
+      title: '描述',
+      dataIndex: 'normalizedMessage',
+      key: 'normalizedMessage',
+      ellipsis: true,
+      render: (text, record) => getDisplayText(text || record.rawMessage || record.description)
     },
     {
-      title: 'IP地址',
-      dataIndex: 'ipAddress',
-      key: 'ipAddress',
-      width: 120
+      title: '源IP',
+      dataIndex: 'sourceIp',
+      key: 'sourceIp',
+      width: 120,
+      render: (text) => getDisplayText(text)
     },
     {
       title: '用户',
       dataIndex: 'userId',
       key: 'userId',
-      width: 100
+      width: 100,
+      render: (text) => getDisplayText(text)
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      render: (status) => {
+        const statusColors = {
+          OPEN: 'red',
+          IN_PROGRESS: 'orange',
+          RESOLVED: 'green',
+          CLOSED: 'gray'
+        };
+        return <Tag color={statusColors[status as keyof typeof statusColors] || 'default'}>
+          {getDisplayText(status)}
+        </Tag>;
+      }
     },
     {
       title: '异常',
       dataIndex: 'isAnomaly',
       key: 'isAnomaly',
-      width: 80,
+      width: 100,
       render: (isAnomaly, record) => (
         <Space>
           <Badge 
@@ -263,12 +420,19 @@ const EventsPage: React.FC = () => {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 180,
       render: (_, record) => (
         <Space>
           <Button type="link" size="small">详情</Button>
-          {record.isAnomaly && (
-            <Button type="link" size="small" danger>处理</Button>
+          {record.isAnomaly && record.status !== 'RESOLVED' && (
+            <Button 
+              type="link" 
+              size="small" 
+              danger
+              onClick={() => updateEventStatus(record.id, 'RESOLVED')}
+            >
+              标记为已处理
+            </Button>
           )}
         </Space>
       )
@@ -276,20 +440,48 @@ const EventsPage: React.FC = () => {
   ];
 
   // 表格分页处理
-  const handleTableChange = (pagination: any) => {
-    setPagination(pagination);
-    fetchEvents();
+  const handleTableChange = (newPagination: any) => {
+    setPagination(newPagination);
+    fetchEvents(newPagination.current, newPagination.pageSize);
   };
 
+  // 初始化数据
   useEffect(() => {
-    fetchStatistics();
-    fetchEvents();
-    fetchTrends();
+    const initData = async () => {
+      setLoading(true);
+      try {
+        // 并行请求所有数据
+        await Promise.all([
+          fetchStatistics(),
+          fetchEvents(),
+          fetchTrends()
+        ]);
+      } catch (error) {
+        console.error('初始化数据错误:', error);
+        // 如果主要API失败，尝试获取最近事件
+        await fetchRecentEvents();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initData();
   }, []);
+
+  // 计算统计显示值
+  const getStatisticValue = (value: number | undefined): number => {
+    return value || 0;
+  };
+
+  const getAnomalyRate = (): number => {
+    if (statistics?.anomalyRate) return statistics.anomalyRate * 100;
+    if (statistics?.basic?.anomalyRate) return statistics.basic.anomalyRate * 100;
+    return 0;
+  };
 
   return (
     <div style={{ padding: '24px' }}>
-      <Title level={2}>事件查询和统计</Title>
+      <Title level={2}>安全事件查询和统计</Title>
       
       {/* 统计卡片 */}
       <Row gutter={16} style={{ marginBottom: '24px' }}>
@@ -297,9 +489,9 @@ const EventsPage: React.FC = () => {
           <Card>
             <Statistic
               title="总事件数"
-              value={statistics?.basic?.totalEvents || 0}
+              value={getStatisticValue(statistics?.totalEvents || statistics?.basic?.totalEvents)}
               prefix={<BarChartOutlined />}
-              loading={!statistics}
+              loading={loading && !statistics}
             />
           </Card>
         </Col>
@@ -307,10 +499,10 @@ const EventsPage: React.FC = () => {
           <Card>
             <Statistic
               title="异常事件"
-              value={statistics?.basic?.anomalyEvents || 0}
+              value={getStatisticValue(statistics?.anomalyEvents || statistics?.basic?.anomalyEvents)}
               valueStyle={{ color: '#cf1322' }}
               prefix={<InfoCircleOutlined />}
-              loading={!statistics}
+              loading={loading && !statistics}
             />
           </Card>
         </Col>
@@ -318,11 +510,11 @@ const EventsPage: React.FC = () => {
           <Card>
             <Statistic
               title="异常率"
-              value={statistics?.basic?.anomalyRate ? statistics.basic.anomalyRate * 100 : 0}
+              value={getAnomalyRate()}
               precision={2}
               suffix="%"
               valueStyle={{ color: '#cf1322' }}
-              loading={!statistics}
+              loading={loading && !statistics}
             />
           </Card>
         </Col>
@@ -330,10 +522,10 @@ const EventsPage: React.FC = () => {
           <Card>
             <Statistic
               title="待处理告警"
-              value={statistics?.anomaly?.pendingAlerts || 0}
+              value={getStatisticValue(statistics?.anomaly?.pendingAlerts)}
               valueStyle={{ color: '#fa8c16' }}
               prefix={<InfoCircleOutlined />}
-              loading={!statistics}
+              loading={loading && !statistics}
             />
           </Card>
         </Col>
@@ -347,40 +539,50 @@ const EventsPage: React.FC = () => {
             <RangePicker
               value={[queryParams.startTime, queryParams.endTime]}
               onChange={(dates) => {
-                setQueryParams(prev => ({
-                  ...prev,
-                  startTime: dates?.[0],
-                  endTime: dates?.[1]
-                }));
+                if (dates && dates[0] && dates[1]) {
+                  setQueryParams(prev => ({
+                    ...prev,
+                    startTime: dates[0],
+                    endTime: dates[1]
+                  }));
+                }
               }}
               showTime
+              style={{ width: '100%' }}
             />
           </Col>
           <Col span={4}>
-            <Text strong>来源：</Text>
+            <Text strong>事件类型：</Text>
             <Select
-              placeholder="选择来源"
-              value={queryParams.source}
-              onChange={(value) => setQueryParams(prev => ({ ...prev, source: value }))}
+              placeholder="选择类型"
+              value={queryParams.eventType}
+              onChange={(value) => setQueryParams(prev => ({ ...prev, eventType: value }))}
               allowClear
+              style={{ width: '100%' }}
             >
-              <Option value="web-server">Web服务器</Option>
-              <Option value="database">数据库</Option>
-              <Option value="api-gateway">API网关</Option>
+              <Option value="AUTHENTICATION">认证事件</Option>
+              <Option value="ACCESS">访问事件</Option>
+              <Option value="SYSTEM">系统事件</Option>
+              <Option value="NETWORK">网络事件</Option>
+              <Option value="APPLICATION">应用事件</Option>
             </Select>
           </Col>
           <Col span={4}>
-            <Text strong>级别：</Text>
+            <Text strong>严重程度：</Text>
             <Select
               placeholder="选择级别"
-              value={queryParams.level}
-              onChange={(value) => setQueryParams(prev => ({ ...prev, level: value }))}
+              value={queryParams.severity}
+              onChange={(value) => setQueryParams(prev => ({ ...prev, severity: value }))}
               allowClear
+              style={{ width: '100%' }}
             >
-              <Option value="INFO">INFO</Option>
-              <Option value="WARN">WARN</Option>
-              <Option value="ERROR">ERROR</Option>
-              <Option value="DEBUG">DEBUG</Option>
+              <Option value="LOW">低</Option>
+              <Option value="MEDIUM">中</Option>
+              <Option value="HIGH">高</Option>
+              <Option value="CRITICAL">严重</Option>
+              <Option value="INFO">信息</Option>
+              <Option value="WARN">警告</Option>
+              <Option value="ERROR">错误</Option>
             </Select>
           </Col>
           <Col span={4}>
@@ -390,6 +592,7 @@ const EventsPage: React.FC = () => {
               value={queryParams.isAnomaly}
               onChange={(value) => setQueryParams(prev => ({ ...prev, isAnomaly: value }))}
               allowClear
+              style={{ width: '100%' }}
             >
               <Option value={true}>异常</Option>
               <Option value={false}>正常</Option>
@@ -402,6 +605,7 @@ const EventsPage: React.FC = () => {
                 value={queryParams.keyword}
                 onChange={(e) => setQueryParams(prev => ({ ...prev, keyword: e.target.value }))}
                 onPressEnter={handleSearch}
+                style={{ width: 200 }}
               />
               <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
                 搜索
@@ -421,9 +625,20 @@ const EventsPage: React.FC = () => {
             <div style={{ marginBottom: '16px' }}>
               <Space>
                 <Button icon={<DownloadOutlined />}>导出</Button>
-                <Button icon={<FilterOutlined />}>高级筛选</Button>
                 <Button icon={<ReloadOutlined />} onClick={() => fetchEvents()}>
                   刷新
+                </Button>
+                <Button 
+                  icon={<FilterOutlined />}
+                  onClick={triggerLogCollection}
+                >
+                  手动收集日志
+                </Button>
+                <Button 
+                  danger
+                  onClick={cleanupOldEvents}
+                >
+                  清理旧数据
                 </Button>
               </Space>
             </div>
@@ -442,14 +657,15 @@ const EventsPage: React.FC = () => {
               }}
               onChange={handleTableChange}
               scroll={{ x: 1200 }}
+              locale={{ emptyText: '暂无数据' }}
             />
           </TabPane>
           
           <TabPane tab="统计分析" key="statistics">
             <Row gutter={16}>
               <Col span={12}>
-                <Card title="来源统计" size="small" loading={!statistics}>
-                  <div style={{ height: '300px' }}>
+                <Card title="来源统计" size="small" loading={loading && !statistics}>
+                  <div style={{ height: '300px', overflowY: 'auto' }}>
                     {statistics?.sourceStatistics ? (
                       <div>
                         {Object.entries(statistics.sourceStatistics).map(([source, count]) => (
@@ -459,19 +675,32 @@ const EventsPage: React.FC = () => {
                         ))}
                       </div>
                     ) : (
-                      <div>暂无数据</div>
+                      <div style={{ 
+                        height: '100%', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        color: '#999'
+                      }}>
+                        暂无来源统计数据
+                      </div>
                     )}
                   </div>
                 </Card>
               </Col>
               <Col span={12}>
-                <Card title="级别统计" size="small" loading={!statistics}>
-                  <div style={{ height: '300px' }}>
+                <Card title="级别统计" size="small" loading={loading && !statistics}>
+                  <div style={{ height: '300px', overflowY: 'auto' }}>
                     {statistics?.levelStatistics ? (
                       <div>
                         {Object.entries(statistics.levelStatistics).map(([level, count]) => (
                           <div key={level} style={{ marginBottom: '8px' }}>
-                            <Tag color={level === 'ERROR' ? 'red' : level === 'WARN' ? 'orange' : 'blue'}>
+                            <Tag color={
+                              level === 'CRITICAL' ? 'purple' : 
+                              level === 'HIGH' ? 'red' : 
+                              level === 'MEDIUM' ? 'orange' : 
+                              level === 'LOW' ? 'green' : 'blue'
+                            }>
                               {level}
                             </Tag>
                             <Text strong>{count}</Text> 条
@@ -479,7 +708,15 @@ const EventsPage: React.FC = () => {
                         ))}
                       </div>
                     ) : (
-                      <div>暂无数据</div>
+                      <div style={{ 
+                        height: '100%', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        color: '#999'
+                      }}>
+                        暂无级别统计数据
+                      </div>
                     )}
                   </div>
                 </Card>
@@ -488,7 +725,7 @@ const EventsPage: React.FC = () => {
           </TabPane>
           
           <TabPane tab="趋势分析" key="trends">
-            <Card title="事件趋势" loading={!trends || trends.length === 0}>
+            <Card title="事件趋势" loading={loading && trends.length === 0}>
               <div style={{ height: '400px' }}>
                 {trends && trends.length > 0 ? (
                   <div>

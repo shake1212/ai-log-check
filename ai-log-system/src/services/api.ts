@@ -1,3 +1,4 @@
+// src/services/api.ts
 import request from '@/utils/request';
 import type { 
   LoginForm, 
@@ -9,7 +10,10 @@ import type {
   AiModel, 
   User,
   ApiResponse,
-  PageResponse 
+  PageResponse,
+  SecurityLog,
+  SecurityAlert,
+  Statistics
 } from '@/types';
 
 // API基础配置
@@ -41,7 +45,7 @@ export const authApi = {
     request(`${API_BASE_URL}/auth/me`),
 };
 
-// 日志相关API
+// 日志相关API - 保持原有功能，添加Windows日志功能
 export const logApi = {
   // 获取日志列表
   getLogs: (params?: LogQuery): Promise<ApiResponse<PageResponse<LogEntry>>> =>
@@ -79,9 +83,56 @@ export const logApi = {
       params,
       responseType: 'blob',
     }),
+
+  // ========== Windows安全日志新增API ==========
+  
+  // 获取Windows安全日志
+  getSecurityLogs: (params?: {
+    page?: number;
+    size?: number;
+    eventId?: number;
+    startTime?: string;
+    endTime?: string;
+  }): Promise<ApiResponse<PageResponse<SecurityLog>>> =>
+    request(`${API_BASE_URL}/logs/security`, {
+      params,
+    }),
+
+  // 获取最近的日志
+  getRecentLogs: (limit: number = 100): Promise<ApiResponse<SecurityLog[]>> =>
+    request(`${API_BASE_URL}/logs/recent`, {
+      params: { limit },
+    }),
+
+  // 按时间范围查询日志
+  getLogsByTimeRange: (start: string, end: string): Promise<ApiResponse<SecurityLog[]>> =>
+    request(`${API_BASE_URL}/logs/by-time-range`, {
+      params: { start, end },
+    }),
+
+  // 手动采集日志
+  collectLogs: (): Promise<ApiResponse<{ success: boolean; collected: number; message: string }>> =>
+    request(`${API_BASE_URL}/logs/collect`, {
+      method: 'POST',
+    }),
+
+  // 搜索日志
+  searchLogs: (params: {
+    eventId?: number;
+    ipAddress?: string;
+    userName?: string;
+    threatLevel?: string;
+  }): Promise<ApiResponse<SecurityLog[]>> =>
+    request(`${API_BASE_URL}/logs/search`, {
+      params,
+    }),
+
+  // 获取统计信息
+  getStatistics: (): Promise<ApiResponse<Statistics>> =>
+    request(`${API_BASE_URL}/logs/statistics`),
 };
 
-// 预警相关API
+// 预警相关API - 保持原有功能，添加安全警报功能
 export const alertApi = {
   // 获取预警列表
   getAlerts: (params?: AlertQuery): Promise<ApiResponse<PageResponse<Alert>>> =>
@@ -118,9 +169,95 @@ export const alertApi = {
     request(`${API_BASE_URL}/alerts/statistics`, {
       params,
     }),
+
+  // ========== 安全警报新增API ==========
+
+  // 获取未处理的安全警报
+  getUnhandledAlerts: (): Promise<ApiResponse<SecurityAlert[]>> =>
+    request(`${API_BASE_URL}/logs/alerts/unhandled`),
+
+  // 标记警报为已处理
+  handleAlert: (id: number): Promise<ApiResponse<void>> =>
+    request(`${API_BASE_URL}/logs/alerts/${id}/handle`, {
+      method: 'PUT',
+    }),
+
+  // 批量标记警报为已处理
+  batchHandleAlerts: (alertIds: number[]): Promise<ApiResponse<{ handledCount: number }>> =>
+    request(`${API_BASE_URL}/logs/alerts/batch/handle`, {
+      method: 'PUT',
+      data: { alertIds },
+    }),
+
+  // 获取警报详情
+  getSecurityAlertById: (id: number): Promise<ApiResponse<SecurityAlert>> =>
+    request(`${API_BASE_URL}/logs/alerts/${id}`),
+
+  // 搜索安全警报
+  searchSecurityAlerts: (params: {
+    keyword?: string;
+    level?: string;
+    alertType?: string;
+    handled?: boolean;
+    startTime?: string;
+    endTime?: string;
+    page?: number;
+    size?: number;
+  }): Promise<ApiResponse<PageResponse<SecurityAlert>>> =>
+    request(`${API_BASE_URL}/logs/alerts/search`, {
+      params,
+    }),
 };
 
-// AI模型相关API
+// WebSocket相关API - 新增
+export const websocketApi = {
+  // 获取WebSocket连接状态
+  getWebSocketStatus: (): Promise<ApiResponse<{
+    connectionCount: number;
+    onlineUserCount: number;
+    status: string;
+  }>> => request(`${API_BASE_URL}/websocket/status`),
+
+  // 广播消息
+  broadcastMessage: (data: {
+    content: string;
+    messageType: string;
+  }): Promise<ApiResponse<{ status: string; message: string; targetCount: number }>> =>
+    request(`${API_BASE_URL}/websocket/broadcast`, {
+      method: 'POST',
+      data,
+    }),
+
+  // 发送消息给指定用户
+  sendMessageToUser: (data: {
+    userId: string;
+    content: string;
+    messageType: string;
+  }): Promise<ApiResponse<{ status: string; message: string; targetUser: string }>> =>
+    request(`${API_BASE_URL}/websocket/send-to-user`, {
+      method: 'POST',
+      data,
+    }),
+
+  // 发送系统信息
+  sendSystemInfo: (content: string): Promise<ApiResponse<{ status: string; message: string; targetCount: number }>> =>
+    request(`${API_BASE_URL}/websocket/system-info`, {
+      method: 'POST',
+      data: { content },
+    }),
+
+  // 测试连接
+  testConnection: (): Promise<ApiResponse<{ status: string; message: string; connectionCount: number }>> =>
+    request(`${API_BASE_URL}/websocket/test-connection`, {
+      method: 'POST',
+    }),
+
+  // 获取消息类型
+  getMessageTypes: (): Promise<ApiResponse<{ messageTypes: Record<string, string>; totalCount: number }>> =>
+    request(`${API_BASE_URL}/websocket/message-types`),
+};
+
+// AI模型相关API - 保持原有功能
 export const modelApi = {
   // 获取模型列表
   getModels: (): Promise<ApiResponse<AiModel[]>> =>
@@ -169,7 +306,7 @@ export const modelApi = {
     request(`${API_BASE_URL}/models/${modelId}/training-records`),
 };
 
-// 系统相关API
+// 系统相关API - 保持原有功能
 export const systemApi = {
   // 获取系统状态
   getSystemStatus: (): Promise<ApiResponse<any>> =>
@@ -191,7 +328,7 @@ export const systemApi = {
     request(`${API_BASE_URL}/system/statistics`),
 };
 
-// 用户相关API
+// 用户相关API - 保持原有功能
 export const userApi = {
   // 获取用户列表
   getUsers: (params?: { page?: number; size?: number }): Promise<ApiResponse<PageResponse<User>>> =>
@@ -227,7 +364,7 @@ export const userApi = {
     }),
 };
 
-// 事件查询和统计API
+// 事件查询和统计API - 保持原有功能
 export const eventApi = {
   // 获取综合统计
   getComprehensiveStats: (): Promise<ApiResponse<any>> =>
@@ -292,7 +429,7 @@ export const eventApi = {
     }),
 };
 
-// 批量操作API
+// 批量操作API - 保持原有功能
 export const batchApi = {
   // 批量保存日志
   batchSave: (data: Partial<LogEntry>[]): Promise<ApiResponse<any>> =>
@@ -374,6 +511,7 @@ export const api = {
   auth: authApi,
   log: logApi,
   alert: alertApi,
+  websocket: websocketApi, // 新增WebSocket API
   model: modelApi,
   system: systemApi,
   user: userApi,

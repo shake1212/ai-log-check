@@ -58,12 +58,47 @@ export interface IncrementalData {
   checkpoint: LogCheckpoint;
 }
 
+// 浏览器环境兼容的 memoryUsage 函数
+const getMemoryUsage = (): any => {
+  if (typeof process !== 'undefined' && process.memoryUsage && typeof process.memoryUsage === 'function') {
+    return process.memoryUsage();
+  } else {
+    // 浏览器环境返回模拟数据
+    if (typeof window !== 'undefined' && (window as any).performance && (window as any).performance.memory) {
+      // 使用 Chrome 的 performance.memory
+      const mem = (window as any).performance.memory;
+      return {
+        rss: mem.usedJSHeapSize,
+        heapTotal: mem.totalJSHeapSize,
+        heapUsed: mem.usedJSHeapSize,
+        external: 0,
+        arrayBuffers: 0
+      };
+    } else {
+      // 其他浏览器返回默认值
+      return {
+        rss: 0,
+        heapTotal: 0,
+        heapUsed: 0,
+        external: 0,
+        arrayBuffers: 0
+      };
+    }
+  }
+};
+
+// 获取堆内存使用量（MB）
+const getHeapUsedMB = (): number => {
+  const memoryUsage = getMemoryUsage();
+  return memoryUsage.heapUsed / 1024 / 1024;
+};
+
 export class IncrementalLogCollector {
   private tasks: Map<string, CollectionTask> = new Map();
   private checkpoints: Map<string, LogCheckpoint> = new Map();
   private collectionHistory: CollectionResult[] = [];
   private isRunning: boolean = false;
-  private scheduler: NodeJS.Timeout | null = null;
+  private scheduler: any = null; // 改为 any 类型以兼容浏览器和 Node.js
   private memoryUsage: number = 0;
   private maxHistorySize: number = 1000;
 
@@ -129,7 +164,7 @@ export class IncrementalLogCollector {
    */
   private async executeCollectionTask(task: CollectionTask): Promise<CollectionResult> {
     const startTime = Date.now();
-    const startMemory = process.memoryUsage().heapUsed;
+    const startMemory = getHeapUsedMB(); // 使用兼容的内存获取方法
     const errors: string[] = [];
     
     let collectedCount = 0;
@@ -170,8 +205,8 @@ export class IncrementalLogCollector {
     }
 
     const processingTime = Date.now() - startTime;
-    const endMemory = process.memoryUsage().heapUsed;
-    const memoryUsage = (endMemory - startMemory) / 1024 / 1024; // MB
+    const endMemory = getHeapUsedMB(); // 使用兼容的内存获取方法
+    const memoryUsage = endMemory - startMemory; // MB
 
     return {
       taskId: task.id,
@@ -410,6 +445,7 @@ export class IncrementalLogCollector {
       clearInterval(this.scheduler);
     }
 
+    // 使用 window.setInterval 确保浏览器兼容性
     this.scheduler = setInterval(async () => {
       if (!this.isRunning) {
         await this.runScheduledTasks();

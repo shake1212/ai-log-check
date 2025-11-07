@@ -1,107 +1,97 @@
+// service/WebSocketService.java
 package com.security.ailogsystem.service;
 
+import com.security.ailogsystem.entity.SecurityLog;
+import com.security.ailogsystem.entity.SecurityAlert;
 import com.security.ailogsystem.websocket.WebSocketMessage;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * WebSocket服务接口
- * 提供WebSocket消息推送服务
- * 
- * @author AI Log System
- * @version 1.0
  */
 public interface WebSocketService {
-    
+
     /**
-     * 发送消息给指定用户
-     * 
-     * @param userId 用户ID
-     * @param message 消息内容
+     * 广播新日志
+     * @param logs 日志列表
      */
-    void sendMessageToUser(String userId, WebSocketMessage message);
-    
+    void broadcastNewLogs(List<SecurityLog> logs);
+
     /**
-     * 广播消息给所有连接的客户端
-     * 
-     * @param message 消息内容
+     * 发送单个日志
+     * @param log 安全日志
      */
-    void broadcastMessage(WebSocketMessage message);
-    
+    void sendLog(SecurityLog log);
+
     /**
-     * 广播消息给指定类型的用户
-     * 
-     * @param userType 用户类型
-     * @param message 消息内容
+     * 发送安全警报
+     * @param alert 安全警报
      */
-    void broadcastMessageToUsers(String userType, WebSocketMessage message);
-    
+    void sendSecurityAlert(SecurityAlert alert);
+
     /**
-     * 发送系统信息
-     * 
-     * @param content 信息内容
+     * 发送统计信息
+     * @param stats 统计信息
      */
-    void sendSystemInfo(String content);
-    
+    void sendStatistics(Map<String, Object> stats);
+
     /**
-     * 发送系统错误
-     * 
-     * @param content 错误内容
+     * 发送系统通知
+     * @param message 通知消息
+     * @param level 通知等级
      */
-    void sendSystemError(String content);
-    
+    void sendSystemNotification(String message, String level);
+
     /**
-     * 发送日志更新通知
-     * 
-     * @param data 日志数据
+     * 获取连接状态
+     * @return 连接状态信息
      */
-    void sendLogUpdate(Object data);
-    
+    Map<String, Object> getConnectionStatus();
+
     /**
-     * 发送异常日志通知
-     * 
-     * @param data 异常日志数据
+     * 断开指定连接
+     * @param sessionId 会话ID
      */
-    void sendLogAnomaly(Object data);
-    
+    void disconnectSession(String sessionId);
+
+    // 新增方法 - 修复缺失的方法
+
     /**
-     * 发送新预警通知
-     * 
-     * @param data 预警数据
-     */
-    void sendNewAlert(Object data);
-    
-    /**
-     * 发送预警更新通知
-     * 
-     * @param data 预警数据
-     */
-    void sendAlertUpdate(Object data);
-    
-    /**
-     * 发送预警解决通知
-     * 
-     * @param data 预警数据
-     */
-    void sendAlertResolved(Object data);
-    
-    /**
-     * 发送监控数据
-     * 
-     * @param monitorType 监控类型
-     * @param data 监控数据
-     */
-    void sendMonitorData(String monitorType, Object data);
-    
-    /**
-     * 获取当前连接数
-     * 
-     * @return 连接数
+     * 获取连接数
+     * @return 当前连接数
      */
     int getConnectionCount();
-    
+
     /**
      * 获取在线用户数
-     * 
      * @return 在线用户数
      */
     int getOnlineUserCount();
+
+    /**
+     * 广播消息
+     * @param message WebSocket消息
+     */
+    void broadcastMessage(WebSocketMessage message);
+
+    /**
+     * 发送消息给指定用户
+     * @param userId 用户ID
+     * @param message WebSocket消息
+     */
+    void sendMessageToUser(String userId, WebSocketMessage message);
+
+    /**
+     * 发送系统信息
+     * @param content 消息内容
+     */
+    void sendSystemInfo(String content);
+
+    /**
+     * 发送系统错误
+     * @param content 错误内容
+     */
+    void sendSystemError(String content);
 }

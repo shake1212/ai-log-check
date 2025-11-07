@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import '../styles/responsive.less';
 import { useNotification } from '../hooks/useNotification';
 import NotificationPanel from './NotificationPanel';
@@ -74,13 +74,59 @@ const EnhancedDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [notificationPanelVisible, setNotificationPanelVisible] = useState(false);
   
+  // 使用 ref 跟踪组件挂载状态
+  const isMounted = useRef(true);
+  
   // 通知系统
   const { addNotification, unreadCount } = useNotification();
 
-  // WebSocket连接
-  const { isConnected, sendMessage } = useWebSocket({
-    url: 'ws://localhost:8080/ws',
-    onMessage: (message) => {
+  // 生成模拟数据
+  const generateMockData = () => {
+    // 检查组件是否已卸载
+    if (!isMounted.current) return;
+    
+    const mockData: LogDataItem[] = [];
+    const now = new Date();
+    
+    for (let i = 0; i < 50; i++) {
+      const time = new Date(now.getTime() - (50 - i) * 30000);
+      mockData.push({
+        time: time.toISOString(),
+        value: Math.floor(Math.random() * 100),
+        type: Math.random() > 0.8 ? 'anomaly' : 'normal',
+        source: ['Web服务器', '数据库', '防火墙', '应用服务器'][Math.floor(Math.random() * 4)] || '未知来源',
+        level: Math.random() > 0.9 ? 'high' : Math.random() > 0.7 ? 'medium' : 'low',
+        description: Math.random() > 0.8 ? '检测到异常行为' : undefined
+      });
+    }
+    
+    // 检查组件是否已卸载
+    if (isMounted.current) {
+      setLogData(mockData);
+      setStats({
+        totalLogs: 1234,
+        anomalyCount: 5,
+        highRiskCount: 2,
+        systemHealth: 'healthy',
+        activeUsers: 45,
+        responseTime: 120,
+        throughput: 850
+      });
+      setLoading(false);
+    }
+  };
+
+  // WebSocket连接 - 使用 useRef 包装回调函数
+  const onMessageRef = useRef<(message: any) => void>();
+  const onErrorRef = useRef<() => void>();
+  const onOpenRef = useRef<() => void>();
+  const onCloseRef = useRef<() => void>();
+
+  // 初始化 ref
+  useEffect(() => {
+    onMessageRef.current = (message) => {
+      if (!isMounted.current) return;
+      
       if (message.type === 'log_data') {
         setLogData(prev => {
           const newData = [...prev, ...message.data];
@@ -101,8 +147,11 @@ const EnhancedDashboard: React.FC = () => {
       } else if (message.type === 'stats_update') {
         setStats(message.data);
       }
-    },
-    onError: () => {
+    };
+
+    onErrorRef.current = () => {
+      if (!isMounted.current) return;
+      
       addNotification(
         'error',
         'WebSocket连接失败',
@@ -111,66 +160,60 @@ const EnhancedDashboard: React.FC = () => {
       );
       // 使用模拟数据
       generateMockData();
-    },
-    onOpen: () => {
+    };
+
+    onOpenRef.current = () => {
+      if (!isMounted.current) return;
+      
       addNotification(
         'success',
         'WebSocket连接成功',
         '实时数据更新已启用'
       );
-    },
-    onClose: () => {
+    };
+
+    onCloseRef.current = () => {
+      if (!isMounted.current) return;
+      
       addNotification(
         'warning',
         'WebSocket连接断开',
         '正在尝试重新连接...'
       );
-    }
-  });
+    };
+  }, [addNotification]);
 
-  // 生成模拟数据
-  const generateMockData = () => {
-    const mockData: LogDataItem[] = [];
-    const now = new Date();
-    
-    for (let i = 0; i < 50; i++) {
-      const time = new Date(now.getTime() - (50 - i) * 30000);
-      mockData.push({
-        time: time.toISOString(),
-        value: Math.floor(Math.random() * 100),
-        type: Math.random() > 0.8 ? 'anomaly' : 'normal',
-        source: ['Web服务器', '数据库', '防火墙', '应用服务器'][Math.floor(Math.random() * 4)] || '未知来源',
-        level: Math.random() > 0.9 ? 'high' : Math.random() > 0.7 ? 'medium' : 'low',
-        description: Math.random() > 0.8 ? '检测到异常行为' : undefined
-      });
-    }
-    
-    setLogData(mockData);
-    setStats({
-      totalLogs: 1234,
-      anomalyCount: 5,
-      highRiskCount: 2,
-      systemHealth: 'healthy',
-      activeUsers: 45,
-      responseTime: 120,
-      throughput: 850
-    });
-    setLoading(false);
-  };
+  const { isConnected, sendMessage } = useWebSocket({
+    url: 'ws://localhost:8080/ws',
+    onMessage: (message) => onMessageRef.current?.(message),
+    onError: () => onErrorRef.current?.(),
+    onOpen: () => onOpenRef.current?.(),
+    onClose: () => onCloseRef.current?.(),
+  });
 
   // 初始化数据
   useEffect(() => {
+    isMounted.current = true;
+    
     const timer = setTimeout(() => {
       generateMockData();
     }, 1000);
-    return () => clearTimeout(timer);
+    
+    // 清理函数
+    return () => {
+      isMounted.current = false;
+      clearTimeout(timer);
+    };
   }, []);
 
   // 实时数据更新
   useEffect(() => {
-    if (isPaused) return;
+    if (isPaused || !isMounted.current) return;
 
     const interval = setInterval(() => {
+      // 检查组件是否已卸载
+      if (!isMounted.current) return;
+      
       const newLog: LogDataItem = {
         time: new Date().toISOString(),
         value: Math.floor(Math.random() * 100),
@@ -284,6 +327,11 @@ const EnhancedDashboard: React.FC = () => {
       </Menu.Item>
     </Menu>
   );
+
+  // 如果组件已卸载，不渲染任何内容
+  if (!isMounted.current) {
+    return null;
+  }
 
   if (loading) {
     return (

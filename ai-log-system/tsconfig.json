@@ -1,6 +1,7 @@
 {
   "extends": "./src/.umi/tsconfig.json",
   "compilerOptions": {
+    "jsx": "react",
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -27,7 +28,7 @@
   "include": [
     "src/**/*",
     "config/**/*"
-  ],
+, "src/pages/logs/Logs/.tsx"  ],
   "exclude": [
     "node_modules",
     "dist",

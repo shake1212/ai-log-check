@@ -24,16 +24,18 @@ import {
 import EnhancedDashboard from '../components/EnhancedDashboard';
 import WMIManagement from '../pages/wmi/index';
 import WMIManagementAdvanced from '../pages/wmi-management/index';
-import DatabaseManagement from '../pages/database/index';
+// import DatabaseManagement from '../pages/database/index';
 import DebugRoute from '../pages/debug-route';
 import EventsPage from '../pages/events/index';
 import BatchOperationsPage from '../pages/batch-operations/index';
+// 新增导入
+import LogsPage from '../pages/logs/logs';
+import AlertsPage from '../pages/alerts/alerts';
 // import { useModel } from '@/utils/useModel';
 // import styles from './index.less';
 
 const { Header, Content, Footer, Sider } = Layout;
 const { Title, Text } = Typography;
-
 
 export default function DefaultLayout() {
   const [collapsed, setCollapsed] = useState(false);
@@ -85,6 +87,11 @@ export default function DefaultLayout() {
       key: '/whitelist',
       icon: <CheckCircleOutlined />,
       label: '白名单管理',
+    },
+    {
+      key: '/logs',
+      icon: <FileTextOutlined />,
+      label: '日志查询',
     },
     {
       key: '/settings',
@@ -261,18 +268,14 @@ export default function DefaultLayout() {
               <p>实时监控功能正在开发中...</p>
             </div>
           )}
-          {currentPath === '/alerts' && (
-            <div style={{ padding: '20px' }}>
-              <h1>告警管理页面</h1>
-              <p>告警管理功能正在开发中...</p>
-            </div>
-          )}
+          {currentPath === '/alerts' && <AlertsPage />}
           {currentPath === '/whitelist' && (
             <div style={{ padding: '20px' }}>
               <h1>白名单管理页面</h1>
               <p>白名单管理功能正在开发中...</p>
             </div>
           )}
+          {currentPath === '/logs' && <LogsPage />}
           {currentPath === '/settings' && (
             <div style={{ padding: '20px' }}>
               <h1>系统设置页面</h1>

@@ -1,96 +1,138 @@
+// controller/LogController.java
 package com.security.ailogsystem.controller;
 
-import com.security.ailogsystem.dto.LogEntryDTO;
-import com.security.ailogsystem.service.LogService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import com.security.ailogsystem.entity.SecurityLog;
+import com.security.ailogsystem.entity.SecurityAlert;
+import com.security.ailogsystem.service.WindowsLogService;
+import com.security.ailogsystem.repository.SecurityLogRepository;
+import com.security.ailogsystem.repository.SecurityAlertRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import jakarta.validation.Valid;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/logs")
-@Tag(name = "日志管理", description = "日志收集、查询和分析接口")
+@RequestMapping("/api/logs")
+@CrossOrigin(origins = "*")
 public class LogController {
 
-    private final LogService logService;
+    @Autowired
+    private SecurityLogRepository logRepository;
 
     @Autowired
-    public LogController(LogService logService) {
-        this.logService = logService;
-    }
+    private SecurityAlertRepository alertRepository;
 
-    @PostMapping
-    @Operation(summary = "保存日志", description = "保存单条日志记录")
-    public ResponseEntity<LogEntryDTO> saveLog(@Valid @RequestBody LogEntryDTO logEntryDTO) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(logService.saveLog(logEntryDTO));
-    }
+    @Autowired
+    private WindowsLogService logService;
 
-    @GetMapping("/{id}")
-    @Operation(summary = "获取日志详情", description = "根据ID获取日志详情")
-    public ResponseEntity<LogEntryDTO> getLogById(@PathVariable String id) {
-        return ResponseEntity.ok(logService.getLogById(id));
-    }
-
-    @GetMapping
-    @Operation(summary = "获取所有日志", description = "分页获取所有日志")
-    public ResponseEntity<Page<LogEntryDTO>> getAllLogs(Pageable pageable) {
-        return ResponseEntity.ok(logService.getAllLogs(pageable));
-    }
-
-    @GetMapping("/anomalies")
-    @Operation(summary = "获取异常日志", description = "分页获取所有被标记为异常的日志")
-    public ResponseEntity<Page<LogEntryDTO>> getAnomalyLogs(Pageable pageable) {
-        return ResponseEntity.ok(logService.getAnomalyLogs(pageable));
-    }
-
-    @GetMapping("/search")
-    @Operation(summary = "搜索日志", description = "根据条件搜索日志")
-    public ResponseEntity<Page<LogEntryDTO>> searchLogs(
-            @Parameter(description = "日志来源") @RequestParam(required = false) String source,
-            @Parameter(description = "日志级别") @RequestParam(required = false) String level,
-            @Parameter(description = "开始时间") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
-            @Parameter(description = "结束时间") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
-            @Parameter(description = "关键字") @RequestParam(required = false) String keyword,
-            Pageable pageable) {
-        return ResponseEntity.ok(logService.searchLogs(source, level, startTime, endTime, keyword, pageable));
-    }
-
+    /**
+     * 获取最近的日志
+     */
     @GetMapping("/recent")
-    @Operation(summary = "获取最近日志", description = "获取最近的N条日志")
-    public ResponseEntity<List<LogEntryDTO>> getRecentLogs(
-            @Parameter(description = "数量限制") @RequestParam(defaultValue = "10") int limit) {
-        return ResponseEntity.ok(logService.getRecentLogs(limit));
+    public ResponseEntity<List<SecurityLog>> getRecentLogs(
+            @RequestParam(defaultValue = "100") int limit) {
+
+        List<SecurityLog> logs = logRepository.findAll(
+                PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "eventTime"))
+        ).getContent();
+
+        return ResponseEntity.ok(logs);
     }
 
+    /**
+     * 按时间范围查询日志
+     */
+    @GetMapping("/by-time-range")
+    public ResponseEntity<List<SecurityLog>> getLogsByTimeRange(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime end) {
+
+        List<SecurityLog> logs = logRepository.findLogsByTimeRange(start, end);
+        return ResponseEntity.ok(logs);
+    }
+
+    /**
+     * 获取未处理的警报
+     */
+    @GetMapping("/alerts/unhandled")
+    public ResponseEntity<List<SecurityAlert>> getUnhandledAlerts() {
+        List<SecurityAlert> alerts = alertRepository.findByHandledFalseOrderByCreatedTimeDesc();
+        return ResponseEntity.ok(alerts);
+    }
+
+    /**
+     * 标记警报为已处理
+     */
+    @PutMapping("/alerts/{id}/handle")
+    public ResponseEntity<Void> handleAlert(@PathVariable Long id) {
+        alertRepository.findById(id).ifPresent(alert -> {
+            alert.setHandled(true);
+            alertRepository.save(alert);
+        });
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * 手动触发日志采集
+     */
+    @PostMapping("/collect")
+    public ResponseEntity<Map<String, Object>> collectLogs() {
+        List<SecurityLog> logs = logService.collectSecurityLogs();
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("collected", logs.size());
+        response.put("message", "成功采集 " + logs.size() + " 条日志");
+
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 获取统计信息
+     */
     @GetMapping("/statistics")
-    @Operation(summary = "获取日志统计", description = "获取日志统计信息")
-    public ResponseEntity<Map<String, Long>> getLogStatistics() {
-        return ResponseEntity.ok(logService.getLogStatistics());
+    public ResponseEntity<Map<String, Object>> getStatistics() {
+        LocalDateTime last24Hours = LocalDateTime.now().minusHours(24);
+
+        List<Object[]> eventCounts = logRepository.countEventsByType(last24Hours);
+        List<Object[]> dailyCounts = logRepository.getDailyLogCounts(last24Hours);
+        List<Object[]> bruteForceAttempts = logRepository.findBruteForceAttempts(last24Hours, 5L);
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("eventCounts", eventCounts);
+        stats.put("dailyCounts", dailyCounts);
+        stats.put("bruteForceAttempts", bruteForceAttempts);
+        stats.put("totalAlerts", alertRepository.count());
+        stats.put("unhandledAlerts", alertRepository.findByHandledFalseOrderByCreatedTimeDesc().size());
+
+        return ResponseEntity.ok(stats);
     }
 
-    @DeleteMapping("/{id}")
-    @Operation(summary = "删除日志", description = "根据ID删除日志")
-    public ResponseEntity<Void> deleteLog(@PathVariable String id) {
-        logService.deleteLog(id);
-        return ResponseEntity.noContent().build();
-    }
+    /**
+     * 搜索日志
+     */
+    @GetMapping("/search")
+    public ResponseEntity<List<SecurityLog>> searchLogs(
+            @RequestParam(required = false) Integer eventId,
+            @RequestParam(required = false) String ipAddress,
+            @RequestParam(required = false) String userName,
+            @RequestParam(required = false) String threatLevel) {
 
-    @DeleteMapping
-    @Operation(summary = "批量删除日志", description = "删除指定日期之前的所有日志")
-    public ResponseEntity<Void> deleteLogsBefore(
-            @Parameter(description = "截止日期") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime date) {
-        logService.deleteLogsBefore(date);
-        return ResponseEntity.noContent().build();
+        // 这里可以实现更复杂的搜索逻辑
+        // 目前简化为按事件ID搜索
+        if (eventId != null) {
+            List<SecurityLog> logs = logRepository.findByEventIdAndEventTimeAfter(
+                    eventId, LocalDateTime.now().minusDays(1));
+            return ResponseEntity.ok(logs);
+        }
+
+        return ResponseEntity.ok(List.of());
     }
-} 
+}
