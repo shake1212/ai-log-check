@@ -9,81 +9,41 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 简单WMI服务接口
- * 轻量级实现，适合大创项目
- * 
- * @author AI Log System
- * @version 1.0
+ * 扩展的WMI服务接口
+ * 支持真实WMI数据采集
  */
 public interface SimpleWmiService {
-    
-    /**
-     * 保存WMI数据
-     */
+
+    // 原有的方法保持不变
     SimpleWmiData saveWmiData(SimpleWmiData wmiData);
-    
-    /**
-     * 批量保存WMI数据
-     */
     List<SimpleWmiData> saveWmiDataList(List<SimpleWmiData> wmiDataList);
-    
-    /**
-     * 根据ID查询
-     */
     SimpleWmiData getWmiDataById(Long id);
-    
-    /**
-     * 根据主机名查询
-     */
     List<SimpleWmiData> getWmiDataByHostname(String hostname);
-    
-    /**
-     * 根据IP地址查询
-     */
     List<SimpleWmiData> getWmiDataByIpAddress(String ipAddress);
-    
-    /**
-     * 根据数据类型查询
-     */
     List<SimpleWmiData> getWmiDataByType(SimpleWmiData.DataType dataType);
-    
-    /**
-     * 根据时间范围查询
-     */
     List<SimpleWmiData> getWmiDataByTimeRange(LocalDateTime startTime, LocalDateTime endTime);
-    
-    /**
-     * 分页查询
-     */
     Page<SimpleWmiData> getWmiDataPage(String hostname, Pageable pageable);
-    
-    /**
-     * 获取最新数据
-     */
     List<SimpleWmiData> getLatestWmiData(String hostname, SimpleWmiData.DataType dataType, int limit);
-    
-    /**
-     * 获取统计信息
-     */
     Map<String, Object> getWmiStatistics();
-    
-    /**
-     * 获取主机统计
-     */
     Map<String, Object> getHostStatistics(String hostname);
-    
-    /**
-     * 删除过期数据
-     */
     void deleteExpiredData(int days);
-    
-    /**
-     * 模拟采集WMI数据
-     */
     SimpleWmiData collectWmiData(String hostname, String ipAddress, SimpleWmiData.DataType dataType);
-    
-    /**
-     * 批量模拟采集
-     */
     List<SimpleWmiData> batchCollectWmiData(String hostname, String ipAddress);
+
+    // 新增方法 - 真实WMI查询
+    List<Map<String, Object>> executeRealWmiQuery(String hostname, String username, String password,
+                                                  String domain, String namespace, String query);
+
+    // 新增方法 - 测试WMI连接
+    boolean testWmiConnection(String hostname, String username, String password, String domain);
+
+    // 新增方法 - 获取WMI类列表
+    List<String> getAvailableWmiClasses(String hostname, String username, String password, String domain);
+
+    // 新增方法 - 获取WMI类属性
+    List<String> getWmiClassProperties(String hostname, String username, String password,
+                                       String domain, String wmiClass);
+
+    // 新增方法 - 获取系统性能指标
+    Map<String, Object> getSystemPerformanceMetrics(String hostname, String username, String password, String domain);
 }

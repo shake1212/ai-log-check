@@ -1,487 +1,324 @@
+// WMIManagement.tsx
 import React, { useState, useEffect } from 'react';
 import { 
   Card, 
+  Tabs, 
+  Typography, 
   Row, 
   Col, 
-  Typography, 
-  Button, 
-  Space, 
+  Statistic, 
   Alert, 
-  Progress, 
-  Tag, 
-  Table, 
-  Modal, 
-  Form, 
-  Input, 
-  Select, 
-  Switch,
-  Statistic,
-  Timeline,
-  Badge,
-  Tooltip,
+  Spin, 
+  Button, 
+  Space,
   message,
-  Tabs,
-  List,
-  Avatar,
-  Divider,
-  Descriptions
+  Modal,
+  Form,
+  Input,
+  Select,
+  Switch,
+  Tag
 } from 'antd';
 import {
   DatabaseOutlined,
   CloudServerOutlined,
-  SecurityScanOutlined,
   MonitorOutlined,
-  ApiOutlined,
   ThunderboltOutlined,
-  CheckCircleOutlined,
-  ExclamationCircleOutlined,
-  WarningOutlined,
-  InfoCircleOutlined,
-  PlayCircleOutlined,
-  PauseCircleOutlined,
   ReloadOutlined,
-  SettingOutlined,
+  PlusOutlined,
+  PlayCircleOutlined,
+  DeleteOutlined,
   EyeOutlined,
-  BugOutlined,
-  RocketOutlined,
-  LineChartOutlined,
-  BarChartOutlined,
-  PieChartOutlined,
-  RiseOutlined,
-  FallOutlined,
-  AlertOutlined
+  CheckCircleOutlined,
+  CloseCircleOutlined
 } from '@ant-design/icons';
-import { wmiService, WMIConnection, WMIQuery } from '../../services/WMIService';
-import { securityLogParser, SecurityEvent } from '../../services/SecurityLogParser';
-import { incrementalLogCollector, CollectionTask } from '../../services/IncrementalLogCollector';
-import { performanceMonitor, PerformanceMetrics, PerformanceAlert, OptimizationRecommendation } from '../../services/PerformanceMonitor';
-import { LogDataModelFactory } from '../../models/LogDataModel';
+import { 
+  wmiApiService, 
+  WmiStatistics, 
+  PerformanceMetrics, 
+  WMIConnection, 
+  WMIQuery,
+  WMIQueryResult,
+  WMIConnectionStatus 
+} from '../../services/WMIService';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Paragraph } = Typography;
 const { Option } = Select;
-const { TabPane } = Tabs;
 
-const WMIManagementPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('overview');
+const WMIManagement: React.FC = () => {
+  const [activeTab, setActiveTab] = useState('environment');
+  const [statistics, setStatistics] = useState<WmiStatistics | null>(null);
+  const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetrics | null>(null);
   const [connections, setConnections] = useState<WMIConnection[]>([]);
   const [queries, setQueries] = useState<WMIQuery[]>([]);
-  const [collectionTasks, setCollectionTasks] = useState<CollectionTask[]>([]);
-  const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetrics[]>([]);
-  const [alerts, setAlerts] = useState<PerformanceAlert[]>([]);
-  const [recommendations, setRecommendations] = useState<OptimizationRecommendation[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [queryResults, setQueryResults] = useState<WMIQueryResult[]>([]);
+  const [connectionStatuses, setConnectionStatuses] = useState<Map<string, WMIConnectionStatus>>(new Map());
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [connectionModalVisible, setConnectionModalVisible] = useState(false);
+  const [queryModalVisible, setQueryModalVisible] = useState(false);
+  const [resultsModalVisible, setResultsModalVisible] = useState(false);
+  const [selectedQuery, setSelectedQuery] = useState<WMIQuery | null>(null);
+  const [connectionForm] = Form.useForm();
+  const [queryForm] = Form.useForm();
 
-  useEffect(() => {
-    loadData();
-    startRealTimeUpdates();
-  }, []);
-
+  // 加载所有数据
   const loadData = async () => {
-    setIsLoading(true);
     try {
-      // 加载WMI连接
-      const wmiConnections = wmiService.getAllConnections();
-      setConnections(wmiConnections);
-
-      // 加载WMI查询
-      const wmiQueries = wmiService.getAllQueries();
-      setQueries(wmiQueries);
-
-      // 加载采集任务
-      const tasks = incrementalLogCollector.getAllTasks();
-      setCollectionTasks(tasks);
-
-      // 加载性能指标
-      const metrics = performanceMonitor.getMetrics(50);
+      setRefreshing(true);
+      const [stats, metrics, conns, qrs, results] = await Promise.all([
+        wmiApiService.getStatistics(),
+        wmiApiService.getPerformanceMetrics(),
+        wmiApiService.getAllConnections(),
+        wmiApiService.getAllQueries(),
+        wmiApiService.getQueryResults()
+      ]);
+      
+      setStatistics(stats);
       setPerformanceMetrics(metrics);
+      setConnections(conns);
+      setQueries(qrs);
+      setQueryResults(results);
 
-      // 加载告警
-      const performanceAlerts = performanceMonitor.getAlerts(false);
-      setAlerts(performanceAlerts);
-
-      // 加载优化建议
-      const optimizationRecs = performanceMonitor.getRecommendations(false);
-      setRecommendations(optimizationRecs);
+      // 加载连接状态
+      const statusMap = new Map<string, WMIConnectionStatus>();
+      for (const conn of conns) {
+        const status = await wmiApiService.getConnectionStatus(conn.id);
+        if (status) {
+          statusMap.set(conn.id, status);
+        }
+      }
+      setConnectionStatuses(statusMap);
 
     } catch (error) {
+      console.error('加载数据失败:', error);
       message.error('加载数据失败');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const startRealTimeUpdates = () => {
-    // 每5秒更新一次数据
-    const interval = setInterval(() => {
-      loadData();
-    }, 5000);
-
+  useEffect(() => {
+    loadData();
+    
+    // 每30秒自动刷新数据
+    const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
+  }, []);
+
+  // 处理添加连接
+  const handleAddConnection = async (values: any) => {
+    try {
+      const newConnection: WMIConnection = {
+        id: `conn-${Date.now()}`,
+        ...values,
+        port: values.port || 135,
+        timeout: values.timeout || 30000
+      };
+      const success = await wmiApiService.addConnection(newConnection);
+      if (success) {
+        message.success('添加连接成功');
+        setConnectionModalVisible(false);
+        connectionForm.resetFields();
+        await loadData();
+      } else {
+        message.error('添加连接失败');
+      }
+    } catch (error) {
+      message.error('添加连接失败');
+    }
   };
 
-  const handleTestConnection = async (connection: WMIConnection) => {
+  // 处理测试连接
+  const handleTestConnection = async (connectionId: string) => {
     try {
-      await wmiService.testConnection(connection.id);
-      message.success('连接测试成功');
-      loadData();
+      const status = await wmiApiService.testConnection(connectionId);
+      if (status.connected) {
+        message.success(`连接测试成功 - 响应时间: ${status.responseTime}ms`);
+      } else {
+        message.error(`连接测试失败: ${status.errorMessage}`);
+      }
+      await loadData();
     } catch (error) {
       message.error('连接测试失败');
     }
   };
 
-  const handleExecuteQuery = async (query: WMIQuery, connection: WMIConnection) => {
+  // 处理删除连接
+  const handleDeleteConnection = async (connectionId: string) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: '确定要删除这个连接吗？',
+      onOk: async () => {
+        try {
+          const success = await wmiApiService.deleteConnection(connectionId);
+          if (success) {
+            message.success('删除连接成功');
+            await loadData();
+          } else {
+            message.error('删除连接失败');
+          }
+        } catch (error) {
+          message.error('删除连接失败');
+        }
+      }
+    });
+  };
+
+  // 处理添加查询
+  const handleAddQuery = async (values: any) => {
     try {
-      const result = await wmiService.executeQuery(query.id, connection.id);
+      const newQuery: WMIQuery = {
+        id: `query-${Date.now()}`,
+        ...values,
+        enabled: true,
+        interval: values.interval || 60
+      };
+      await wmiApiService.addQuery(newQuery);
+      message.success('添加查询成功');
+      setQueryModalVisible(false);
+      queryForm.resetFields();
+      await loadData();
+    } catch (error) {
+      message.error('添加查询失败');
+    }
+  };
+
+  // 处理执行查询
+  const handleExecuteQuery = async (queryId: string) => {
+    if (connections.length === 0) {
+      message.warning('请先添加WMI连接');
+      return;
+    }
+    
+    try {
+      const connectionId = connections[0].id; // 使用第一个连接
+      const result = await wmiApiService.executeQuery(queryId, connectionId);
       message.success(`查询执行成功，返回 ${result.recordCount} 条记录`);
-      loadData();
+      await loadData();
     } catch (error) {
       message.error('查询执行失败');
     }
   };
 
-  const handleStartCollection = async (task: CollectionTask) => {
+  // 处理切换查询状态
+  const handleToggleQuery = async (queryId: string, enabled: boolean) => {
     try {
-      const success = await incrementalLogCollector.startCollectionTask(task.id);
-      if (success) {
-        message.success('采集任务启动成功');
-        loadData();
-      } else {
-        message.error('采集任务启动失败');
-      }
+      await wmiApiService.updateQuery(queryId, { enabled });
+      message.success(`${enabled ? '启用' : '禁用'}查询成功`);
+      await loadData();
     } catch (error) {
-      message.error('启动采集任务失败');
+      message.error('操作失败');
     }
   };
 
-  const handleApplyRecommendation = async (recommendation: OptimizationRecommendation) => {
-    try {
-      const success = await performanceMonitor.applyRecommendation(recommendation.id);
-      if (success) {
-        message.success('优化建议应用成功');
-        loadData();
-      } else {
-        message.error('应用优化建议失败');
+  // 处理删除查询
+  const handleDeleteQuery = async (queryId: string) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: '确定要删除这个查询吗？',
+      onOk: async () => {
+        try {
+          const success = await wmiApiService.deleteQuery(queryId);
+          if (success) {
+            message.success('删除查询成功');
+            await loadData();
+          } else {
+            message.error('删除查询失败');
+          }
+        } catch (error) {
+          message.error('删除查询失败');
+        }
       }
-    } catch (error) {
-      message.error('应用优化建议失败');
+    });
+  };
+
+  // 查看查询结果
+  const handleViewResults = (query: WMIQuery) => {
+    setSelectedQuery(query);
+    setResultsModalVisible(true);
+  };
+
+  // 获取系统状态提示
+  const getSystemStatus = () => {
+    if (!statistics) {
+      return { 
+        type: 'info' as const, 
+        message: '正在加载系统状态...',
+        description: '系统初始化中，请稍候...'
+      };
+    }
+
+    const { systemStatus, totalConnections, activeQueries } = statistics;
+
+    if (systemStatus === 'error' || totalConnections === 0) {
+      return {
+        type: 'error' as const,
+        message: '系统异常',
+        description: 'WMI连接异常，请检查连接配置和网络状态。'
+      };
+    } else if (systemStatus === 'warning' || activeQueries === 0) {
+      return {
+        type: 'warning' as const,
+        message: '系统警告',
+        description: '系统运行正常，但没有活跃的查询任务。建议配置数据采集任务。'
+      };
+    } else {
+      return {
+        type: 'success' as const,
+        message: '系统运行正常',
+        description: '所有WMI连接稳定，数据采集任务正常运行。'
+      };
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'running': return 'success';
-      case 'stopped': return 'default';
-      case 'error': return 'error';
-      case 'warning': return 'warning';
-      default: return 'default';
+  // 获取连接状态标签
+  const getConnectionStatusTag = (connectionId: string) => {
+    const status = connectionStatuses.get(connectionId);
+    if (!status) {
+      return <Tag color="default">未知</Tag>;
     }
+    return status.connected ? (
+      <Tag color="green" icon={<CheckCircleOutlined />}>
+        已连接 {status.responseTime && `(${status.responseTime}ms)`}
+      </Tag>
+    ) : (
+      <Tag color="red" icon={<CloseCircleOutlined />}>
+        未连接
+      </Tag>
+    );
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (severity) {
-      case 'low': return 'green';
-      case 'medium': return 'orange';
-      case 'high': return 'red';
-      case 'critical': return 'purple';
-      default: return 'default';
-    }
-  };
+  const statusInfo = getSystemStatus();
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high': return 'red';
-      case 'medium': return 'orange';
-      case 'low': return 'green';
-      default: return 'default';
-    }
-  };
-
-  const connectionColumns = [
-    {
-      title: '连接名称',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text: string, record: WMIConnection) => (
-        <Space>
-          <DatabaseOutlined />
-          <Text strong>{text}</Text>
-        </Space>
-      ),
-    },
-    {
-      title: '主机地址',
-      dataIndex: 'host',
-      key: 'host',
-      render: (text: string) => <Text code>{text}</Text>,
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => (
-        <Tag color={getStatusColor(status)}>
-          {status === 'connected' ? '已连接' : 
-           status === 'connecting' ? '连接中' : 
-           status === 'disconnected' ? '未连接' : '错误'}
-        </Tag>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (record: WMIConnection) => (
-        <Space>
-          <Button 
-            type="link" 
-            size="small" 
-            icon={<PlayCircleOutlined />}
-            onClick={() => handleTestConnection(record)}
-          >
-            测试连接
-          </Button>
-        </Space>
-      ),
-    },
-  ];
-
-  const queryColumns = [
-    {
-      title: '查询名称',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text: string, record: WMIQuery) => (
-        <Space>
-          <MonitorOutlined />
-          <div>
-            <Text strong>{text}</Text>
-            <br />
-            <Text type="secondary" style={{ fontSize: '12px' }}>{record.description}</Text>
-          </div>
-        </Space>
-      ),
-    },
-    {
-      title: '命名空间',
-      dataIndex: 'namespace',
-      key: 'namespace',
-      render: (text: string) => <Text code style={{ fontSize: '12px' }}>{text}</Text>,
-    },
-    {
-      title: '状态',
-      dataIndex: 'enabled',
-      key: 'enabled',
-      render: (enabled: boolean) => (
-        <Tag color={enabled ? 'success' : 'default'}>
-          {enabled ? '运行中' : '已停止'}
-        </Tag>
-      ),
-    },
-    {
-      title: '结果数量',
-      dataIndex: 'resultCount',
-      key: 'resultCount',
-      render: (count: number) => (
-        <Badge count={count} style={{ backgroundColor: '#52c41a' }} />
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (record: WMIQuery) => (
-        <Space>
-          {connections.map(conn => (
-            <Button 
-              key={conn.id}
-              type="link" 
-              size="small" 
-              icon={<ReloadOutlined />}
-              onClick={() => handleExecuteQuery(record, conn)}
-            >
-              在 {conn.name} 执行
-            </Button>
-          ))}
-        </Space>
-      ),
-    },
-  ];
-
-  const taskColumns = [
-    {
-      title: '任务名称',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text: string, record: CollectionTask) => (
-        <Space>
-          <ThunderboltOutlined />
-          <Text strong>{text}</Text>
-        </Space>
-      ),
-    },
-    {
-      title: '数据源',
-      dataIndex: 'sourceId',
-      key: 'sourceId',
-      render: (text: string) => <Text code>{text}</Text>,
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => (
-        <Tag color={getStatusColor(status)}>
-          {status === 'running' ? '运行中' :
-           status === 'paused' ? '已暂停' :
-           status === 'error' ? '错误' : '空闲'}
-        </Tag>
-      ),
-    },
-    {
-      title: '总采集量',
-      dataIndex: 'totalCollected',
-      key: 'totalCollected',
-      render: (count: number) => <Badge count={count} style={{ backgroundColor: '#1890ff' }} />,
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (record: CollectionTask) => (
-        <Space>
-          <Button 
-            type="link" 
-            size="small" 
-            icon={<PlayCircleOutlined />}
-            onClick={() => handleStartCollection(record)}
-          >
-            启动
-          </Button>
-        </Space>
-      ),
-    },
-  ];
-
-  const alertColumns = [
-    {
-      title: '告警类型',
-      dataIndex: 'type',
-      key: 'type',
-      render: (type: string, record: PerformanceAlert) => (
-        <Space>
-          <Tag color={getSeverityColor(record.type)}>
-            {type === 'critical' ? '严重' :
-             type === 'warning' ? '警告' : '信息'}
-          </Tag>
-          <Text strong>{record.title}</Text>
-        </Space>
-      ),
-    },
-    {
-      title: '类别',
-      dataIndex: 'category',
-      key: 'category',
-      render: (category: string) => (
-        <Tag color="blue">{category}</Tag>
-      ),
-    },
-    {
-      title: '消息',
-      dataIndex: 'message',
-      key: 'message',
-      render: (message: string) => (
-        <Text>{message}</Text>
-      ),
-    },
-    {
-      title: '时间',
-      dataIndex: 'timestamp',
-      key: 'timestamp',
-      render: (timestamp: string) => (
-        <Text type="secondary">{new Date(timestamp).toLocaleString()}</Text>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (record: PerformanceAlert) => (
-        <Space>
-          <Button 
-            type="link" 
-            size="small" 
-            onClick={() => performanceMonitor.acknowledgeAlert(record.id)}
-          >
-            确认
-          </Button>
-          <Button 
-            type="link" 
-            size="small" 
-            onClick={() => performanceMonitor.resolveAlert(record.id)}
-          >
-            解决
-          </Button>
-        </Space>
-      ),
-    },
-  ];
-
-  const recommendationColumns = [
-    {
-      title: '建议',
-      dataIndex: 'title',
-      key: 'title',
-      render: (title: string, record: OptimizationRecommendation) => (
-        <Space direction="vertical" size="small">
-          <Space>
-            <Tag color={getPriorityColor(record.priority)}>
-              {record.priority === 'high' ? '高' :
-               record.priority === 'medium' ? '中' : '低'}优先级
-            </Tag>
-            <Text strong>{title}</Text>
-          </Space>
-          <Text type="secondary">{record.description}</Text>
-        </Space>
-      ),
-    },
-    {
-      title: '类别',
-      dataIndex: 'category',
-      key: 'category',
-      render: (category: string) => (
-        <Tag color="blue">{category}</Tag>
-      ),
-    },
-    {
-      title: '预期改善',
-      dataIndex: 'estimatedImprovement',
-      key: 'estimatedImprovement',
-      render: (improvement: number) => (
-        <Text type="success">+{improvement}%</Text>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (record: OptimizationRecommendation) => (
-        <Button 
-          type="primary" 
-          size="small"
-          onClick={() => handleApplyRecommendation(record)}
-        >
-          应用
-        </Button>
-      ),
-    },
-  ];
-
-  const latestMetrics = performanceMetrics[performanceMetrics.length - 1];
+  if (loading) {
+    return (
+      <div style={{ padding: '20px', textAlign: 'center' }}>
+        <Spin size="large" tip="加载WMI系统数据..." />
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: '20px' }}>
       <div style={{ marginBottom: '24px' }}>
         <Title level={2}>
           <DatabaseOutlined style={{ marginRight: '8px' }} />
-          WMI系统管理
+          WMI管理系统
+          <Button 
+            type="link" 
+            icon={<ReloadOutlined />} 
+            loading={refreshing}
+            onClick={loadData}
+            style={{ marginLeft: '16px' }}
+          >
+            刷新
+          </Button>
         </Title>
         <Paragraph>
-          综合管理WMI连接、查询执行、增量采集和性能监控的完整解决方案。
+          Windows Management Instrumentation (WMI) 是一个用于管理Windows系统的核心接口。
+          通过WMI可以监控系统性能、收集日志数据、管理服务等。
         </Paragraph>
       </div>
 
@@ -490,10 +327,24 @@ const WMIManagementPage: React.FC = () => {
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="WMI连接"
-              value={connections.length}
+              title="WMI连接数"
+              value={statistics?.totalConnections || 0}
+              prefix={<CloudServerOutlined />}
+              valueStyle={{ 
+                color: (statistics?.totalConnections || 0) > 0 ? '#1890ff' : '#d9d9d9' 
+              }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <Card>
+            <Statistic
+              title="数据源数量"
+              value={statistics?.totalDataSources || 0}
               prefix={<DatabaseOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ 
+                color: (statistics?.totalDataSources || 0) > 0 ? '#52c41a' : '#d9d9d9' 
+              }}
             />
           </Card>
         </Col>
@@ -501,227 +352,593 @@ const WMIManagementPage: React.FC = () => {
           <Card>
             <Statistic
               title="活跃查询"
-              value={queries.filter(q => q.enabled).length}
+              value={statistics?.activeQueries || 0}
               prefix={<MonitorOutlined />}
-              valueStyle={{ color: '#52c41a' }}
+              valueStyle={{ 
+                color: (statistics?.activeQueries || 0) > 0 ? '#faad14' : '#d9d9d9' 
+              }}
             />
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="采集任务"
-              value={collectionTasks.filter(t => t.status === 'running').length}
+              title="数据点总数"
+              value={statistics?.totalDataPoints || 0}
               prefix={<ThunderboltOutlined />}
-              valueStyle={{ color: '#faad14' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="活跃告警"
-              value={alerts.filter(a => !a.resolved).length}
-              prefix={<AlertOutlined />}
-              valueStyle={{ color: '#f5222d' }}
+              valueStyle={{ 
+                color: (statistics?.totalDataPoints || 0) > 0 ? '#722ed1' : '#d9d9d9' 
+              }}
             />
           </Card>
         </Col>
       </Row>
 
-      {/* 性能指标卡片 */}
-      {latestMetrics && (
-        <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-          <Col xs={24} sm={12} md={6}>
-            <Card>
-              <Statistic
-                title="采集速率"
-                value={latestMetrics.collectionRate.toFixed(1)}
-                suffix="条/秒"
-                prefix={<LineChartOutlined />}
-                valueStyle={{ color: '#1890ff' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card>
-              <Statistic
-                title="处理速率"
-                value={latestMetrics.processingRate.toFixed(1)}
-                suffix="条/秒"
-                prefix={<BarChartOutlined />}
-                valueStyle={{ color: '#52c41a' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card>
-              <Statistic
-                title="CPU使用率"
-                value={latestMetrics.cpuUsage.toFixed(1)}
-                suffix="%"
-                  prefix={<RiseOutlined />}
-                valueStyle={{ color: latestMetrics.cpuUsage > 80 ? '#f5222d' : '#faad14' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Card>
-              <Statistic
-                title="内存使用"
-                value={latestMetrics.memoryUsage.toFixed(0)}
-                suffix="MB"
-                prefix={<PieChartOutlined />}
-                valueStyle={{ color: latestMetrics.memoryUsage > 1500 ? '#f5222d' : '#52c41a' }}
-              />
-            </Card>
-          </Col>
-        </Row>
-      )}
+      {/* 性能指标 */}
+     {performanceMetrics && (
+  <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+    <Col xs={24} sm={12} md={6}>
+      <Card size="small">
+        <Statistic
+          title="活跃连接"
+          value={performanceMetrics.activeConnections}
+          valueStyle={{ color: '#1890ff' }}
+        />
+      </Card>
+    </Col>
+    <Col xs={24} sm={12} md={6}>
+      <Card size="small">
+        <Statistic
+          title="CPU使用率"
+          value={Number(performanceMetrics.cpuUsage || 0).toFixed(1)}
+          suffix="%"
+          valueStyle={{ 
+            color: Number(performanceMetrics.cpuUsage || 0) > 80 ? '#f5222d' : '#52c41a' 
+          }}
+        />
+      </Card>
+    </Col>
+    <Col xs={24} sm={12} md={6}>
+      <Card size="small">
+        <Statistic
+          title="内存使用"
+          value={Number(performanceMetrics.memoryUsage || 0).toFixed(0)}
+          suffix="MB"
+          valueStyle={{ 
+            color: Number(performanceMetrics.memoryUsage || 0) > 400 ? '#f5222d' : '#faad14' 
+          }}
+        />
+      </Card>
+    </Col>
+    <Col xs={24} sm={12} md={6}>
+      <Card size="small">
+        <Statistic
+          title="采集速率"
+          value={Number(performanceMetrics.collectionRate || 0).toFixed(1)}
+          suffix="条/小时"
+          valueStyle={{ color: '#722ed1' }}
+        />
+      </Card>
+    </Col>
+  </Row>
+)}
+
+      {/* 系统状态提示 */}
+      <Alert
+        message={statusInfo.message}
+        description={statusInfo.description}
+        type={statusInfo.type}
+        showIcon
+        style={{ marginBottom: '24px' }}
+        action={
+          <Space>
+            <Button 
+              size="small" 
+              type="primary" 
+              icon={<PlusOutlined />}
+              onClick={() => setConnectionModalVisible(true)}
+            >
+              添加连接
+            </Button>
+            <Button 
+              size="small" 
+              icon={<ReloadOutlined />}
+              onClick={loadData}
+            >
+              刷新状态
+            </Button>
+          </Space>
+        }
+      />
 
       {/* 功能模块 */}
       <Card>
         <Tabs activeKey={activeTab} onChange={setActiveTab}>
-          <TabPane tab="系统概览" key="overview">
-            <Row gutter={[16, 16]}>
-              <Col xs={24} lg={12}>
-                <Card title="系统状态" size="small">
-                  <Space direction="vertical" style={{ width: '100%' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text>WMI服务状态</Text>
-                      <Tag color="success">正常</Tag>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text>数据采集状态</Text>
-                      <Tag color="success">运行中</Tag>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text>存储服务状态</Text>
-                      <Tag color="success">正常</Tag>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text>分析引擎状态</Text>
-                      <Tag color="warning">部分运行</Tag>
-                    </div>
-                  </Space>
-                </Card>
-              </Col>
-              <Col xs={24} lg={12}>
-                <Card title="最近活动" size="small">
-                  <Timeline>
-                    <Timeline.Item color="green">
-                      <Text>WMI连接测试成功</Text>
-                      <br />
-                      <Text type="secondary" style={{ fontSize: '12px' }}>2分钟前</Text>
-                    </Timeline.Item>
-                    <Timeline.Item color="blue">
-                      <Text>数据采集任务完成</Text>
-                      <br />
-                      <Text type="secondary" style={{ fontSize: '12px' }}>5分钟前</Text>
-                    </Timeline.Item>
-                    <Timeline.Item color="orange">
-                      <Text>性能优化建议生成</Text>
-                      <br />
-                      <Text type="secondary" style={{ fontSize: '12px' }}>10分钟前</Text>
-                    </Timeline.Item>
-                  </Timeline>
-                </Card>
-              </Col>
-            </Row>
-          </TabPane>
-
-          <TabPane tab="连接管理" key="connections">
+          <Tabs.TabPane tab="环境配置" key="environment">
+            {/* 连接管理 */}
             <Card 
-              title="WMI连接" 
+              title="WMI连接管理" 
               extra={
-                <Button type="primary" icon={<SettingOutlined />}>
+                <Button 
+                  type="primary" 
+                  icon={<PlusOutlined />}
+                  onClick={() => setConnectionModalVisible(true)}
+                >
                   添加连接
                 </Button>
               }
+              style={{ marginBottom: 16 }}
             >
-              <Table
-                columns={connectionColumns}
-                dataSource={connections}
-                rowKey="id"
-                pagination={{ pageSize: 10 }}
-                size="small"
-                loading={isLoading}
-              />
+              {connections.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                  <DatabaseOutlined style={{ fontSize: '48px', marginBottom: '16px' }} />
+                  <div>暂无WMI连接</div>
+                  <Button 
+                    type="primary" 
+                    style={{ marginTop: '16px' }}
+                    onClick={() => setConnectionModalVisible(true)}
+                  >
+                    添加第一个连接
+                  </Button>
+                </div>
+              ) : (
+                <Row gutter={[16, 16]}>
+                  {connections.map(connection => (
+                    <Col xs={24} sm={12} md={8} key={connection.id}>
+                      <Card 
+                        size="small" 
+                        title={
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>{connection.name}</span>
+                            {getConnectionStatusTag(connection.id)}
+                          </div>
+                        }
+                        extra={
+                          <Space>
+                            <Button 
+                              size="small" 
+                              type="link"
+                              onClick={() => handleTestConnection(connection.id)}
+                            >
+                              测试
+                            </Button>
+                            <Button 
+                              size="small" 
+                              danger 
+                              type="link"
+                              icon={<DeleteOutlined />}
+                              onClick={() => handleDeleteConnection(connection.id)}
+                            />
+                          </Space>
+                        }
+                      >
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>主机:</strong> {connection.host}:{connection.port || 135}
+                        </div>
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>用户:</strong> {connection.username}
+                        </div>
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>域:</strong> {connection.domain || 'WORKGROUP'}
+                        </div>
+                        {connectionStatuses.get(connection.id)?.lastConnected && (
+                          <div style={{ fontSize: '12px', color: '#999' }}>
+                            最后连接: {new Date(connectionStatuses.get(connection.id)!.lastConnected!).toLocaleString()}
+                          </div>
+                        )}
+                      </Card>
+                    </Col>
+                  ))}
+                </Row>
+              )}
             </Card>
-          </TabPane>
 
-          <TabPane tab="查询管理" key="queries">
+            {/* 查询管理 */}
             <Card 
-              title="WMI查询" 
+              title="WMI查询管理" 
               extra={
-                <Button type="primary" icon={<ApiOutlined />}>
+                <Button 
+                  type="primary" 
+                  icon={<PlusOutlined />}
+                  onClick={() => setQueryModalVisible(true)}
+                >
                   添加查询
                 </Button>
               }
             >
-              <Table
-                columns={queryColumns}
-                dataSource={queries}
-                rowKey="id"
-                pagination={{ pageSize: 10 }}
-                size="small"
-                loading={isLoading}
-              />
+              {queries.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                  <MonitorOutlined style={{ fontSize: '48px', marginBottom: '16px' }} />
+                  <div>暂无WMI查询</div>
+                  <Button 
+                    type="primary" 
+                    style={{ marginTop: '16px' }}
+                    onClick={() => setQueryModalVisible(true)}
+                  >
+                    添加第一个查询
+                  </Button>
+                </div>
+              ) : (
+                <Row gutter={[16, 16]}>
+                  {queries.map(query => (
+                    <Col xs={24} sm={12} md={8} key={query.id}>
+                      <Card 
+                        size="small" 
+                        title={query.name}
+                        extra={
+                          <Space>
+                            <Switch
+                              size="small"
+                              checked={query.enabled}
+                              onChange={(checked) => handleToggleQuery(query.id, checked)}
+                            />
+                            <Button 
+                              size="small" 
+                              type="link"
+                              icon={<EyeOutlined />}
+                              onClick={() => handleViewResults(query)}
+                            />
+                            <Button 
+                              size="small" 
+                              type="link"
+                              onClick={() => handleExecuteQuery(query.id)}
+                            >
+                              执行
+                            </Button>
+                            <Button 
+                              size="small" 
+                              danger 
+                              type="link"
+                              icon={<DeleteOutlined />}
+                              onClick={() => handleDeleteQuery(query.id)}
+                            />
+                          </Space>
+                        }
+                      >
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>命名空间:</strong> {query.namespace}
+                        </div>
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>描述:</strong> {query.description}
+                        </div>
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>间隔:</strong> {query.interval}秒
+                        </div>
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>状态:</strong> 
+                          <Tag 
+                            color={query.enabled ? 'green' : 'red'} 
+                            style={{ marginLeft: 8 }}
+                          >
+                            {query.enabled ? '运行中' : '已停止'}
+                          </Tag>
+                        </div>
+                        {query.lastRun && (
+                          <div style={{ fontSize: '12px', color: '#999' }}>
+                            最后执行: {new Date(query.lastRun).toLocaleString()}
+                          </div>
+                        )}
+                        {query.resultCount !== undefined && (
+                          <div style={{ fontSize: '12px', color: '#999' }}>
+                            结果数量: {query.resultCount}
+                          </div>
+                        )}
+                      </Card>
+                    </Col>
+                  ))}
+                </Row>
+              )}
             </Card>
-          </TabPane>
+          </Tabs.TabPane>
 
-          <TabPane tab="采集任务" key="collection">
-            <Card 
-              title="增量采集任务" 
-              extra={
-                <Button type="primary" icon={<ThunderboltOutlined />}>
-                  添加任务
-                </Button>
-              }
-            >
-              <Table
-                columns={taskColumns}
-                dataSource={collectionTasks}
-                rowKey="id"
-                pagination={{ pageSize: 10 }}
-                size="small"
-                loading={isLoading}
-              />
+          <Tabs.TabPane tab="数据流管理" key="dataflow">
+            <Card title="数据采集统计">
+              <Row gutter={[16, 16]}>
+                <Col span={24}>
+                  <Card type="inner" title="最近查询结果">
+                    {queryResults.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                        <ThunderboltOutlined style={{ fontSize: '48px', marginBottom: '16px' }} />
+                        <div>暂无查询结果</div>
+                        <div style={{ fontSize: '12px', marginTop: '8px' }}>
+                          请先执行WMI查询来查看结果
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+                        {queryResults.slice(-10).reverse().map(result => {
+                          const query = queries.find(q => q.id === result.queryId);
+                          return (
+                            <Card 
+                              key={result.id} 
+                              size="small" 
+                              style={{ marginBottom: 8 }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <div>
+                                  <strong>{query?.name || '未知查询'}</strong>
+                                  <div style={{ fontSize: '12px', color: '#666' }}>
+                                    {new Date(result.timestamp).toLocaleString()}
+                                  </div>
+                                </div>
+                                <div>
+                                  <span style={{ 
+                                    color: result.error ? '#f5222d' : '#52c41a'
+                                  }}>
+                                    {result.error ? '失败' : `成功 (${result.recordCount}条)`}
+                                  </span>
+                                  <div style={{ fontSize: '12px', color: '#666', textAlign: 'right' }}>
+                                    {result.executionTime}ms
+                                  </div>
+                                </div>
+                              </div>
+                              {result.error && (
+                                <div style={{ color: '#f5222d', fontSize: '12px', marginTop: 8 }}>
+                                  {result.error}
+                                </div>
+                              )}
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Card>
+                </Col>
+              </Row>
             </Card>
-          </TabPane>
+          </Tabs.TabPane>
 
-          <TabPane tab="性能监控" key="performance">
-            <Row gutter={[16, 16]}>
-              <Col xs={24} lg={12}>
-                <Card title="性能告警" size="small">
-                  <Table
-                    columns={alertColumns}
-                    dataSource={alerts}
-                    rowKey="id"
-                    pagination={{ pageSize: 5 }}
-                    size="small"
-                    scroll={{ y: 300 }}
+          <Tabs.TabPane tab="连接测试" key="test">
+            <Card title="连接测试工具">
+              <Row gutter={[16, 16]}>
+                <Col span={24}>
+                  <Alert
+                    message="连接测试说明"
+                    description="选择要测试的WMI连接，系统将验证连接状态和权限。"
+                    type="info"
+                    style={{ marginBottom: 16 }}
                   />
-                </Card>
-              </Col>
-              <Col xs={24} lg={12}>
-                <Card title="优化建议" size="small">
-                  <Table
-                    columns={recommendationColumns}
-                    dataSource={recommendations}
-                    rowKey="id"
-                    pagination={{ pageSize: 5 }}
-                    size="small"
-                    scroll={{ y: 300 }}
-                  />
-                </Card>
-              </Col>
-            </Row>
-          </TabPane>
+                </Col>
+                {connections.length === 0 ? (
+                  <Col span={24}>
+                    <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                      <CloudServerOutlined style={{ fontSize: '48px', marginBottom: '16px' }} />
+                      <div>暂无WMI连接</div>
+                      <Button 
+                        type="primary" 
+                        style={{ marginTop: '16px' }}
+                        onClick={() => setConnectionModalVisible(true)}
+                      >
+                        添加连接进行测试
+                      </Button>
+                    </div>
+                  </Col>
+                ) : (
+                  connections.map(connection => {
+                    const status = connectionStatuses.get(connection.id);
+                    return (
+                      <Col xs={24} sm={12} key={connection.id}>
+                        <Card 
+                          title={connection.name}
+                          extra={
+                            <Button 
+                              type="primary"
+                              onClick={() => handleTestConnection(connection.id)}
+                              loading={refreshing}
+                            >
+                              测试连接
+                            </Button>
+                          }
+                        >
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>连接信息:</strong> {connection.host}:{connection.port || 135}
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>用户名:</strong> {connection.username}
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <strong>域:</strong> {connection.domain || 'WORKGROUP'}
+                          </div>
+                          <div>
+                            <strong>测试结果:</strong>
+                            {status ? (
+                              <div style={{ marginTop: 8 }}>
+                                <Tag color={status.connected ? 'green' : 'red'}>
+                                  {status.connected ? '连接成功' : '连接失败'}
+                                </Tag>
+                                {status.connected && status.responseTime && (
+                                  <div style={{ marginTop: 4, fontSize: '12px', color: '#666' }}>
+                                    响应时间: {status.responseTime}ms
+                                  </div>
+                                )}
+                                {status.errorMessage && (
+                                  <div style={{ marginTop: 4, color: '#f5222d', fontSize: '12px' }}>
+                                    错误信息: {status.errorMessage}
+                                  </div>
+                                )}
+                                {status.lastConnected && (
+                                  <div style={{ marginTop: 4, fontSize: '12px', color: '#999' }}>
+                                    最后连接: {new Date(status.lastConnected).toLocaleString()}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span style={{ color: '#999', marginLeft: 8 }}>
+                                未测试
+                              </span>
+                            )}
+                          </div>
+                        </Card>
+                      </Col>
+                    );
+                  })
+                )}
+              </Row>
+            </Card>
+          </Tabs.TabPane>
         </Tabs>
       </Card>
+
+      {/* 添加连接模态框 */}
+      <Modal
+        title="添加WMI连接"
+        open={connectionModalVisible}
+        onCancel={() => setConnectionModalVisible(false)}
+        onOk={() => connectionForm.submit()}
+        width={600}
+      >
+        <Form 
+          form={connectionForm} 
+          layout="vertical" 
+          onFinish={handleAddConnection}
+        >
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="name" label="连接名称" rules={[{ required: true, message: '请输入连接名称' }]}>
+                <Input placeholder="输入连接名称" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="host" label="主机地址" rules={[{ required: true, message: '请输入主机地址' }]}>
+                <Input placeholder="localhost 或 IP地址" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
+                <Input placeholder="输入用户名" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
+                <Input.Password placeholder="输入密码" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="domain" label="域">
+                <Input placeholder="WORKGROUP" defaultValue="WORKGROUP" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="port" label="端口">
+                <Input type="number" defaultValue={135} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="timeout" label="超时时间(毫秒)">
+            <Input type="number" defaultValue={30000} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 添加查询模态框 */}
+      <Modal
+        title="添加WMI查询"
+        open={queryModalVisible}
+        onCancel={() => setQueryModalVisible(false)}
+        onOk={() => queryForm.submit()}
+        width={700}
+      >
+        <Form 
+          form={queryForm} 
+          layout="vertical" 
+          onFinish={handleAddQuery}
+        >
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="name" label="查询名称" rules={[{ required: true, message: '请输入查询名称' }]}>
+                <Input placeholder="输入查询名称" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="namespace" label="命名空间" rules={[{ required: true, message: '请输入命名空间' }]}>
+                <Input placeholder="root\\cimv2" defaultValue="root\\cimv2" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="query" label="WQL查询语句" rules={[{ required: true, message: '请输入查询语句' }]}>
+            <Input.TextArea 
+              rows={4} 
+              placeholder="SELECT * FROM Win32_Process WHERE ProcessId > 0"
+            />
+          </Form.Item>
+          <Form.Item name="description" label="描述">
+            <Input.TextArea rows={2} placeholder="输入查询描述" />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="interval" label="执行间隔(秒)">
+                <Input type="number" defaultValue={60} />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
+      </Modal>
+
+      {/* 查看结果模态框 */}
+      <Modal
+        title={`查询结果 - ${selectedQuery?.name}`}
+        open={resultsModalVisible}
+        onCancel={() => setResultsModalVisible(false)}
+        width={900}
+        footer={[
+          <Button key="close" onClick={() => setResultsModalVisible(false)}>
+            关闭
+          </Button>
+        ]}
+      >
+        {selectedQuery && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <strong>查询语句:</strong> {selectedQuery.query}
+            </div>
+            <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+              {queryResults
+                .filter(result => result.queryId === selectedQuery.id)
+                .slice(-5)
+                .reverse()
+                .map(result => (
+                  <Card key={result.id} size="small" style={{ marginBottom: 8 }}>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>执行时间:</strong> {new Date(result.timestamp).toLocaleString()}
+                      <span style={{ marginLeft: 16 }}>
+                        <strong>记录数:</strong> {result.recordCount}
+                      </span>
+                      <span style={{ marginLeft: 16 }}>
+                        <strong>耗时:</strong> {result.executionTime}ms
+                      </span>
+                    </div>
+                    {result.error ? (
+                      <div style={{ color: '#f5222d' }}>
+                        <strong>错误:</strong> {result.error}
+                      </div>
+                    ) : (
+                      <div>
+                        <strong>数据预览:</strong>
+                        <pre style={{ 
+                          background: '#f5f5f5', 
+                          padding: 8, 
+                          borderRadius: 4,
+                          fontSize: '12px',
+                          maxHeight: '200px',
+                          overflow: 'auto'
+                        }}>
+                          {JSON.stringify(result.data.slice(0, 3), null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </Card>
+                ))
+              }
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
 
-export default WMIManagementPage;
+export default WMIManagement;

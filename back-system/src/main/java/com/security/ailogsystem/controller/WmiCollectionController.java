@@ -263,7 +263,7 @@ public class WmiCollectionController {
         return ResponseEntity.ok(properties);
     }
 
-    @GetMapping("/statistics")
+    @GetMapping("/collection-statistics")
     @Operation(summary = "获取采集统计信息", description = "获取WMI采集的统计信息")
     public ResponseEntity<Map<String, Object>> getCollectionStatistics(
             @Parameter(description = "开始时间") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,

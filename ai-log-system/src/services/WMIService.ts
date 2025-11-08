@@ -1,3 +1,4 @@
+// services/WMIService.ts
 /**
  * WMI服务连接和查询功能
  * 提供Windows Management Instrumentation的核心功能
@@ -27,7 +28,7 @@ export interface WMIQuery {
 }
 
 export interface WMIQueryResult {
-  id: string;
+  id: number;
   queryId: string;
   timestamp: string;
   data: any[];
@@ -43,358 +44,288 @@ export interface WMIConnectionStatus {
   errorMessage?: string;
 }
 
-export class WMIService {
-  private connections: Map<string, WMIConnection> = new Map();
-  private connectionStatus: Map<string, WMIConnectionStatus> = new Map();
-  private queries: Map<string, WMIQuery> = new Map();
-  private queryResults: WMIQueryResult[] = [];
-  private connectionPool: Map<string, any> = new Map();
+export interface WmiStatistics {
+  totalConnections: number;
+  totalDataSources: number;
+  activeQueries: number;
+  totalDataPoints: number;
+  systemStatus: 'normal' | 'warning' | 'error';
+  lastUpdate: string;
+}
 
-  constructor() {
-    this.initializeDefaultQueries();
-  }
+export interface PerformanceMetrics {
+  collectionRate: number;
+  processingRate: number;
+  cpuUsage: number;
+  memoryUsage: number;
+  activeConnections: number;
+  totalDataPoints: number;
+}
+
+// API服务类 - 直接调用后端API
+export class WmiApiService {
+  private baseUrl = '/api/wmi';
 
   /**
-   * 添加WMI连接
+   * 获取统计信息
    */
-  async addConnection(connection: WMIConnection): Promise<boolean> {
+  async getStatistics(): Promise<WmiStatistics> {
     try {
-      this.connections.set(connection.id, connection);
-      await this.testConnection(connection.id);
-      return true;
+      const response = await fetch(`${this.baseUrl}/statistics`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
     } catch (error) {
-      console.error('添加WMI连接失败:', error);
-      return false;
+      console.error('获取统计信息失败:', error);
+      throw error;
     }
   }
 
   /**
-   * 测试WMI连接
+   * 获取性能指标
+   */
+  async getPerformanceMetrics(): Promise<PerformanceMetrics> {
+    try {
+      const response = await fetch(`${this.baseUrl}/performance-metrics`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('获取性能指标失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 测试连接
    */
   async testConnection(connectionId: string): Promise<WMIConnectionStatus> {
-    const connection = this.connections.get(connectionId);
-    if (!connection) {
-      throw new Error('连接不存在');
-    }
-
-    const startTime = Date.now();
-    
     try {
-      // 模拟WMI连接测试
-      await this.simulateConnectionTest(connection);
-      
-      const responseTime = Date.now() - startTime;
-      const status: WMIConnectionStatus = {
-        connected: true,
-        lastConnected: new Date().toISOString(),
-        responseTime
-      };
-      
-      this.connectionStatus.set(connectionId, status);
-      return status;
+      const response = await fetch(`${this.baseUrl}/connections/${connectionId}/test`, {
+        method: 'POST'
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
     } catch (error) {
-      const status: WMIConnectionStatus = {
-        connected: false,
-        errorMessage: error instanceof Error ? error.message : '连接失败'
-      };
-      
-      this.connectionStatus.set(connectionId, status);
+      console.error('测试连接失败:', error);
       throw error;
     }
   }
 
   /**
-   * 模拟WMI连接测试
-   */
-  private async simulateConnectionTest(connection: WMIConnection): Promise<void> {
-    // 模拟网络延迟
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
-    
-    // 模拟连接失败概率
-    if (Math.random() < 0.1) {
-      throw new Error('连接超时');
-    }
-    
-    // 模拟权限检查
-    if (Math.random() < 0.05) {
-      throw new Error('权限不足');
-    }
-  }
-
-  /**
-   * 执行WMI查询
+   * 执行查询
    */
   async executeQuery(queryId: string, connectionId: string): Promise<WMIQueryResult> {
-    const query = this.queries.get(queryId);
-    const connection = this.connections.get(connectionId);
-    
-    if (!query) {
-      throw new Error('查询不存在');
-    }
-    
-    if (!connection) {
-      throw new Error('连接不存在');
-    }
-
-    const startTime = Date.now();
-    
     try {
-      // 检查连接状态
-      const status = this.connectionStatus.get(connectionId);
-      if (!status?.connected) {
-        throw new Error('连接未建立');
-      }
-
-      // 执行查询
-      const data = await this.simulateQueryExecution(query, connection);
-      const executionTime = Date.now() - startTime;
-      
-      const result: WMIQueryResult = {
-        id: Date.now().toString(),
-        queryId,
-        timestamp: new Date().toISOString(),
-        data,
-        recordCount: data.length,
-        executionTime
-      };
-      
-      // 更新查询状态
-      this.queries.set(queryId, {
-        ...query,
-        lastRun: new Date().toISOString(),
-        resultCount: data.length
+      const response = await fetch(`${this.baseUrl}/queries/${queryId}/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ connectionId })
       });
-      
-      this.queryResults.push(result);
-      
-      // 保持最近1000条结果
-      if (this.queryResults.length > 1000) {
-        this.queryResults = this.queryResults.slice(-1000);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
-      return result;
+      return await response.json();
     } catch (error) {
-      const executionTime = Date.now() - startTime;
-      const result: WMIQueryResult = {
-        id: Date.now().toString(),
-        queryId,
-        timestamp: new Date().toISOString(),
-        data: [],
-        recordCount: 0,
-        executionTime,
-        error: error instanceof Error ? error.message : '查询执行失败'
-      };
-      
-      this.queryResults.push(result);
+      console.error('执行查询失败:', error);
       throw error;
     }
   }
 
   /**
-   * 模拟查询执行
+   * 获取所有连接
    */
-  private async simulateQueryExecution(query: WMIQuery, connection: WMIConnection): Promise<any[]> {
-    // 模拟查询延迟
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 500));
-    
-    // 模拟查询失败概率
-    if (Math.random() < 0.05) {
-      throw new Error('查询执行失败');
+  async getAllConnections(): Promise<WMIConnection[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/connections`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('获取连接列表失败:', error);
+      throw error;
     }
-    
-    // 根据查询类型生成模拟数据
-    return this.generateMockData(query);
   }
 
   /**
-   * 生成模拟数据
+   * 获取所有查询
    */
-  private generateMockData(query: WMIQuery): any[] {
-    const data: any[] = [];
-    const recordCount = Math.floor(Math.random() * 100) + 10;
-    
-    for (let i = 0; i < recordCount; i++) {
-      if (query.query.includes('Win32_Process')) {
-        data.push({
-          ProcessId: Math.floor(Math.random() * 10000) + 1000,
-          Name: `Process_${i}`,
-          WorkingSetSize: Math.floor(Math.random() * 1000000) + 100000,
-          PageFileUsage: Math.floor(Math.random() * 500000) + 50000,
-          CreationDate: new Date(Date.now() - Math.random() * 86400000).toISOString(),
-          ExecutablePath: `C:\\Program Files\\App_${i}\\app.exe`
-        });
-      } else if (query.query.includes('Win32_Service')) {
-        data.push({
-          Name: `Service_${i}`,
-          State: ['Running', 'Stopped', 'Paused'][Math.floor(Math.random() * 3)],
-          Status: ['OK', 'Degraded', 'Error'][Math.floor(Math.random() * 3)],
-          StartMode: ['Auto', 'Manual', 'Disabled'][Math.floor(Math.random() * 3)],
-          ProcessId: Math.floor(Math.random() * 1000) + 100
-        });
-      } else if (query.query.includes('Win32_NTLogEvent')) {
-        data.push({
-          EventCode: Math.floor(Math.random() * 1000) + 100,
-          EventType: Math.floor(Math.random() * 5) + 1,
-          Message: `Event message ${i}`,
-          SourceName: `Source_${i}`,
-          TimeGenerated: new Date(Date.now() - Math.random() * 3600000).toISOString(),
-          Category: Math.floor(Math.random() * 10) + 1
-        });
-      } else if (query.query.includes('Win32_ComputerSystem')) {
-        data.push({
-          Name: `COMPUTER_${i}`,
-          Manufacturer: 'Microsoft Corporation',
-          Model: 'Virtual Machine',
-          TotalPhysicalMemory: Math.floor(Math.random() * 32000000000) + 8000000000,
-          NumberOfProcessors: Math.floor(Math.random() * 8) + 1,
-          Domain: 'WORKGROUP'
-        });
-      } else {
-        // 通用数据
-        data.push({
-          Id: i,
-          Name: `Item_${i}`,
-          Value: Math.floor(Math.random() * 1000),
-          Timestamp: new Date().toISOString()
-        });
+  async getAllQueries(): Promise<WMIQuery[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/queries`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      return await response.json();
+    } catch (error) {
+      console.error('获取查询列表失败:', error);
+      throw error;
     }
-    
-    return data;
+  }
+
+  /**
+   * 获取查询结果
+   */
+  async getQueryResults(queryId?: string): Promise<WMIQueryResult[]> {
+    try {
+      const url = queryId 
+        ? `${this.baseUrl}/query-results?queryId=${queryId}`
+        : `${this.baseUrl}/query-results`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('获取查询结果失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 添加连接
+   */
+  async addConnection(connection: WMIConnection): Promise<WMIConnection> {
+    try {
+      const response = await fetch(`${this.baseUrl}/connections`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(connection)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('添加连接失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 添加查询
+   */
+  async addQuery(query: WMIQuery): Promise<WMIQuery> {
+    try {
+      const response = await fetch(`${this.baseUrl}/queries`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(query)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('添加查询失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 更新查询
+   */
+  async updateQuery(queryId: string, updates: Partial<WMIQuery>): Promise<WMIQuery> {
+    try {
+      const response = await fetch(`${this.baseUrl}/queries/${queryId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updates)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('更新查询失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 删除连接
+   */
+  async deleteConnection(connectionId: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/connections/${connectionId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.status === 204;
+    } catch (error) {
+      console.error('删除连接失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 删除查询
+   */
+  async deleteQuery(queryId: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/queries/${queryId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.status === 204;
+    } catch (error) {
+      console.error('删除查询失败:', error);
+      throw error;
+    }
   }
 
   /**
    * 批量执行查询
    */
   async executeBatchQueries(connectionId: string): Promise<WMIQueryResult[]> {
-    const activeQueries = Array.from(this.queries.values()).filter(q => q.enabled);
-    const results: WMIQueryResult[] = [];
-    
-    for (const query of activeQueries) {
-      try {
-        const result = await this.executeQuery(query.id, connectionId);
-        results.push(result);
-      } catch (error) {
-        console.error(`查询 ${query.name} 执行失败:`, error);
+    try {
+      const queries = await this.getAllQueries();
+      const activeQueries = queries.filter(q => q.enabled);
+      const results: WMIQueryResult[] = [];
+      
+      for (const query of activeQueries) {
+        try {
+          const result = await this.executeQuery(query.id, connectionId);
+          results.push(result);
+        } catch (error) {
+          console.error(`查询 ${query.name} 执行失败:`, error);
+          // 创建错误结果
+          const errorResult: WMIQueryResult = {
+            id: Date.now(),
+            queryId: query.id,
+            timestamp: new Date().toISOString(),
+            data: [],
+            recordCount: 0,
+            executionTime: 0,
+            error: error instanceof Error ? error.message : '查询执行失败'
+          };
+          results.push(errorResult);
+        }
       }
+      
+      return results;
+    } catch (error) {
+      console.error('批量执行查询失败:', error);
+      throw error;
     }
-    
-    return results;
-  }
-
-  /**
-   * 获取连接状态
-   */
-  getConnectionStatus(connectionId: string): WMIConnectionStatus | undefined {
-    return this.connectionStatus.get(connectionId);
-  }
-
-  /**
-   * 获取所有连接
-   */
-  getAllConnections(): WMIConnection[] {
-    return Array.from(this.connections.values());
-  }
-
-  /**
-   * 获取所有查询
-   */
-  getAllQueries(): WMIQuery[] {
-    return Array.from(this.queries.values());
-  }
-
-  /**
-   * 获取查询结果
-   */
-  getQueryResults(queryId?: string): WMIQueryResult[] {
-    if (queryId) {
-      return this.queryResults.filter(r => r.queryId === queryId);
-    }
-    return this.queryResults;
-  }
-
-  /**
-   * 添加查询
-   */
-  addQuery(query: WMIQuery): void {
-    this.queries.set(query.id, query);
-  }
-
-  /**
-   * 更新查询
-   */
-  updateQuery(queryId: string, updates: Partial<WMIQuery>): boolean {
-    const query = this.queries.get(queryId);
-    if (!query) {
-      return false;
-    }
-    
-    this.queries.set(queryId, { ...query, ...updates });
-    return true;
-  }
-
-  /**
-   * 删除查询
-   */
-  deleteQuery(queryId: string): boolean {
-    return this.queries.delete(queryId);
-  }
-
-  /**
-   * 删除连接
-   */
-  deleteConnection(connectionId: string): boolean {
-    this.connectionStatus.delete(connectionId);
-    this.connectionPool.delete(connectionId);
-    return this.connections.delete(connectionId);
-  }
-
-  /**
-   * 初始化默认查询
-   */
-  private initializeDefaultQueries(): void {
-    const defaultQueries: WMIQuery[] = [
-      {
-        id: '1',
-        name: '系统进程监控',
-        namespace: 'root\\cimv2',
-        query: 'SELECT ProcessId, Name, WorkingSetSize, PageFileUsage FROM Win32_Process WHERE ProcessId > 0',
-        description: '监控系统运行进程',
-        enabled: true,
-        interval: 30
-      },
-      {
-        id: '2',
-        name: '服务状态检查',
-        namespace: 'root\\cimv2',
-        query: 'SELECT Name, State, Status, StartMode FROM Win32_Service',
-        description: '检查系统服务状态',
-        enabled: true,
-        interval: 60
-      },
-      {
-        id: '3',
-        name: '事件日志监控',
-        namespace: 'root\\cimv2',
-        query: 'SELECT EventCode, EventType, Message, SourceName, TimeGenerated FROM Win32_NTLogEvent WHERE EventType = 1 OR EventType = 2',
-        description: '监控错误和警告事件日志',
-        enabled: true,
-        interval: 300
-      },
-      {
-        id: '4',
-        name: '系统信息查询',
-        namespace: 'root\\cimv2',
-        query: 'SELECT Name, Manufacturer, Model, TotalPhysicalMemory, NumberOfProcessors FROM Win32_ComputerSystem',
-        description: '获取计算机系统基本信息',
-        enabled: false,
-        interval: 3600
-      }
-    ];
-
-    defaultQueries.forEach(query => {
-      this.queries.set(query.id, query);
-    });
   }
 
   /**
@@ -402,18 +333,14 @@ export class WMIService {
    */
   async getSystemPerformanceMetrics(connectionId: string): Promise<any> {
     try {
-      const metrics = {
-        cpuUsage: Math.floor(Math.random() * 100),
-        memoryUsage: Math.floor(Math.random() * 100),
-        diskUsage: Math.floor(Math.random() * 100),
-        networkLatency: Math.floor(Math.random() * 100) + 10,
-        activeConnections: this.connections.size,
-        activeQueries: Array.from(this.queries.values()).filter(q => q.enabled).length,
-        totalDataPoints: this.queryResults.reduce((sum, result) => sum + result.recordCount, 0),
-        lastUpdate: new Date().toISOString()
-      };
+      // 通过连接获取性能指标
+      const connection = (await this.getAllConnections()).find(c => c.id === connectionId);
+      if (!connection) {
+        throw new Error('连接不存在');
+      }
       
-      return metrics;
+      // 调用性能指标接口
+      return await this.getPerformanceMetrics();
     } catch (error) {
       console.error('获取系统性能指标失败:', error);
       throw error;
@@ -421,29 +348,177 @@ export class WMIService {
   }
 
   /**
-   * 清理过期数据
+   * 获取连接状态
    */
-  cleanup(): void {
-    const oneHourAgo = Date.now() - 3600000;
-    this.queryResults = this.queryResults.filter(result => 
-      new Date(result.timestamp).getTime() > oneHourAgo
-    );
+  async getConnectionStatus(connectionId: string): Promise<WMIConnectionStatus | undefined> {
+    try {
+      // 通过测试连接来获取状态
+      return await this.testConnection(connectionId);
+    } catch (error) {
+      console.error('获取连接状态失败:', error);
+      return {
+        connected: false,
+        errorMessage: error instanceof Error ? error.message : '获取状态失败'
+      };
+    }
   }
 
   /**
-   * 获取服务统计信息
+   * 获取可用WMI类
    */
-  getServiceStats(): any {
-    return {
-      totalConnections: this.connections.size,
-      activeConnections: Array.from(this.connectionStatus.values()).filter(s => s.connected).length,
-      totalQueries: this.queries.size,
-      activeQueries: Array.from(this.queries.values()).filter(q => q.enabled).length,
-      totalResults: this.queryResults.length,
-      lastCleanup: new Date().toISOString()
-    };
+  async getAvailableWmiClasses(connectionId: string): Promise<string[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/wmi-classes?connectionId=${connectionId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('获取WMI类列表失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取WMI类属性
+   */
+  async getWmiClassProperties(connectionId: string, wmiClass: string): Promise<string[]> {
+    try {
+      const response = await fetch(`${this.baseUrl}/wmi-classes/${wmiClass}/properties?connectionId=${connectionId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error('获取WMI类属性失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 清理数据
+   */
+  async cleanup(): Promise<void> {
+    try {
+      // 这里可以调用后端的清理接口（如果后端提供了的话）
+      console.log('清理数据操作');
+    } catch (error) {
+      console.error('清理数据失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取服务统计
+   */
+  async getServiceStats(): Promise<any> {
+    try {
+      const statistics = await this.getStatistics();
+      const connections = await this.getAllConnections();
+      const queries = await this.getAllQueries();
+      
+      return {
+        totalConnections: connections.length,
+        activeConnections: (await Promise.all(
+          connections.map(async conn => {
+            const status = await this.getConnectionStatus(conn.id);
+            return status?.connected || false;
+          })
+        )).filter(Boolean).length,
+        totalQueries: queries.length,
+        activeQueries: queries.filter(q => q.enabled).length,
+        totalResults: (await this.getQueryResults()).length,
+        lastCleanup: new Date().toISOString()
+      };
+    } catch (error) {
+      console.error('获取服务统计失败:', error);
+      throw error;
+    }
   }
 }
 
-// 创建全局WMI服务实例
+// 创建全局API服务实例
+export const wmiApiService = new WmiApiService();
+
+// 兼容性包装器 - 保持原有接口
+export class WMIService {
+  private apiService = new WmiApiService();
+
+  // 保持原有方法，但内部调用新的API服务
+  async addConnection(connection: WMIConnection): Promise<boolean> {
+    try {
+      await this.apiService.addConnection(connection);
+      return true;
+    } catch (error) {
+      console.error('添加WMI连接失败:', error);
+      return false;
+    }
+  }
+
+  async testConnection(connectionId: string): Promise<WMIConnectionStatus> {
+    return this.apiService.testConnection(connectionId);
+  }
+
+  async executeQuery(queryId: string, connectionId: string): Promise<WMIQueryResult> {
+    return this.apiService.executeQuery(queryId, connectionId);
+  }
+
+  getAllConnections(): Promise<WMIConnection[]> {
+    return this.apiService.getAllConnections();
+  }
+
+  getAllQueries(): Promise<WMIQuery[]> {
+    return this.apiService.getAllQueries();
+  }
+
+  getQueryResults(queryId?: string): Promise<WMIQueryResult[]> {
+    return this.apiService.getQueryResults(queryId);
+  }
+
+  addQuery(query: WMIQuery): void {
+    this.apiService.addQuery(query);
+  }
+
+  updateQuery(queryId: string, updates: Partial<WMIQuery>): Promise<boolean> {
+    return this.apiService.updateQuery(queryId, updates).then(() => true).catch(() => false);
+  }
+
+  deleteQuery(queryId: string): Promise<boolean> {
+    return this.apiService.deleteQuery(queryId);
+  }
+
+  deleteConnection(connectionId: string): Promise<boolean> {
+    return this.apiService.deleteConnection(connectionId);
+  }
+
+  async executeBatchQueries(connectionId: string): Promise<WMIQueryResult[]> {
+    return this.apiService.executeBatchQueries(connectionId);
+  }
+
+  async getSystemPerformanceMetrics(connectionId: string): Promise<any> {
+    return this.apiService.getSystemPerformanceMetrics(connectionId);
+  }
+
+  async getConnectionStatus(connectionId: string): Promise<WMIConnectionStatus | undefined> {
+    return this.apiService.getConnectionStatus(connectionId);
+  }
+
+  cleanup(): void {
+    this.apiService.cleanup();
+  }
+
+  getServiceStats(): Promise<any> {
+    return this.apiService.getServiceStats();
+  }
+
+  getStatistics(): Promise<WmiStatistics> {
+    return this.apiService.getStatistics();
+  }
+
+  getPerformanceMetrics(): Promise<PerformanceMetrics> {
+    return this.apiService.getPerformanceMetrics();
+  }
+}
+
+// 导出兼容性实例
 export const wmiService = new WMIService();
