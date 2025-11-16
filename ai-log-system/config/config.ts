@@ -85,9 +85,9 @@ export default defineConfig({
           icon: 'DatabaseOutlined',
         },
         {
-          path: '/wmi-management',
-          component: '@/pages/wmi-management/index',
-          name: 'wmi-management',
+          path: '/systemInfoManagement',
+          component: '@/pages/systemInfoManagement/index',
+          name: 'systemInfoManagement',
           icon: 'SettingOutlined',
         },
         // {

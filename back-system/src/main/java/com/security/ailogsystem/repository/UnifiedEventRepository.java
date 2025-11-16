@@ -113,4 +113,9 @@ public interface UnifiedEventRepository extends JpaRepository<UnifiedSecurityEve
 
     // 删除旧数据
     void deleteByTimestampBefore(LocalDateTime date);
+
+    @Query(value = "SELECT FUNCTION('DATE_FORMAT', timestamp, '%Y-%m-%d %H:00:00') as hour, COUNT(*) as count " +
+            "FROM UnifiedSecurityEvent WHERE timestamp BETWEEN :start AND :end " +
+            "GROUP BY FUNCTION('DATE_FORMAT', timestamp, '%Y-%m-%d %H:00:00') ORDER BY hour")
+    List<Object[]> getHourlyStatisticsCompatible(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 }

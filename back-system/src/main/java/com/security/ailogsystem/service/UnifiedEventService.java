@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.criteria.Predicate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,6 +30,7 @@ import java.util.stream.Collectors;
 public class UnifiedEventService {
 
     private final UnifiedEventRepository eventRepository;
+    private final AdvancedAnomalyDetector anomalyDetector; // 添加异常检测器注入
 
     /**
      * 创建安全事件
@@ -38,6 +40,16 @@ public class UnifiedEventService {
         log.debug("创建安全事件: {}", eventDTO.getEventType());
 
         UnifiedSecurityEvent event = eventDTO.toEntity();
+
+        // 添加异常检测
+        try {
+            anomalyDetector.detectAnomalies(event);
+            log.debug("异常检测完成，分数: {}", event.getAnomalyScore());
+        } catch (Exception e) {
+            log.warn("异常检测失败: {}", e.getMessage());
+            // 即使检测失败也继续保存事件
+        }
+
         UnifiedSecurityEvent savedEvent = eventRepository.save(event);
 
         return UnifiedSecurityEventDTO.fromEntity(savedEvent);
@@ -53,6 +65,17 @@ public class UnifiedEventService {
         List<UnifiedSecurityEvent> events = eventDTOs.stream()
                 .map(UnifiedSecurityEventDTO::toEntity)
                 .collect(Collectors.toList());
+
+        // 对每个事件进行异常检测
+        events.forEach(event -> {
+            try {
+                anomalyDetector.detectAnomalies(event);
+                log.debug("事件异常检测完成，分数: {}", event.getAnomalyScore());
+            } catch (Exception e) {
+                log.warn("异常检测失败: {}", e.getMessage());
+                // 继续处理其他事件，不中断批量操作
+            }
+        });
 
         List<UnifiedSecurityEvent> savedEvents = eventRepository.saveAll(events);
 
@@ -165,31 +188,57 @@ public class UnifiedEventService {
     public Map<String, Object> getStatistics(LocalDateTime startTime, LocalDateTime endTime) {
         log.debug("获取统计信息: {} - {}", startTime, endTime);
 
-        Map<String, Object> stats = new java.util.HashMap<>();
+        Map<String, Object> stats = new HashMap<>();
 
-        // 基本统计
-        stats.put("totalEvents", eventRepository.countByTimestampBetween(startTime, endTime));
-        stats.put("anomalyEvents", eventRepository.countByIsAnomalyTrueAndTimestampBetween(startTime, endTime));
+        try {
+            // 基本统计
+            stats.put("totalEvents", eventRepository.countByTimestampBetween(startTime, endTime));
+            stats.put("anomalyEvents", eventRepository.countByIsAnomalyTrueAndTimestampBetween(startTime, endTime));
 
-        // 来源统计
-        stats.put("sourceStats", convertToMap(eventRepository.countBySourceSystemGroup(startTime, endTime)));
+            // 使用安全转换方法处理null键
+            stats.put("sourceStats", safeConvertToMap(eventRepository.countBySourceSystemGroup(startTime, endTime)));
+            stats.put("typeStats", safeConvertToMap(eventRepository.countByEventTypeGroup(startTime, endTime)));
+            stats.put("categoryStats", safeConvertToMap(eventRepository.countByCategoryGroup(startTime, endTime)));
+            stats.put("severityStats", safeConvertToMap(eventRepository.countBySeverityGroup(startTime, endTime)));
+            stats.put("threatLevelStats", safeConvertToMap(eventRepository.countByThreatLevelGroup(startTime, endTime)));
+            stats.put("statusStats", safeConvertToMap(eventRepository.countByStatusGroup(startTime, endTime)));
 
-        // 类型统计
-        stats.put("typeStats", convertToMap(eventRepository.countByEventTypeGroup(startTime, endTime)));
+            log.debug("统计信息获取成功");
 
-        // 分类统计
-        stats.put("categoryStats", convertToMap(eventRepository.countByCategoryGroup(startTime, endTime)));
-
-        // 严重级别统计
-        stats.put("severityStats", convertToMap(eventRepository.countBySeverityGroup(startTime, endTime)));
-
-        // 威胁等级统计
-        stats.put("threatLevelStats", convertToMap(eventRepository.countByThreatLevelGroup(startTime, endTime)));
-
-        // 状态统计
-        stats.put("statusStats", convertToMap(eventRepository.countByStatusGroup(startTime, endTime)));
+        } catch (Exception e) {
+            log.error("获取统计信息失败: {}", e.getMessage());
+            stats.put("error", "统计信息获取失败: " + e.getMessage());
+        }
 
         return stats;
+    }
+
+    /**
+     * 安全转换方法，处理null键和异常
+     */
+    private Map<String, Long> safeConvertToMap(List<Object[]> data) {
+        if (data == null || data.isEmpty()) {
+            return new HashMap<>();
+        }
+
+        try {
+            return data.stream()
+                    .filter(item -> item != null && item.length >= 2 && item[0] != null) // 过滤null键
+                    .collect(Collectors.toMap(
+                            item -> item[0].toString(),
+                            item -> {
+                                try {
+                                    return item[1] != null ? ((Number) item[1]).longValue() : 0L;
+                                } catch (Exception e) {
+                                    log.warn("转换统计值失败: {}", e.getMessage());
+                                    return 0L;
+                                }
+                            }
+                    ));
+        } catch (Exception e) {
+            log.warn("转换统计Map失败: {}", e.getMessage());
+            return new HashMap<>();
+        }
     }
 
     /**
@@ -201,10 +250,12 @@ public class UnifiedEventService {
         List<Object[]> hourlyStats = eventRepository.getHourlyStatistics(startTime, endTime);
 
         return hourlyStats.stream()
-                .map(row -> Map.of(
-                        "timestamp", row[0],
-                        "count", row[1]
-                ))
+                .map(row -> {
+                    Map<String, Object> result = new HashMap<>();
+                    result.put("timestamp", row[0] != null ? row[0] : "未知时间");
+                    result.put("count", row[1] != null ? row[1] : 0L);
+                    return result;
+                })
                 .collect(Collectors.toList());
     }
 
@@ -217,6 +268,83 @@ public class UnifiedEventService {
 
         LocalDateTime cutoffDate = LocalDateTime.now().minusDays(daysToKeep);
         eventRepository.deleteByTimestampBefore(cutoffDate);
+    }
+
+    /**
+     * 获取威胁等级统计
+     */
+    public Map<String, Long> getThreatLevelStatistics(LocalDateTime startTime, LocalDateTime endTime) {
+        log.debug("获取威胁等级统计: {} - {}", startTime, endTime);
+
+        List<Object[]> results = eventRepository.countByThreatLevelGroup(startTime, endTime);
+        return safeConvertToMap(results);
+    }
+
+    /**
+     * 获取事件类型统计
+     */
+    public Map<String, Long> getEventTypeStatistics(LocalDateTime startTime, LocalDateTime endTime) {
+        log.debug("获取事件类型统计: {} - {}", startTime, endTime);
+
+        List<Object[]> results = eventRepository.countByEventTypeGroup(startTime, endTime);
+        return safeConvertToMap(results);
+    }
+
+    /**
+     * 获取异常事件数量
+     */
+    public Long getAnomalyEventCount(LocalDateTime startTime, LocalDateTime endTime) {
+        log.debug("获取异常事件数量: {} - {}", startTime, endTime);
+
+        return eventRepository.countAnomalyEvents(startTime, endTime);
+    }
+
+    /**
+     * 获取事件状态统计
+     */
+    public Map<String, Long> getEventStatusStatistics(LocalDateTime startTime, LocalDateTime endTime) {
+        log.debug("获取事件状态统计: {} - {}", startTime, endTime);
+
+        List<Object[]> results = eventRepository.countByStatusGroup(startTime, endTime);
+        return safeConvertToMap(results);
+    }
+
+    /**
+     * 获取高频事件源
+     */
+    public List<Map<String, Object>> getTopEventSources(LocalDateTime startTime, LocalDateTime endTime, int limit) {
+        log.debug("获取前 {} 个高频事件源: {} - {}", limit, startTime, endTime);
+
+        Pageable pageable = org.springframework.data.domain.PageRequest.of(0, limit);
+        List<Object[]> results = eventRepository.countBySourceSystemGroup(startTime, endTime);
+
+        return results.stream()
+                .map(row -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("source", row[0] != null ? row[0].toString() : "Unknown");
+                    map.put("count", row[1] != null ? ((Number) row[1]).longValue() : 0L);
+                    return map;
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 获取高风险用户
+     */
+    public List<Map<String, Object>> getHighRiskUsers(LocalDateTime startTime, LocalDateTime endTime, int limit) {
+        log.debug("获取前 {} 个高风险用户: {} - {}", limit, startTime, endTime);
+
+        Pageable pageable = org.springframework.data.domain.PageRequest.of(0, limit);
+        List<Object[]> results = eventRepository.countByUserGroup(startTime, endTime, pageable);
+
+        return results.stream()
+                .map(row -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("userId", row[0] != null ? row[0].toString() : "Unknown");
+                    map.put("count", row[1] != null ? ((Number) row[1]).longValue() : 0L);
+                    return map;
+                })
+                .collect(Collectors.toList());
     }
 
     // 私有辅助方法
@@ -298,87 +426,12 @@ public class UnifiedEventService {
         return PageRequest.of(queryDTO.getPage(), queryDTO.getSize(), sort);
     }
 
+    // 保留原有的convertToMap方法，但其他方法都使用safeConvertToMap
     private Map<String, Long> convertToMap(List<Object[]> data) {
         return data.stream()
                 .collect(Collectors.toMap(
                         item -> (String) item[0],
                         item -> (Long) item[1]
                 ));
-    }
-    /**
-     * 获取威胁等级统计
-     */
-    public Map<String, Long> getThreatLevelStatistics(LocalDateTime startTime, LocalDateTime endTime) {
-        log.debug("获取威胁等级统计: {} - {}", startTime, endTime);
-
-        List<Object[]> results = eventRepository.countByThreatLevelGroup(startTime, endTime);
-        return convertToMap(results);
-    }
-
-    /**
-     * 获取事件类型统计
-     */
-    public Map<String, Long> getEventTypeStatistics(LocalDateTime startTime, LocalDateTime endTime) {
-        log.debug("获取事件类型统计: {} - {}", startTime, endTime);
-
-        List<Object[]> results = eventRepository.countByEventTypeGroup(startTime, endTime);
-        return convertToMap(results);
-    }
-
-    /**
-     * 获取异常事件数量
-     */
-    public Long getAnomalyEventCount(LocalDateTime startTime, LocalDateTime endTime) {
-        log.debug("获取异常事件数量: {} - {}", startTime, endTime);
-
-        return eventRepository.countAnomalyEvents(startTime, endTime);
-    }
-
-    /**
-     * 获取事件状态统计
-     */
-    public Map<String, Long> getEventStatusStatistics(LocalDateTime startTime, LocalDateTime endTime) {
-        log.debug("获取事件状态统计: {} - {}", startTime, endTime);
-
-        List<Object[]> results = eventRepository.countByStatusGroup(startTime, endTime);
-        return convertToMap(results);
-    }
-
-    /**
-     * 获取高频事件源
-     */
-    public List<Map<String, Object>> getTopEventSources(LocalDateTime startTime, LocalDateTime endTime, int limit) {
-        log.debug("获取前 {} 个高频事件源: {} - {}", limit, startTime, endTime);
-
-        Pageable pageable = org.springframework.data.domain.PageRequest.of(0, limit);
-        List<Object[]> results = eventRepository.countBySourceSystemGroup(startTime, endTime);
-
-        return results.stream()
-                .map(row -> {
-                    Map<String, Object> map = new java.util.HashMap<>();
-                    map.put("source", row[0] != null ? row[0].toString() : "Unknown");
-                    map.put("count", (Long) row[1]);
-                    return map;
-                })
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * 获取高风险用户
-     */
-    public List<Map<String, Object>> getHighRiskUsers(LocalDateTime startTime, LocalDateTime endTime, int limit) {
-        log.debug("获取前 {} 个高风险用户: {} - {}", limit, startTime, endTime);
-
-        Pageable pageable = org.springframework.data.domain.PageRequest.of(0, limit);
-        List<Object[]> results = eventRepository.countByUserGroup(startTime, endTime, pageable);
-
-        return results.stream()
-                .map(row -> {
-                    Map<String, Object> map = new java.util.HashMap<>();
-                    map.put("userId", row[0] != null ? row[0].toString() : "Unknown");
-                    map.put("count", (Long) row[1]);
-                    return map;
-                })
-                .collect(Collectors.toList());
     }
 }

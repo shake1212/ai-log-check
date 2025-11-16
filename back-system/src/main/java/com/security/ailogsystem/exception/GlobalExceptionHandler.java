@@ -218,53 +218,6 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-    // WMI采集异常处理
-    @ExceptionHandler(WmiCollectionException.class)
-    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    public ResponseEntity<WmiErrorResponse> handleWmiCollectionException(WmiCollectionException ex) {
-        logger.error("WMI collection error: {}", ex.getMessage(), ex);
-        WmiErrorResponse error = new WmiErrorResponse(
-                HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "WMI采集错误: " + ex.getMessage(),
-                LocalDateTime.now(),
-                ex.getTargetHost(),
-                ex.getWmiClass(),
-                ex.getRetryCount(),
-                ex.getDuration()
-        );
-        return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-
-    @ExceptionHandler(WmiConnectionException.class)
-    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
-    public ResponseEntity<WmiConnectionErrorResponse> handleWmiConnectionException(WmiConnectionException ex) {
-        logger.error("WMI connection error: {}", ex.getMessage(), ex);
-        WmiConnectionErrorResponse error = new WmiConnectionErrorResponse(
-                HttpStatus.SERVICE_UNAVAILABLE.value(),
-                "WMI连接错误: " + ex.getMessage(),
-                LocalDateTime.now(),
-                ex.getTargetHost(),
-                ex.getConnectionString(),
-                ex.getPort(),
-                ex.getProtocol()
-        );
-        return new ResponseEntity<>(error, HttpStatus.SERVICE_UNAVAILABLE);
-    }
-
-    @ExceptionHandler(WmiAuthenticationException.class)
-    @ResponseStatus(HttpStatus.UNAUTHORIZED)
-    public ResponseEntity<WmiAuthenticationErrorResponse> handleWmiAuthenticationException(WmiAuthenticationException ex) {
-        logger.error("WMI authentication error: {}", ex.getMessage(), ex);
-        WmiAuthenticationErrorResponse error = new WmiAuthenticationErrorResponse(
-                HttpStatus.UNAUTHORIZED.value(),
-                "WMI认证错误: " + ex.getMessage(),
-                LocalDateTime.now(),
-                ex.getTargetHost(),
-                ex.getUsername(),
-                ex.getDomain()
-        );
-        return new ResponseEntity<>(error, HttpStatus.UNAUTHORIZED);
-    }
 
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)

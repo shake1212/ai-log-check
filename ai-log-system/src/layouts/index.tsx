@@ -23,7 +23,7 @@ import {
 } from '@ant-design/icons';
 import EnhancedDashboard from '../components/EnhancedDashboard';
 import WMIManagement from '../pages/wmi/index';
-import WMIManagementAdvanced from '../pages/wmi-management/index';
+import SystemInfoManagement from '../pages/systemInfoManagement/index';
 // import DatabaseManagement from '../pages/database/index';
 import DebugRoute from '../pages/debug-route';
 import EventsPage from '../pages/events/index';
@@ -104,9 +104,9 @@ export default function DefaultLayout() {
       label: 'WMI基础',
     },
     {
-      key: '/wmi-management',
+      key: '/systemInfoManagement',
       icon: <SettingOutlined />,
-      label: 'WMI高级管理',
+      label: '系统信息管理',
     },
     {
       key: '/database',
@@ -283,7 +283,7 @@ export default function DefaultLayout() {
             </div>
           )}
           {currentPath === '/wmi' && <WMIManagement />}
-          {currentPath === '/wmi-management' && <WMIManagementAdvanced />}
+          {currentPath === '/systemInfoManagement' && <SystemInfoManagement />}
           {currentPath === '/events' && <EventsPage />}
           {currentPath === '/batch-operations' && <BatchOperationsPage />}
           {currentPath === '/database' && <DatabaseManagement />}
