@@ -10,7 +10,30 @@ import json
 import sys
 import time
 import os
+import socket
+import requests
 from datetime import datetime
+
+# 后端URL配置
+BACKEND_URL = "http://localhost:8080/api/events/batch"
+SYSTEM_INFO_API_URL = "http://localhost:8080/api/system-info/ingest"
+HOST_NAME = platform.node() or "unknown-host"
+PLATFORM_INFO = platform.platform()
+try:
+    HOST_IP = socket.gethostbyname(socket.gethostname())
+except Exception:
+    HOST_IP = "127.0.0.1"
+
+def build_enriched_payload(data_type: str, data: dict) -> dict:
+    return {
+        "collector": "system_info_collector",
+        "host": HOST_NAME,
+        "ip": HOST_IP,
+        "platform": PLATFORM_INFO,
+        "dataType": data_type,
+        "collectedAt": datetime.now().isoformat(),
+        "data": data
+    }
 
 def collect_performance():
     """收集性能数据"""
@@ -29,7 +52,11 @@ def collect_performance():
             "memory_percent": memory_percent,
             "memory_used": memory_used,
             "memory_available": memory_available,
-            "timestamp": time.time()
+            "cpu_count": psutil.cpu_count(logical=True),
+            "load_average": get_load_average(),
+            "host": HOST_NAME,
+            "timestamp": time.time(),
+            "collected_at": datetime.now().isoformat()
         }
     except Exception as e:
         return {"error": f"性能数据收集失败: {str(e)}"}
@@ -66,7 +93,9 @@ def collect_cpu_info():
             "idle_time": getattr(cpu_times, 'idle', 0),
             "usage_per_core": cpu_percent_per_core,
             "load_average": get_load_average(),
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "host": HOST_NAME,
+            "collected_at": datetime.now().isoformat()
         }
     except Exception as e:
         return {"error": f"CPU信息收集失败: {str(e)}"}
@@ -86,6 +115,8 @@ def collect_system_basic():
         user_count = len(users)
         current_user = os.getlogin() if hasattr(os, 'getlogin') else 'unknown'
 
+        uptime_seconds = time.time() - boot_time
+
         return {
             "hostname": system_info.node,
             "platform": system_info.system,
@@ -96,7 +127,10 @@ def collect_system_basic():
             "boot_time_str": boot_time_str,
             "users": user_count,
             "current_user": current_user,
-            "timestamp": time.time()
+            "uptime_seconds": uptime_seconds,
+            "host": HOST_NAME,
+            "timestamp": time.time(),
+            "collected_at": datetime.now().isoformat()
         }
     except Exception as e:
         return {"error": f"系统基本信息收集失败: {str(e)}"}
@@ -120,7 +154,9 @@ def collect_memory_info():
             "swap_total": swap_memory.total,
             "swap_free": swap_memory.free,
             "swap_percent": swap_memory.percent,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "host": HOST_NAME,
+            "collected_at": datetime.now().isoformat()
         }
     except Exception as e:
         return {"error": f"内存信息收集失败: {str(e)}"}
@@ -162,7 +198,9 @@ def collect_disk_info():
             "read_count": disk_io.read_count if disk_io else 0,
             "write_count": disk_io.write_count if disk_io else 0,
             "partitions": partitions,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "host": HOST_NAME,
+            "collected_at": datetime.now().isoformat()
         }
     except Exception as e:
         return {"error": f"磁盘信息收集失败: {str(e)}"}
@@ -209,7 +247,9 @@ def collect_process_info():
             "running": running_count,
             "sleeping": sleeping_count,
             "processes": processes,
-            "timestamp": time.time()
+            "timestamp": time.time(),
+            "host": HOST_NAME,
+            "collected_at": datetime.now().isoformat()
         }
     except Exception as e:
         return {"error": f"进程信息收集失败: {str(e)}"}
@@ -226,9 +266,76 @@ def get_load_average():
     except:
         return [0, 0, 0]
 
+def send_to_backend(data, data_type):
+    """将数据发送到Java后端"""
+    try:
+        # 构造符合后端要求的事件格式
+        enriched = build_enriched_payload(data_type, data)
+        event = {
+            "timestamp": datetime.now().isoformat(),
+            "sourceSystem": "SYSTEM_INFO_COLLECTOR",
+            "eventType": f"SYSTEM_{data_type.upper()}",
+            "category": "SYSTEM_PERFORMANCE",
+            "severity": "INFO",
+            "normalizedMessage": f"系统{data_type}信息收集",
+            "hostName": HOST_NAME,
+            "eventData": enriched,
+            "rawData": json.dumps(enriched, ensure_ascii=False)
+        }
+
+        # 发送数据到后端
+        response = requests.post(
+            BACKEND_URL,
+            json=[event],  # 后端要求是数组格式
+            headers={'Content-Type': 'application/json'},
+            timeout=30
+        )
+
+        if response.status_code == 201:
+            print(f"数据成功发送到后端: {data_type}")
+        else:
+            print(f"发送数据到后端失败，状态码: {response.status_code}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"发送数据到后端时网络错误: {e}")
+    except Exception as e:
+        print(f"发送数据到后端时发生错误: {e}")
+
+    return enriched
+
+def send_to_system_info_service(enriched_payload, data_type):
+    """向系统信息管理接口推送数据"""
+    if enriched_payload is None:
+        return False
+
+    ingest_payload = {
+        "hostname": enriched_payload.get("host", HOST_NAME),
+        "ipAddress": enriched_payload.get("ip", HOST_IP),
+        "dataType": data_type,
+        "payload": enriched_payload,
+        "status": "SUCCESS",
+        "collectTime": enriched_payload.get("collectedAt")
+    }
+
+    try:
+        response = requests.post(
+            SYSTEM_INFO_API_URL,
+            json=ingest_payload,
+            timeout=30
+        )
+        if response.status_code in (200, 201):
+            print(f"系统信息入库成功: {data_type}")
+            return True
+        print(f"系统信息入库失败，状态码: {response.status_code}")
+        return False
+    except requests.exceptions.RequestException as e:
+        print(f"推送系统信息失败: {e}")
+        return False
+
 def main():
     if len(sys.argv) < 2:
         # 默认返回性能数据
+        data_type = "performance"
         result = collect_performance()
     else:
         data_type = sys.argv[1]
@@ -251,6 +358,11 @@ def main():
 
     # 输出JSON结果
     print(json.dumps(result))
+
+    # 将数据发送到后端（如果收集成功）
+    if "error" not in result:
+        enriched_payload = send_to_backend(result, data_type)
+        send_to_system_info_service(enriched_payload, data_type)
 
 if __name__ == "__main__":
     main()

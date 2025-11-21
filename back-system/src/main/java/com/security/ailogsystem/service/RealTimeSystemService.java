@@ -1,6 +1,7 @@
 // SimpleWmiService.java - 服务接口层（修改后）
 package com.security.ailogsystem.service;
 
+import com.security.ailogsystem.dto.SystemInfoIngestRequest;
 import com.security.ailogsystem.model.SimpleWmiData;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -60,4 +61,5 @@ public interface RealTimeSystemService {
     Map<String, Object> getPerformanceDataQuick();
     Map<String, Object> getNetworkStats();
     Map<String, Object> getQuickProcessInfo(int limit);
+    SimpleWmiData ingestSystemInfoData(SystemInfoIngestRequest request);
 }

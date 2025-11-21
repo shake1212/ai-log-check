@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket Iframe Test</title>
+</head>
+<body>
+    <h1>WebSocket Iframe Test Page</h1>
+    <p>This page is used to test WebSocket connections through iframe.</p>
+    <div id="status">Checking WebSocket connection...</div>
+    
+    <script>
+        // 检查 WebSocket 支持
+        if ("WebSocket" in window) {
+            document.getElementById("status").innerHTML = "WebSocket is supported by your Browser!";
+        } else {
+            document.getElementById("status").innerHTML = "WebSocket NOT supported by your Browser!";
+        }
+    </script>
+</body>
+</html>

@@ -12,8 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 简单WMI数据仓库
- * 轻量级实现，适合大创项目
+ * 简单WMI数据仓库接口
  * 
  * @author AI Log System
  * @version 1.0
@@ -37,9 +36,20 @@ public interface SimpleWmiDataRepository extends JpaRepository<SimpleWmiData, Lo
     List<SimpleWmiData> findByDataType(SimpleWmiData.DataType dataType);
     
     /**
-     * 根据状态查询
+     * 根据主机名和数据类型查询
      */
-    List<SimpleWmiData> findByStatus(SimpleWmiData.Status status);
+    List<SimpleWmiData> findByHostnameAndDataType(String hostname, SimpleWmiData.DataType dataType);
+    
+    /**
+     * 按数据类型获取最新数据
+     */
+    List<SimpleWmiData> findByDataTypeOrderByCollectTimeDesc(SimpleWmiData.DataType dataType, Pageable pageable);
+    
+    /**
+     * 获取最新数据
+     */
+    @Query("SELECT s FROM SimpleWmiData s WHERE s.hostname = :hostname AND s.dataType = :dataType ORDER BY s.collectTime DESC")
+    List<SimpleWmiData> findLatestByHostnameAndDataType(@Param("hostname") String hostname, @Param("dataType") SimpleWmiData.DataType dataType, Pageable pageable);
     
     /**
      * 根据时间范围查询
@@ -50,11 +60,6 @@ public interface SimpleWmiDataRepository extends JpaRepository<SimpleWmiData, Lo
      * 根据主机名和时间范围查询
      */
     List<SimpleWmiData> findByHostnameAndCollectTimeBetween(String hostname, LocalDateTime startTime, LocalDateTime endTime);
-    
-    /**
-     * 根据主机名和数据类型查询
-     */
-    List<SimpleWmiData> findByHostnameAndDataType(String hostname, SimpleWmiData.DataType dataType);
     
     /**
      * 分页查询
@@ -78,12 +83,6 @@ public interface SimpleWmiDataRepository extends JpaRepository<SimpleWmiData, Lo
      */
     @Query("SELECT s.hostname, COUNT(s) FROM SimpleWmiData s GROUP BY s.hostname")
     List<Object[]> countByHostname();
-    
-    /**
-     * 获取最新数据
-     */
-    @Query("SELECT s FROM SimpleWmiData s WHERE s.hostname = :hostname AND s.dataType = :dataType ORDER BY s.collectTime DESC")
-    List<SimpleWmiData> findLatestByHostnameAndDataType(@Param("hostname") String hostname, @Param("dataType") SimpleWmiData.DataType dataType, Pageable pageable);
     
     /**
      * 删除过期数据

@@ -20,7 +20,8 @@ import {
   Tooltip,
   Badge,
   Typography,
-  Divider
+  Divider,
+  Descriptions
 } from 'antd';
 import {
   SearchOutlined,
@@ -32,7 +33,11 @@ import {
   PieChartOutlined,
   ExportOutlined,
   SettingOutlined,
-  InfoCircleOutlined
+  InfoCircleOutlined,
+  ThunderboltOutlined,
+  WarningOutlined,
+  CheckCircleOutlined,
+  RiseOutlined
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
@@ -40,7 +45,7 @@ import dayjs from 'dayjs';
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { TabPane } = Tabs;
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 // 修正的事件数据接口 - 根据实际数据库字段调整
 interface EventData {
@@ -115,6 +120,7 @@ interface TrendData {
 
 const EventsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
+  const [statisticsLoading, setStatisticsLoading] = useState(false);
   const [statistics, setStatistics] = useState<EventStatistics | null>(null);
   const [events, setEvents] = useState<EventData[]>([]);
   const [trends, setTrends] = useState<TrendData[]>([]);
@@ -123,6 +129,17 @@ const EventsPage: React.FC = () => {
     pageSize: 20,
     total: 0
   });
+  const [searchForm] = Form.useForm();
+
+  // 带超时的 Promise 包装函数
+  const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number = 8000): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => 
+        setTimeout(() => reject(new Error('请求超时')), timeoutMs)
+      )
+    ]);
+  };
 
   // 查询参数
   const [queryParams, setQueryParams] = useState<QueryParams>({
@@ -134,32 +151,35 @@ const EventsPage: React.FC = () => {
     isAnomaly: undefined
   });
 
-  // 获取统计信息 - 使用正确的API路径
+  // 获取统计信息 - 使用正确的API路径，添加超时处理
   const fetchStatistics = async () => {
     try {
-      setLoading(true);
+      setStatisticsLoading(true);
       const params = new URLSearchParams({
         startTime: queryParams.startTime.format('YYYY-MM-DDTHH:mm:ss'),
         endTime: queryParams.endTime.format('YYYY-MM-DDTHH:mm:ss'),
       });
 
-      const response = await fetch(`/api/events/statistics?${params}`);
+      const response = await withTimeout(
+        fetch(`/api/events/statistics?${params}`),
+        8000
+      );
       if (response.ok) {
         const data = await response.json();
         setStatistics(data);
       } else {
         console.error('统计API响应失败:', response.status, response.statusText);
-        message.error('获取统计信息失败');
+        // 不显示错误消息，因为统计信息不是主要功能
       }
     } catch (error) {
       console.error('获取统计信息错误:', error);
-      message.error('获取统计信息失败');
+      // 静默失败，不影响主要功能
     } finally {
-      setLoading(false);
+      setStatisticsLoading(false);
     }
   };
 
-  // 获取事件列表 - 使用POST请求，添加错误处理
+  // 获取事件列表 - 使用POST请求，添加错误处理和超时
   const fetchEvents = async (page = pagination.current, pageSize = pagination.pageSize) => {
     try {
       setLoading(true);
@@ -182,13 +202,16 @@ const EventsPage: React.FC = () => {
         }
       });
 
-      const response = await fetch('/api/events/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(queryDTO)
-      });
+      const response = await withTimeout(
+        fetch('/api/events/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(queryDTO)
+        }),
+        10000 // 10秒超时
+      );
 
       if (response.ok) {
         const data = await response.json();
@@ -211,7 +234,7 @@ const EventsPage: React.FC = () => {
     }
   };
 
-  // 获取趋势数据 - 使用正确的API路径
+  // 获取趋势数据 - 使用正确的API路径，添加超时处理
   const fetchTrends = async () => {
     try {
       const params = new URLSearchParams({
@@ -219,7 +242,10 @@ const EventsPage: React.FC = () => {
         endTime: queryParams.endTime.format('YYYY-MM-DDTHH:mm:ss'),
       });
 
-      const response = await fetch(`/api/events/statistics/timeseries?${params}`);
+      const response = await withTimeout(
+        fetch(`/api/events/statistics/timeseries?${params}`),
+        8000
+      );
       if (response.ok) {
         const data = await response.json();
         setTrends(data);
@@ -229,6 +255,7 @@ const EventsPage: React.FC = () => {
       }
     } catch (error) {
       console.error('获取趋势数据错误:', error);
+      // 静默失败，不影响主要功能
     }
   };
 
@@ -300,6 +327,16 @@ const EventsPage: React.FC = () => {
 
   // 搜索处理
   const handleSearch = () => {
+    const values = searchForm.getFieldsValue();
+    setQueryParams(prev => ({
+      ...prev,
+      startTime: values.timeRange?.[0] || prev.startTime,
+      endTime: values.timeRange?.[1] || prev.endTime,
+      eventType: values.eventType || '',
+      severity: values.severity || '',
+      keyword: values.keyword || '',
+      isAnomaly: values.isAnomaly
+    }));
     setPagination(prev => ({ ...prev, current: 1 }));
     fetchEvents(1);
     fetchTrends();
@@ -308,6 +345,7 @@ const EventsPage: React.FC = () => {
 
   // 重置查询
   const handleReset = () => {
+    searchForm.resetFields();
     setQueryParams({
       startTime: dayjs().subtract(7, 'day'),
       endTime: dayjs(),
@@ -321,6 +359,24 @@ const EventsPage: React.FC = () => {
   // 获取显示文本 - 处理可能的空值
   const getDisplayText = (text: string | undefined): string => {
     return text || '-';
+  };
+
+  const formatJsonContent = (content: any): string => {
+    if (!content) {
+      return '-';
+    }
+    if (typeof content === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(content), null, 2);
+      } catch {
+        return content;
+      }
+    }
+    try {
+      return JSON.stringify(content, null, 2);
+    } catch {
+      return String(content);
+    }
   };
 
   // 表格列定义 - 根据实际字段调整
@@ -423,7 +479,7 @@ const EventsPage: React.FC = () => {
       width: 180,
       render: (_, record) => (
         <Space>
-          <Button type="link" size="small">详情</Button>
+          <Button type="link" size="small" onClick={() => showEventDetail(record)}>详情</Button>
           {record.isAnomaly && record.status !== 'RESOLVED' && (
             <Button 
               type="link" 
@@ -445,23 +501,48 @@ const EventsPage: React.FC = () => {
     fetchEvents(newPagination.current, newPagination.pageSize);
   };
 
-  // 初始化数据
+  // 初始化数据 - 优化加载策略
   useEffect(() => {
     const initData = async () => {
       setLoading(true);
       try {
-        // 并行请求所有数据
-        await Promise.all([
-          fetchStatistics(),
-          fetchEvents(),
-          fetchTrends()
-        ]);
+        // 设置表单初始值
+        searchForm.setFieldsValue({
+          timeRange: [queryParams.startTime, queryParams.endTime],
+          eventType: queryParams.eventType,
+          severity: queryParams.severity,
+          keyword: queryParams.keyword,
+          isAnomaly: queryParams.isAnomaly
+        });
+
+        // 第一阶段：优先加载主要数据（事件列表）
+        await fetchEvents();
+        
+        // 设置加载完成，让用户先看到事件列表
+        setLoading(false);
+
+        // 第二阶段：延迟加载统计和趋势数据（非关键数据）
+        setTimeout(async () => {
+          try {
+            await Promise.allSettled([
+              fetchStatistics(),
+              fetchTrends()
+            ]);
+          } catch (error) {
+            console.error('加载统计或趋势数据失败:', error);
+            // 不影响主要功能，静默失败
+          }
+        }, 300); // 延迟300ms加载，避免阻塞初始渲染
       } catch (error) {
         console.error('初始化数据错误:', error);
         // 如果主要API失败，尝试获取最近事件
-        await fetchRecentEvents();
-      } finally {
-        setLoading(false);
+        try {
+          await fetchRecentEvents();
+        } catch (e) {
+          console.error('获取最近事件也失败:', e);
+        } finally {
+          setLoading(false);
+        }
       }
     };
 
@@ -479,304 +560,342 @@ const EventsPage: React.FC = () => {
     return 0;
   };
 
+  // 添加显示事件详情的函数
+  const showEventDetail = async (record: EventData) => {
+    try {
+      const response = await fetch(`/api/events/${record.id}`);
+      if (response.ok) {
+        const eventData = await response.json();
+        Modal.info({
+          title: '事件详情',
+          width: '60%',
+          content: (
+            <div>
+              <Descriptions column={1} bordered>
+                <Descriptions.Item label="ID">{eventData.id}</Descriptions.Item>
+                <Descriptions.Item label="时间">{eventData.timestamp ? dayjs(eventData.timestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}</Descriptions.Item>
+                <Descriptions.Item label="事件类型">{getDisplayText(eventData.eventType)}</Descriptions.Item>
+                <Descriptions.Item label="严重程度">{getDisplayText(eventData.severity)}</Descriptions.Item>
+                <Descriptions.Item label="标准化消息">{getDisplayText(eventData.normalizedMessage)}</Descriptions.Item>
+                <Descriptions.Item label="原始消息">{getDisplayText(eventData.rawMessage)}</Descriptions.Item>
+                <Descriptions.Item label="源IP">{getDisplayText(eventData.sourceIp)}</Descriptions.Item>
+                <Descriptions.Item label="用户ID">{getDisplayText(eventData.userId)}</Descriptions.Item>
+                <Descriptions.Item label="用户名">{getDisplayText(eventData.userName)}</Descriptions.Item>
+                <Descriptions.Item label="主机名">{getDisplayText(eventData.hostName)}</Descriptions.Item>
+                <Descriptions.Item label="状态">{getDisplayText(eventData.status)}</Descriptions.Item>
+                <Descriptions.Item label="是否异常">{eventData.isAnomaly ? '是' : '否'}</Descriptions.Item>
+                {eventData.isAnomaly && (
+                  <>
+                    <Descriptions.Item label="异常分数">{eventData.anomalyScore}</Descriptions.Item>
+                    <Descriptions.Item label="异常原因">{getDisplayText(eventData.anomalyReason)}</Descriptions.Item>
+                  </>
+                )}
+                <Descriptions.Item label="创建时间">{eventData.createdAt ? dayjs(eventData.createdAt).format('YYYY-MM-DD HH:mm:ss') : '-'}</Descriptions.Item>
+                <Descriptions.Item label="更新时间">{eventData.updatedAt ? dayjs(eventData.updatedAt).format('YYYY-MM-DD HH:mm:ss') : '-'}</Descriptions.Item>
+              </Descriptions>
+                {(eventData.rawData || eventData.eventData) && (
+                  <>
+                    <Divider>原始数据</Divider>
+                    <Paragraph style={{ maxHeight: 320, overflow: 'auto', background: '#f6f8fa', padding: 12 }}>
+                      <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+                        {formatJsonContent(eventData.rawData || eventData.eventData)}
+                      </pre>
+                    </Paragraph>
+                  </>
+                )}
+            </div>
+          ),
+          onOk() {},
+        });
+      } else {
+        message.error('获取事件详情失败');
+      }
+    } catch (error) {
+      console.error('获取事件详情错误:', error);
+      message.error('获取事件详情失败');
+    }
+  };
+
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={{ padding: '24px', minHeight: 'calc(100vh - 200px)', overflow: 'visible' }}>
       <Title level={2}>安全事件查询和统计</Title>
       
-      {/* 统计卡片 */}
-      <Row gutter={16} style={{ marginBottom: '24px' }}>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="总事件数"
-              value={getStatisticValue(statistics?.totalEvents || statistics?.basic?.totalEvents)}
-              prefix={<BarChartOutlined />}
-              loading={loading && !statistics}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="异常事件"
-              value={getStatisticValue(statistics?.anomalyEvents || statistics?.basic?.anomalyEvents)}
-              valueStyle={{ color: '#cf1322' }}
-              prefix={<InfoCircleOutlined />}
-              loading={loading && !statistics}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="异常率"
-              value={getAnomalyRate()}
-              precision={2}
-              suffix="%"
-              valueStyle={{ color: '#cf1322' }}
-              loading={loading && !statistics}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="待处理告警"
-              value={getStatisticValue(statistics?.anomaly?.pendingAlerts)}
-              valueStyle={{ color: '#fa8c16' }}
-              prefix={<InfoCircleOutlined />}
-              loading={loading && !statistics}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* 查询条件 */}
-      <Card style={{ marginBottom: '24px' }}>
-        <Row gutter={16} align="middle">
-          <Col span={6}>
-            <Text strong>时间范围：</Text>
-            <RangePicker
-              value={[queryParams.startTime, queryParams.endTime]}
-              onChange={(dates) => {
-                if (dates && dates[0] && dates[1]) {
-                  setQueryParams(prev => ({
-                    ...prev,
-                    startTime: dates[0],
-                    endTime: dates[1]
-                  }));
-                }
-              }}
-              showTime
-              style={{ width: '100%' }}
-            />
-          </Col>
-          <Col span={4}>
-            <Text strong>事件类型：</Text>
-            <Select
-              placeholder="选择类型"
-              value={queryParams.eventType}
-              onChange={(value) => setQueryParams(prev => ({ ...prev, eventType: value }))}
-              allowClear
-              style={{ width: '100%' }}
-            >
-              <Option value="AUTHENTICATION">认证事件</Option>
-              <Option value="ACCESS">访问事件</Option>
-              <Option value="SYSTEM">系统事件</Option>
-              <Option value="NETWORK">网络事件</Option>
-              <Option value="APPLICATION">应用事件</Option>
-            </Select>
-          </Col>
-          <Col span={4}>
-            <Text strong>严重程度：</Text>
-            <Select
-              placeholder="选择级别"
-              value={queryParams.severity}
-              onChange={(value) => setQueryParams(prev => ({ ...prev, severity: value }))}
-              allowClear
-              style={{ width: '100%' }}
-            >
-              <Option value="LOW">低</Option>
-              <Option value="MEDIUM">中</Option>
-              <Option value="HIGH">高</Option>
-              <Option value="CRITICAL">严重</Option>
-              <Option value="INFO">信息</Option>
-              <Option value="WARN">警告</Option>
-              <Option value="ERROR">错误</Option>
-            </Select>
-          </Col>
-          <Col span={4}>
-            <Text strong>异常：</Text>
-            <Select
-              placeholder="选择类型"
-              value={queryParams.isAnomaly}
-              onChange={(value) => setQueryParams(prev => ({ ...prev, isAnomaly: value }))}
-              allowClear
-              style={{ width: '100%' }}
-            >
-              <Option value={true}>异常</Option>
-              <Option value={false}>正常</Option>
-            </Select>
-          </Col>
-          <Col span={6}>
-            <Space>
-              <Input
-                placeholder="关键字搜索"
-                value={queryParams.keyword}
-                onChange={(e) => setQueryParams(prev => ({ ...prev, keyword: e.target.value }))}
-                onPressEnter={handleSearch}
-                style={{ width: 200 }}
-              />
-              <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
-                搜索
-              </Button>
-              <Button icon={<ReloadOutlined />} onClick={handleReset}>
-                重置
-              </Button>
-            </Space>
-          </Col>
-        </Row>
-      </Card>
-
       {/* 主要内容 */}
       <Card>
-        <Tabs defaultActiveKey="list">
-          <TabPane tab="事件列表" key="list">
-            <div style={{ marginBottom: '16px' }}>
-              <Space>
-                <Button icon={<DownloadOutlined />}>导出</Button>
-                <Button icon={<ReloadOutlined />} onClick={() => fetchEvents()}>
-                  刷新
-                </Button>
-                <Button 
-                  icon={<FilterOutlined />}
-                  onClick={triggerLogCollection}
-                >
-                  手动收集日志
-                </Button>
-                <Button 
-                  danger
-                  onClick={cleanupOldEvents}
-                >
-                  清理旧数据
-                </Button>
-              </Space>
-            </div>
-            
-            <Table
-              columns={columns}
-              dataSource={events}
-              rowKey="id"
-              loading={loading}
-              pagination={{
-                ...pagination,
-                showSizeChanger: true,
-                showQuickJumper: true,
-                showTotal: (total, range) => 
-                  `第 ${range[0]}-${range[1]} 条/共 ${total} 条`
-              }}
-              onChange={handleTableChange}
-              scroll={{ x: 1200 }}
-              locale={{ emptyText: '暂无数据' }}
-            />
-          </TabPane>
-          
-          <TabPane tab="统计分析" key="statistics">
-            <Row gutter={16}>
-              <Col span={12}>
-                <Card title="来源统计" size="small" loading={loading && !statistics}>
-                  <div style={{ height: '300px', overflowY: 'auto' }}>
-                    {statistics?.sourceStatistics ? (
-                      <div>
-                        {Object.entries(statistics.sourceStatistics).map(([source, count]) => (
-                          <div key={source} style={{ marginBottom: '8px' }}>
-                            <Text strong>{source}:</Text> {count} 条
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ 
-                        height: '100%', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        color: '#999'
-                      }}>
-                        暂无来源统计数据
-                      </div>
-                    )}
-                  </div>
+        <Tabs defaultActiveKey="events" items={[
+          {
+            key: 'events',
+            label: '事件列表',
+            children: (
+              <div>
+                {/* 搜索和过滤区域 */}
+                <Card style={{ marginBottom: '24px' }}>
+                  <Form form={searchForm} layout="vertical">
+                    <Row gutter={16}>
+                      <Col span={8}>
+                        <Form.Item label="时间范围" name="timeRange">
+                          <RangePicker 
+                            showTime 
+                            format="YYYY-MM-DD HH:mm:ss"
+                            style={{ width: '100%' }}
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col span={4}>
+                        <Form.Item label="事件类型" name="eventType">
+                          <Select allowClear placeholder="请选择事件类型">
+                            <Option value="LOGIN_SUCCESS">登录成功</Option>
+                            <Option value="LOGIN_FAILURE">登录失败</Option>
+                            <Option value="PROCESS_CREATION">进程创建</Option>
+                            <Option value="NETWORK_CONNECTION">网络连接</Option>
+                            <Option value="FILE_OPERATION">文件操作</Option>
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      <Col span={4}>
+                        <Form.Item label="严重程度" name="severity">
+                          <Select allowClear placeholder="请选择严重程度">
+                            <Option value="LOW">低</Option>
+                            <Option value="MEDIUM">中</Option>
+                            <Option value="HIGH">高</Option>
+                            <Option value="CRITICAL">严重</Option>
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      <Col span={5}>
+                        <Form.Item label="关键字" name="keyword">
+                          <Input placeholder="请输入关键字" />
+                        </Form.Item>
+                      </Col>
+                      <Col span={3}>
+                        <Form.Item label="&nbsp;">
+                          <Space>
+                            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+                              搜索
+                            </Button>
+                            <Button icon={<ReloadOutlined />} onClick={handleReset}>
+                              重置
+                            </Button>
+                          </Space>
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  </Form>
                 </Card>
-              </Col>
-              <Col span={12}>
-                <Card title="级别统计" size="small" loading={loading && !statistics}>
-                  <div style={{ height: '300px', overflowY: 'auto' }}>
-                    {statistics?.levelStatistics ? (
-                      <div>
-                        {Object.entries(statistics.levelStatistics).map(([level, count]) => (
-                          <div key={level} style={{ marginBottom: '8px' }}>
-                            <Tag color={
-                              level === 'CRITICAL' ? 'purple' : 
-                              level === 'HIGH' ? 'red' : 
-                              level === 'MEDIUM' ? 'orange' : 
-                              level === 'LOW' ? 'green' : 'blue'
-                            }>
-                              {level}
-                            </Tag>
-                            <Text strong>{count}</Text> 条
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ 
-                        height: '100%', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        color: '#999'
-                      }}>
-                        暂无级别统计数据
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              </Col>
-            </Row>
-          </TabPane>
-          
-          <TabPane tab="趋势分析" key="trends">
-            <Card title="事件趋势" loading={loading && trends.length === 0}>
-              <div style={{ height: '400px' }}>
-                {trends && trends.length > 0 ? (
-                  <div>
-                    <div style={{ marginBottom: '16px' }}>
-                      <Text strong>最近 {trends.length} 个时间点的趋势数据：</Text>
-                    </div>
-                    <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
-                      {trends.map((trend, index) => (
-                        <div key={index} style={{ 
-                          marginBottom: '8px', 
-                          padding: '8px', 
-                          border: '1px solid #f0f0f0',
-                          borderRadius: '4px'
-                        }}>
-                          <Row gutter={16}>
-                            <Col span={6}>
-                              <Text type="secondary">
-                                {dayjs(trend.timestamp).format('MM-DD HH:mm')}
-                              </Text>
-                            </Col>
-                            <Col span={6}>
-                              <Text>事件: {trend.eventCount}</Text>
-                            </Col>
-                            <Col span={6}>
-                              <Text type="danger">异常: {trend.anomalyCount}</Text>
-                            </Col>
-                            <Col span={6}>
-                              <Text type="warning">
-                                异常率: {(trend.anomalyRate * 100).toFixed(2)}%
-                              </Text>
-                            </Col>
-                          </Row>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ 
-                    height: '100%', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    color: '#999'
-                  }}>
-                    暂无趋势数据
-                  </div>
-                )}
+                
+                {/* 操作按钮区域 */}
+                <div style={{ marginBottom: '16px' }}>
+                  <Space>
+                    <Button 
+                      icon={<ReloadOutlined />}
+                      onClick={() => fetchEvents(pagination.current, pagination.pageSize)}
+                    >
+                      刷新
+                    </Button>
+                    <Button 
+                      icon={<FilterOutlined />}
+                      onClick={triggerLogCollection}
+                    >
+                      手动收集日志
+                    </Button>
+                    <Button 
+                      danger
+                      onClick={cleanupOldEvents}
+                    >
+                      清理旧数据
+                    </Button>
+                  </Space>
+                </div>
+                
+                <Table
+                  columns={columns}
+                  dataSource={events}
+                  rowKey="id"
+                  loading={loading}
+                  pagination={{
+                    ...pagination,
+                    showSizeChanger: true,
+                    showQuickJumper: true,
+                    showTotal: (total, range) => 
+                      `第 ${range[0]}-${range[1]} 条/共 ${total} 条`
+                  }}
+                  onChange={handleTableChange}
+                  scroll={{ x: 1200 }}
+                  locale={{ emptyText: '暂无数据' }}
+                />
               </div>
-            </Card>
-          </TabPane>
-        </Tabs>
+            )
+          },
+          {
+            key: 'statistics',
+            label: '统计分析',
+            children: (
+              <div>
+                {/* 统计卡片 */}
+                <Row gutter={16} style={{ marginBottom: '24px' }}>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic
+                        title="总事件数"
+                        value={getStatisticValue(statistics?.totalEvents || statistics?.basic?.totalEvents)}
+                        prefix={<ThunderboltOutlined />}
+                        valueStyle={{ color: '#1890ff' }}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic
+                        title="异常事件"
+                        value={getStatisticValue(statistics?.anomalyEvents || statistics?.basic?.anomalyEvents)}
+                        prefix={<WarningOutlined />}
+                        valueStyle={{ color: '#fa8c16' }}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic
+                        title="正常事件"
+                        value={getStatisticValue(statistics?.normalEvents || statistics?.basic?.normalEvents)}
+                        prefix={<CheckCircleOutlined />}
+                        valueStyle={{ color: '#52c41a' }}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic
+                        title="异常率"
+                        value={getAnomalyRate()}
+                        prefix={<RiseOutlined />}
+                        suffix="%"
+                        valueStyle={{ color: getAnomalyRate() > 10 ? '#ff4d4f' : '#1890ff' }}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
+                
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Card title="来源统计" size="small" loading={loading && !statistics}>
+                      <div style={{ minHeight: '300px', overflowY: 'auto' }}>
+                        {statistics?.sourceStatistics ? (
+                          <div>
+                            {Object.entries(statistics.sourceStatistics).map(([source, count]) => (
+                              <div key={source} style={{ marginBottom: '8px' }}>
+                                <Text strong>{source}:</Text> {count} 条
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ 
+                            height: '100%', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            color: '#999'
+                          }}>
+                            暂无来源统计数据
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  </Col>
+                  <Col span={12}>
+                    <Card title="级别统计" size="small" loading={loading && !statistics}>
+                      <div style={{ minHeight: '300px', overflowY: 'auto' }}>
+                        {statistics?.levelStatistics ? (
+                          <div>
+                            {Object.entries(statistics.levelStatistics).map(([level, count]) => (
+                              <div key={level} style={{ marginBottom: '8px' }}>
+                                <Tag color={
+                                  level === 'CRITICAL' ? 'purple' : 
+                                  level === 'HIGH' ? 'red' : 
+                                  level === 'MEDIUM' ? 'orange' : 
+                                  level === 'LOW' ? 'green' : 'blue'
+                                }>
+                                  {level}
+                                </Tag>
+                                <Text strong>{count}</Text> 条
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ 
+                            height: '100%', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            color: '#999'
+                          }}>
+                            暂无级别统计数据
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  </Col>
+                </Row>
+              </div>
+            )
+          },
+          {
+            key: 'trends',
+            label: '趋势分析',
+            children: (
+              <Card title="事件趋势" loading={loading && trends.length === 0}>
+                <div style={{ height: '400px' }}>
+                  {trends && trends.length > 0 ? (
+                    <div>
+                      <div style={{ marginBottom: '16px' }}>
+                        <Text strong>最近 {trends.length} 个时间点的趋势数据：</Text>
+                      </div>
+                      <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
+                        {trends.map((trend, index) => (
+                          <div key={index} style={{ 
+                            marginBottom: '8px', 
+                            padding: '8px', 
+                            border: '1px solid #f0f0f0',
+                            borderRadius: '4px'
+                          }}>
+                            <Row gutter={16}>
+                              <Col span={6}>
+                                <Text type="secondary">
+                                  {dayjs(trend.timestamp).format('MM-DD HH:mm')}
+                                </Text>
+                              </Col>
+                              <Col span={6}>
+                                <Text>事件: {trend.eventCount}</Text>
+                              </Col>
+                              <Col span={6}>
+                                <Text type="danger">异常: {trend.anomalyCount}</Text>
+                              </Col>
+                              <Col span={6}>
+                                <Text type="warning">
+                                  异常率: {(trend.anomalyRate * 100).toFixed(2)}%
+                                </Text>
+                              </Col>
+                            </Row>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ 
+                      height: '100%', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      color: '#999'
+                    }}>
+                      暂无趋势数据
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )
+          }
+        ]} />
       </Card>
     </div>
   );

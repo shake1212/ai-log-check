@@ -24,7 +24,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/websocket")
+@RequestMapping("/websocket")
 @Tag(name = "WebSocket管理", description = "WebSocket连接和消息推送管理接口")
 public class WebSocketController {
 

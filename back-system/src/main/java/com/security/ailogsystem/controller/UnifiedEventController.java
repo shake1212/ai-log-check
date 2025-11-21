@@ -20,7 +20,6 @@ import java.util.Optional;
 
 @Slf4j
 @RestController
-
 @RequestMapping("/events")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")

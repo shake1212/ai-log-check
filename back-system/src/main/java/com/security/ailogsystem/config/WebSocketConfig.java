@@ -30,10 +30,20 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 .setHttpMessageCacheSize(1000)
                 .setDisconnectDelay(30 * 1000); // 30秒断开延迟
 
+        // 注册 /api/ws 端点，支持 SockJS
+        registry.addEndpoint("/api/ws")
+                .setAllowedOriginPatterns("*")
+                .withSockJS()
+                .setStreamBytesLimit(512 * 1024) // 512KB
+                .setHttpMessageCacheSize(1000)
+                .setDisconnectDelay(30 * 1000); // 30秒断开延迟
+
         // 单独注册原生 WebSocket 端点（不经过 SockJS）
         registry.addEndpoint("/ws-native")
                 .setAllowedOriginPatterns("*");
+                
+        // 注册原生 /api/ws-native 端点
+        registry.addEndpoint("/api/ws-native")
+                .setAllowedOriginPatterns("*");
     }
-
-
 }

@@ -304,109 +304,122 @@ const ModelMetrics: React.FC<ModelMetricsProps> = ({ visible, model, onCancel })
           <p style={{ marginTop: 16 }}>加载模型指标...</p>
         </div>
       ) : (
-        <Tabs defaultActiveKey="overview">
-          <Tabs.TabPane tab="概览" key="overview">
-            <Row gutter={[16, 16]}>
-              <Col span={6}>
-                <Card>
-                  <Statistic 
-                    title="准确率" 
-                    value={model?.accuracy || 0} 
-                    precision={2}
-                    formatter={(value) => `${(Number(value) * 100).toFixed(2)}%`}
-                    valueStyle={{ color: (model?.accuracy || 0) > 0.9 ? '#3f8600' : '#cf1322' }}
-                  />
-                </Card>
-              </Col>
-              <Col span={6}>
-                <Card>
-                  <Statistic 
-                    title="精确率" 
-                    value={model?.metrics.precision || 0} 
-                    precision={2}
-                    formatter={(value) => `${(Number(value) * 100).toFixed(2)}%`}
-                  />
-                </Card>
-              </Col>
-              <Col span={6}>
-                <Card>
-                  <Statistic 
-                    title="召回率" 
-                    value={model?.metrics.recall || 0} 
-                    precision={2}
-                    formatter={(value) => `${(Number(value) * 100).toFixed(2)}%`}
-                  />
-                </Card>
-              </Col>
-              <Col span={6}>
-                <Card>
-                  <Statistic 
-                    title="F1分数" 
-                    value={model?.metrics.f1Score || 0} 
-                    precision={2}
-                    formatter={(value) => `${(Number(value) * 100).toFixed(2)}%`}
-                  />
-                </Card>
-              </Col>
-            </Row>
-            
-            <Card title="混淆矩阵" style={{ marginTop: 16 }}>
-              <div style={{ height: 300 }}>
-                {renderConfusionMatrix()}
-              </div>
-            </Card>
-            
-            <Row gutter={16} style={{ marginTop: 16 }}>
-              <Col span={12}>
-                <Card title="ROC曲线">
-                  <div style={{ height: 300 }}>
-                    {renderRocCurve()}
-                  </div>
-                </Card>
-              </Col>
-              <Col span={12}>
-                <Card title="特征重要性">
-                  <div style={{ height: 300 }}>
-                    {renderFeatureImportance()}
-                  </div>
-                </Card>
-              </Col>
-            </Row>
-          </Tabs.TabPane>
-          
-          <Tabs.TabPane tab="训练历史" key="training">
-            <Card title="训练和验证损失">
-              <div style={{ height: 300 }}>
-                {renderTrainingHistory()}
-              </div>
-            </Card>
-            
-            <Card title="训练和验证准确率" style={{ marginTop: 16 }}>
-              <div style={{ height: 300 }}>
-                {renderAccuracyHistory()}
-              </div>
-            </Card>
-          </Tabs.TabPane>
-          
-          <Tabs.TabPane tab="详细指标" key="details">
-            <Card>
-              <Row gutter={[16, 16]}>
-                {model?.metrics && Object.entries(model.metrics).map(([key, value]) => (
-                  <Col span={8} key={key}>
+        <Tabs defaultActiveKey="overview" items={[
+          {
+            key: 'overview',
+            label: '概览',
+            children: (
+              <div>
+                <Row gutter={16}>
+                  <Col span={6}>
                     <Card>
                       <Statistic 
-                        title={key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} 
-                        value={value as number} 
-                        precision={4}
-                        formatter={(val) => typeof val === 'number' ? `${(val * 100).toFixed(2)}%` : val}
+                        title="准确率" 
+                        value={model?.metrics.accuracy || 0} 
+                        precision={2}
+                        formatter={(value) => `${(Number(value) * 100).toFixed(2)}%`}
                       />
                     </Card>
                   </Col>
-                ))}
-              </Row>
-            </Card>
-          </Tabs.TabPane>
-        </Tabs>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic 
+                        title="精确率" 
+                        value={model?.metrics.precision || 0} 
+                        precision={2}
+                        formatter={(value) => `${(Number(value) * 100).toFixed(2)}%`}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic 
+                        title="召回率" 
+                        value={model?.metrics.recall || 0} 
+                        precision={2}
+                        formatter={(value) => `${(Number(value) * 100).toFixed(2)}%`}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card>
+                      <Statistic 
+                        title="F1分数" 
+                        value={model?.metrics.f1Score || 0} 
+                        precision={2}
+                        formatter={(value) => `${(Number(value) * 100).toFixed(2)}%`}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
+                
+                <Card title="混淆矩阵" style={{ marginTop: 16 }}>
+                  <div style={{ height: 300 }}>
+                    {renderConfusionMatrix()}
+                  </div>
+                </Card>
+                
+                <Row gutter={16} style={{ marginTop: 16 }}>
+                  <Col span={12}>
+                    <Card title="ROC曲线">
+                      <div style={{ height: 300 }}>
+                        {renderRocCurve()}
+                      </div>
+                    </Card>
+                  </Col>
+                  <Col span={12}>
+                    <Card title="特征重要性">
+                      <div style={{ height: 300 }}>
+                        {renderFeatureImportance()}
+                      </div>
+                    </Card>
+                  </Col>
+                </Row>
+              </div>
+            )
+          },
+          {
+            key: 'training',
+            label: '训练历史',
+            children: (
+              <div>
+                <Card title="训练和验证损失">
+                  <div style={{ height: 300 }}>
+                    {renderTrainingHistory()}
+                  </div>
+                </Card>
+                
+                <Card title="训练和验证准确率" style={{ marginTop: 16 }}>
+                  <div style={{ height: 300 }}>
+                    {renderAccuracyHistory()}
+                  </div>
+                </Card>
+              </div>
+            )
+          },
+          {
+            key: 'details',
+            label: '详细指标',
+            children: (
+              <Card>
+                <Row gutter={[16, 16]}>
+                  {model?.metrics && Object.entries(model.metrics).map(([key, value]) => (
+                    <Col span={8} key={key}>
+                      <Card>
+                        <Statistic 
+                          title={key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())} 
+                          value={value as number} 
+                          precision={4}
+                          formatter={(val) => typeof val === 'number' ? `${(val * 100).toFixed(2)}%` : val}
+                        />
+                      </Card>
+                    </Col>
+                  ))}
+                </Row>
+              </Card>
+            )
+          }
+        ]} />
       )}
     </Modal>
   );

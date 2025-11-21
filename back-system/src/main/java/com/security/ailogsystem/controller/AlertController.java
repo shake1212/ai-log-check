@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/alerts")
+@RequestMapping("/alerts")
 @CrossOrigin(origins = "*")
 public class AlertController {
 

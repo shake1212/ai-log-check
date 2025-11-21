@@ -62,7 +62,7 @@ export default defineConfig({
         },
         { 
           path: '/logs', 
-          component: '@/pages/logs/logs',
+          component: '@/pages/logs',
           name: 'logs',
           icon: 'FileTextOutlined',
         },

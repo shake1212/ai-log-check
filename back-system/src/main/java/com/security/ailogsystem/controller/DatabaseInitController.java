@@ -18,7 +18,7 @@ import java.sql.Statement;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/database/init")
+@RequestMapping("/database/init")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class DatabaseInitController {

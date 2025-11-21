@@ -1,5 +1,6 @@
 package com.security.ailogsystem.controller;
 
+import com.security.ailogsystem.dto.SystemInfoIngestRequest;
 import com.security.ailogsystem.model.SimpleWmiData;
 import com.security.ailogsystem.service.RealTimeSystemService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
@@ -489,6 +491,27 @@ public class RealTimeSystemController {
         }
     }
 
+    @PostMapping("/ingest")
+    @Operation(summary = "接收系统信息采集结果", description = "供脚本推送系统信息数据，写入系统信息库")
+    public ResponseEntity<Map<String, Object>> ingestSystemInfo(
+            @Valid @RequestBody SystemInfoIngestRequest request) {
+        try {
+            SimpleWmiData saved = realTimeSystemService.ingestSystemInfoData(request);
+            Map<String, Object> response = new HashMap<>();
+            response.put("status", "success");
+            response.put("id", saved.getId());
+            response.put("collectTime", saved.getCollectTime());
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (Exception e) {
+            log.error("接收系统信息数据失败: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(
+                            "status", "error",
+                            "message", e.getMessage()
+                    ));
+        }
+    }
+
     @PostMapping("/batch-collect")
     @Operation(summary = "批量采集系统信息数据", description = "批量采集指定主机的多种系统信息数据")
     public ResponseEntity<List<SimpleWmiData>> batchCollectSystemInfoData(
@@ -531,9 +554,14 @@ public class RealTimeSystemController {
 
     @GetMapping("/data/type/{dataType}")
     @Operation(summary = "根据数据类型查询", description = "根据数据类型查询系统信息数据")
-    public ResponseEntity<List<SimpleWmiData>> getSystemInfoDataByType(@PathVariable SimpleWmiData.DataType dataType) {
-        List<SimpleWmiData> wmiDataList = realTimeSystemService.getWmiDataByType(dataType);
-        return ResponseEntity.ok(wmiDataList);
+    public ResponseEntity<List<SimpleWmiData>> getSystemInfoDataByType(@PathVariable String dataType) {
+        try {
+            SimpleWmiData.DataType dataTypeEnum = SimpleWmiData.DataType.valueOf(dataType.toUpperCase());
+            List<SimpleWmiData> wmiDataList = realTimeSystemService.getWmiDataByType(dataTypeEnum);
+            return ResponseEntity.ok(wmiDataList);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     @GetMapping("/data/time-range")
@@ -686,24 +714,26 @@ public class RealTimeSystemController {
         Map<String, Object> health = new HashMap<>();
 
         try {
-            // 测试Python环境
             boolean pythonOk = realTimeSystemService.testSystemInfoEnvironment();
-
-            // 测试数据采集
             Map<String, Object> metrics = realTimeSystemService.getSystemPerformanceMetrics();
 
-            health.put("status", pythonOk ? "healthy" : "unhealthy");
-            health.put("pythonEnvironment", pythonOk ? "available" : "unavailable");
-            health.put("dataCollection", metrics != null ? "working" : "failed");
+            boolean dataOk = metrics != null && !metrics.isEmpty();
+
             health.put("timestamp", LocalDateTime.now());
             health.put("version", "2.0");
+            health.put("pythonEnvironment", pythonOk ? "available" : "unavailable");
+            health.put("dataCollection", dataOk ? "working" : "failed");
 
-            if (pythonOk && metrics != null) {
+            if (pythonOk && dataOk) {
+                health.put("status", "healthy");
+                health.put("message", "系统信息采集服务运行正常");
                 return ResponseEntity.ok(health);
-            } else {
-                health.put("message", "系统信息采集服务部分功能异常");
-                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(health);
             }
+
+            health.put("status", "unhealthy");
+            health.put("message", "系统信息采集服务不可用，请检查Python环境与数据采集脚本");
+
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(health);
 
         } catch (Exception e) {
             log.error("健康检查失败: {}", e.getMessage(), e);

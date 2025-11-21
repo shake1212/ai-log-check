@@ -127,7 +127,7 @@ const NotificationPanel: React.FC<NotificationPanelProps> = ({ visible, onClose 
       width={400}
       open={visible}
       onClose={onClose}
-      bodyStyle={{ padding: 0 }}
+      styles={{ body: { padding: 0 } }}
     >
       {notifications.length === 0 ? (
         <div style={{ 

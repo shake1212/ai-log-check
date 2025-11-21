@@ -17,7 +17,9 @@ import type {
 } from '@/types';
 
 // API基础配置
+// Axios 全局 baseURL 已设置为 /api，这里留空避免重复前缀
 const API_BASE_URL = '/api';
+const EVENT_API_BASE_URL = '/api/events';
 
 // 认证相关API
 export const authApi = {
@@ -366,6 +368,70 @@ export const userApi = {
 
 // 事件查询和统计API - 保持原有功能
 export const eventApi = {
+  // 获取最近事件（统一事件）
+  getRecentEvents: (params?: { limit?: number }): Promise<any> =>
+    request(`${EVENT_API_BASE_URL}/recent`, {
+      params,
+    }),
+
+  // 获取事件详情
+  getEventById: (id: number): Promise<any> =>
+    request(`${EVENT_API_BASE_URL}/${id}`),
+
+  // 搜索事件
+  searchEvents: (data: any): Promise<any> =>
+    request(`${EVENT_API_BASE_URL}/search`, {
+      method: 'POST',
+      data,
+    }),
+
+  // 获取异常事件
+  getAnomalyEvents: (params?: { page?: number; size?: number }): Promise<any> =>
+    request(`${EVENT_API_BASE_URL}/anomalies`, {
+      params,
+    }),
+
+  // 更新事件状态
+  updateEventStatus: (
+    id: number,
+    params: { status: string; resolutionNotes?: string; assignedTo?: string }
+  ): Promise<any> =>
+    request(`${EVENT_API_BASE_URL}/${id}/status`, {
+      method: 'PUT',
+      params,
+    }),
+
+  // 删除事件
+  deleteEvent: (id: number): Promise<any> =>
+    request(`${EVENT_API_BASE_URL}/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // 获取统计信息
+  getStatistics: (params: { startTime: string; endTime: string }): Promise<any> =>
+    request(`${EVENT_API_BASE_URL}/statistics`, {
+      params,
+    }),
+
+  // 获取时间序列统计
+  getTimeSeriesStatistics: (params: { startTime: string; endTime: string }): Promise<any> =>
+    request(`${EVENT_API_BASE_URL}/statistics/timeseries`, {
+      params,
+    }),
+
+  // 手动触发日志收集
+  triggerLogCollection: (): Promise<any> =>
+    request(`${EVENT_API_BASE_URL}/collect`, {
+      method: 'POST',
+    }),
+
+  // 清理旧数据
+  cleanupOldEvents: (params?: { daysToKeep?: number }): Promise<any> =>
+    request(`${EVENT_API_BASE_URL}/cleanup`, {
+      method: 'POST',
+      params,
+    }),
+
   // 获取综合统计
   getComprehensiveStats: (): Promise<ApiResponse<any>> =>
     request(`${API_BASE_URL}/events/statistics/comprehensive`),
@@ -412,7 +478,7 @@ export const eventApi = {
       params: { limit, startTime, endTime }
     }),
 
-  // 高级事件查询
+  // 高级事件查询（旧接口，兼容保留）
   advancedSearch: (params: any): Promise<ApiResponse<any>> =>
     request(`${API_BASE_URL}/events/search/advanced`, {
       params
@@ -506,6 +572,24 @@ export const batchApi = {
     }),
 };
 
+// 脚本执行 API
+export const scriptApi = {
+  // 触发脚本执行
+  runScript: (data: { scriptKey: string; args?: string[] }) =>
+    request(`${API_BASE_URL}/scripts/run`, {
+      method: 'POST',
+      data,
+    }),
+
+  // 获取可用脚本
+  getAvailableScripts: () =>
+    request(`${API_BASE_URL}/scripts/available`),
+
+  // 获取执行历史
+  getHistory: () =>
+    request(`${API_BASE_URL}/scripts/history`),
+};
+
 // 统一导出
 export const api = {
   auth: authApi,
@@ -517,4 +601,5 @@ export const api = {
   user: userApi,
   event: eventApi,
   batch: batchApi,
+  script: scriptApi,
 };

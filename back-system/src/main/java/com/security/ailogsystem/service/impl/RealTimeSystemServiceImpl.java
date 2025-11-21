@@ -1,6 +1,9 @@
 
 package com.security.ailogsystem.service.impl;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.security.ailogsystem.dto.SystemInfoIngestRequest;
 import com.security.ailogsystem.model.SimpleWmiData;
 import com.security.ailogsystem.repository.SimpleWmiDataRepository;
 import com.security.ailogsystem.service.RealTimeSystemService;
@@ -12,13 +15,13 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 
 @Slf4j
 @Service
@@ -32,7 +35,7 @@ public class RealTimeSystemServiceImpl implements RealTimeSystemService {
     private SystemInfoService systemInfoService;
 
     private final Map<String, SseEmitter> emitters = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public SseEmitter createConnection(String clientId) {
@@ -274,18 +277,19 @@ public class RealTimeSystemServiceImpl implements RealTimeSystemService {
 
     @Override
     public List<Map<String, Object>> executeSystemInfoQuery(String infoType) {
+        Optional<Map<String, Object>> storedResult = buildStoredResult(infoType);
+        if (storedResult.isPresent()) {
+            return List.of(storedResult.get());
+        }
+
         try {
             Map<String, Object> systemInfo = systemInfoService.collectSpecificInfo(infoType);
-            List<Map<String, Object>> results = new ArrayList<>();
-
-            // 将系统信息转换为统一的返回格式
             Map<String, Object> resultItem = new HashMap<>();
             resultItem.put("infoType", infoType);
             resultItem.put("data", systemInfo);
             resultItem.put("collectionTime", LocalDateTime.now().toString());
-            results.add(resultItem);
-
-            return results;
+            resultItem.put("source", "SCRIPT");
+            return List.of(resultItem);
         } catch (Exception e) {
             log.error("执行系统信息查询失败: {}", e.getMessage(), e);
             throw new RuntimeException("系统信息查询失败: " + e.getMessage());
@@ -326,27 +330,52 @@ public class RealTimeSystemServiceImpl implements RealTimeSystemService {
     private String extractDataByType(Map<String, Object> systemInfo, SimpleWmiData.DataType dataType) {
         try {
             switch (dataType) {
-                case CPU_USAGE:
-                    Map<String, Object> cpuInfo = (Map<String, Object>) systemInfo.get("cpu");
-                    return String.format("%.2f%%", cpuInfo.get("cpu_usage_percent"));
-                case MEMORY_USAGE:
-                    Map<String, Object> memoryInfo = (Map<String, Object>) systemInfo.get("memory");
-                    return String.format("%.2f%%", memoryInfo.get("usage_percent"));
-                case DISK_USAGE:
-                    Map<String, Object> diskInfo = (Map<String, Object>) systemInfo.get("disk");
-                    // 取第一个磁盘的使用率
-                    if (!diskInfo.isEmpty()) {
-                        Map<String, Object> firstDisk = (Map<String, Object>) diskInfo.values().iterator().next();
-                        return String.format("%.2f%%", firstDisk.get("usage_percent"));
+                case CPU_USAGE: {
+                    Object cpuNode = systemInfo.get("cpu");
+                    if (cpuNode instanceof Map<?, ?> cpuInfo) {
+                        Object usage = ((Map<?, ?>) cpuInfo).get("cpu_usage_percent");
+                        return usage != null ? String.format("%.2f%%", Double.parseDouble(usage.toString())) : "0.0%";
                     }
                     return "0.0%";
-                case PROCESS_COUNT:
-                    Map<String, Object> processInfo = (Map<String, Object>) systemInfo.get("processes");
-                    return String.valueOf(processInfo.get("total_count"));
-                case SYSTEM_INFO:
-                    Map<String, Object> basicInfo = (Map<String, Object>) systemInfo.get("basic");
-                    return String.format("系统: %s, 主机名: %s",
-                            basicInfo.get("platform"), basicInfo.get("hostname"));
+                }
+                case MEMORY_USAGE: {
+                    Object memoryNode = systemInfo.get("memory");
+                    if (memoryNode instanceof Map<?, ?> memoryInfo) {
+                        Object usage = ((Map<?, ?>) memoryInfo).get("usage_percent");
+                        return usage != null ? String.format("%.2f%%", Double.parseDouble(usage.toString())) : "0.0%";
+                    }
+                    return "0.0%";
+                }
+                case DISK_USAGE: {
+                    Object diskNode = systemInfo.get("disk");
+                    if (diskNode instanceof Map<?, ?> diskInfo && !((Map<?, ?>) diskInfo).isEmpty()) {
+                        Object first = ((Map<?, ?>) diskInfo).values().iterator().next();
+                        if (first instanceof Map<?, ?> firstDisk) {
+                            Object usage = firstDisk.get("usage_percent");
+                            return usage != null ? String.format("%.2f%%", Double.parseDouble(usage.toString())) : "0.0%";
+                        }
+                    }
+                    return "0.0%";
+                }
+                case PROCESS_COUNT: {
+                    Object processNode = systemInfo.get("processes");
+                    if (processNode instanceof Map<?, ?> processInfo) {
+                        Object total = processInfo.get("total_count");
+                        return total != null ? String.valueOf(total) : "0";
+                    }
+                    return "0";
+                }
+                case SYSTEM_INFO: {
+                    Object basicNode = systemInfo.get("basic");
+                    if (basicNode instanceof Map<?, ?> basicInfo) {
+                        Object platform = basicInfo.get("platform");
+                        Object hostname = basicInfo.get("hostname");
+                        return String.format("系统: %s, 主机名: %s",
+                                platform != null ? platform : "未知",
+                                hostname != null ? hostname : "未知");
+                    }
+                    return "系统信息缺失";
+                }
                 default:
                     return "未知数据类型";
             }
@@ -384,26 +413,178 @@ public class RealTimeSystemServiceImpl implements RealTimeSystemService {
 
     @Override
     public Map<String, Object> getRealTimeStatus() {
-        return systemInfoService.collectRealTimeStatus();
+        Map<String, Object> status = new HashMap<>();
+        status.put("performance", getPerformanceDataQuick());
+        status.put("processes", getQuickProcessInfo(5));
+        status.put("system", getSystemMetricsFromStorage().orElseGet(systemInfoService::collectSystemMetrics));
+        status.put("timestamp", System.currentTimeMillis());
+        status.put("status", "healthy");
+        return status;
     }
 
     @Override
     public Map<String, Object> getBatchRealTimeData() {
-        return systemInfoService.collectBatchRealTimeData();
+        Map<String, Object> batch = new HashMap<>();
+        batch.put("performance", getPerformanceDataQuick());
+        batch.put("system", getSystemMetricsFromStorage().orElseGet(systemInfoService::collectSystemMetrics));
+        batch.put("processes", getQuickProcessInfo(10));
+        batch.put("network", getNetworkStats());
+        batch.put("timestamp", System.currentTimeMillis());
+        batch.put("status", "success");
+        return batch;
     }
 
     @Override
     public Map<String, Object> getPerformanceDataQuick() {
-        return systemInfoService.collectPerformanceDataQuick();
+        return getLatestDataPayload("performance")
+                .orElseGet(systemInfoService::collectPerformanceDataQuick);
     }
 
     @Override
     public Map<String, Object> getNetworkStats() {
-        return systemInfoService.collectNetworkStats();
+        return getLatestDataPayload("network")
+                .orElseGet(systemInfoService::collectNetworkStats);
     }
 
     @Override
     public Map<String, Object> getQuickProcessInfo(int limit) {
+        Map<String, Object> stored = getLatestDataPayload("process_info").orElse(null);
+        if (stored != null) {
+            if (stored.containsKey("processes") && stored.get("processes") instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> processes = (List<Map<String, Object>>) stored.get("processes");
+                if (processes.size() > limit) {
+                    stored.put("processes", processes.subList(0, limit));
+                }
+            }
+            return stored;
+        }
         return systemInfoService.collectQuickProcessInfo(limit);
+    }
+
+    @Override
+    public SimpleWmiData ingestSystemInfoData(SystemInfoIngestRequest request) {
+        SimpleWmiData.DataType dataType = mapInfoTypeToDataType(request.getDataType());
+        if (dataType == null) {
+            dataType = SimpleWmiData.DataType.SYSTEM_INFO;
+        }
+
+        SimpleWmiData wmiData = SimpleWmiData.builder()
+                .hostname(Optional.ofNullable(request.getHostname()).orElse("unknown-host"))
+                .ipAddress(Optional.ofNullable(request.getIpAddress()).orElse("0.0.0.0"))
+                .dataType(dataType)
+                .dataValue(serializePayload(request.getPayload()))
+                .status(parseStatus(request.getStatus()))
+                .remark(request.getRemark())
+                .collectTime(Optional.ofNullable(request.getCollectTime()).orElse(LocalDateTime.now()))
+                .build();
+
+        return saveWmiData(wmiData);
+    }
+
+    private Optional<Map<String, Object>> buildStoredResult(String infoType) {
+        return findLatestRecord(infoType).map(record -> {
+            Map<String, Object> dataPayload = extractDataPayload(record.getDataValue());
+            Map<String, Object> result = new HashMap<>();
+            result.put("infoType", infoType);
+            result.put("data", dataPayload);
+            result.put("collectionTime", record.getCollectTime().toString());
+            result.put("hostname", record.getHostname());
+            result.put("ipAddress", record.getIpAddress());
+            result.put("source", "INGEST");
+            return result;
+        });
+    }
+
+    private Optional<Map<String, Object>> getLatestDataPayload(String infoType) {
+        return findLatestRecord(infoType).map(record -> {
+            Map<String, Object> dataPayload = extractDataPayload(record.getDataValue());
+            dataPayload.putIfAbsent("hostname", record.getHostname());
+            dataPayload.putIfAbsent("ipAddress", record.getIpAddress());
+            dataPayload.put("collectTime", record.getCollectTime());
+            return dataPayload;
+        });
+    }
+
+    private Optional<Map<String, Object>> getSystemMetricsFromStorage() {
+        return getLatestDataPayload("system_basic");
+    }
+
+    private Optional<SimpleWmiData> findLatestRecord(String infoType) {
+        SimpleWmiData.DataType dataType = mapInfoTypeToDataType(infoType);
+        if (dataType == null) {
+            return Optional.empty();
+        }
+        Pageable pageable = PageRequest.of(0, 1);
+        List<SimpleWmiData> records = wmiDataRepository.findByDataTypeOrderByCollectTimeDesc(dataType, pageable);
+        if (records.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(records.get(0));
+    }
+
+    private Map<String, Object> extractDataPayload(String dataValue) {
+        if (!StringUtils.hasText(dataValue)) {
+            return new HashMap<>();
+        }
+        try {
+            Map<String, Object> payload = objectMapper.readValue(dataValue, new TypeReference<Map<String, Object>>() {});
+            Object dataNode = payload.get("data");
+            if (dataNode instanceof Map<?, ?> dataMap) {
+                Map<String, Object> normalized = new HashMap<>();
+                for (Map.Entry<?, ?> entry : dataMap.entrySet()) {
+                    normalized.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
+                if (payload.containsKey("collectedAt")) {
+                    normalized.putIfAbsent("collectedAt", payload.get("collectedAt"));
+                }
+                if (payload.containsKey("host")) {
+                    normalized.putIfAbsent("host", payload.get("host"));
+                }
+                return normalized;
+            }
+            return payload;
+        } catch (IOException e) {
+            log.warn("解析系统信息数据失败: {}", e.getMessage());
+            return new HashMap<>();
+        }
+    }
+
+    private String serializePayload(Map<String, Object> payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (IOException e) {
+            log.warn("序列化系统信息数据失败: {}", e.getMessage());
+            return "{}";
+        }
+    }
+
+    private SimpleWmiData.DataType mapInfoTypeToDataType(String infoType) {
+        if (!StringUtils.hasText(infoType)) {
+            return null;
+        }
+        return switch (infoType.toLowerCase(Locale.ROOT)) {
+            case "performance" -> SimpleWmiData.DataType.SYSTEM_PERFORMANCE;
+            case "cpu_info" -> SimpleWmiData.DataType.CPU_INFO;
+            case "system_basic" -> SimpleWmiData.DataType.SYSTEM_BASIC;
+            case "memory_info" -> SimpleWmiData.DataType.MEMORY_INFO;
+            case "disk_info" -> SimpleWmiData.DataType.DISK_INFO;
+            case "process_info" -> SimpleWmiData.DataType.PROCESS_INFO;
+            case "network" -> SimpleWmiData.DataType.NETWORK_TRAFFIC;
+            case "service_status" -> SimpleWmiData.DataType.SERVICE_STATUS;
+            case "system_performance" -> SimpleWmiData.DataType.SYSTEM_PERFORMANCE;
+            default -> null;
+        };
+    }
+
+    private SimpleWmiData.Status parseStatus(String status) {
+        if (!StringUtils.hasText(status)) {
+            return SimpleWmiData.Status.SUCCESS;
+        }
+        try {
+            return SimpleWmiData.Status.valueOf(status.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return SimpleWmiData.Status.SUCCESS;
+        }
     }
 }

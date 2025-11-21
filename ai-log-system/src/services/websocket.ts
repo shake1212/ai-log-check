@@ -9,10 +9,6 @@ import type { WebSocketMessage, SecurityLog, SecurityAlert, Statistics } from '@
 const WEBSOCKET_CONFIG = {
   // 获取 WebSocket 地址
   getWebSocketUrl: (): string => {
-    // 开发环境直接连接后端端口
-    if (process.env.NODE_ENV === 'development') {
-      return 'http://localhost:8080/api/ws';
-    }
     return `${window.location.origin}/api/ws`;
   },
   
@@ -162,85 +158,66 @@ export const useWebSocket = () => {
     if (!isMountedRef.current) return;
     
     console.log('收到 WebSocket 消息:', msg);
-    
-    switch (msg.type) {
-      case 'NEW_LOGS':
-        if (msg.logs && Array.isArray(msg.logs)) {
-          setLogs(prev => [...msg.logs, ...prev.slice(0, 100)]); // 限制日志数量
-        }
-        break;
-        
-      case 'SINGLE_LOG':
-        if (msg.log) {
-          setLogs(prev => [msg.log, ...prev.slice(0, 100)]);
-        }
-        break;
-        
-      case 'SECURITY_ALERT':
-        const alert: SecurityAlert = {
-          id: msg.id || `alert_${Date.now()}`,
-          alertLevel: msg.level,
-          alertType: msg.alertType,
-          description: msg.description,
-          handled: false,
-          createdTime: msg.timestamp || new Date().toISOString(),
-          eventId: msg.eventId,
-          source: msg.source,
-          computerName: msg.computerName,
-        };
-        setAlerts(prev => [alert, ...prev.slice(0, 50)]); // 限制警报数量
-        
-        // 显示高危警报通知
-        if (msg.level === 'CRITICAL' || msg.level === 'HIGH') {
-          message.error(`安全警报: ${msg.description}`, 5);
-        } else if (msg.level === 'MEDIUM') {
-          message.warning(`安全警报: ${msg.description}`, 3);
-        } else {
-          message.info(`安全警报: ${msg.description}`, 2);
-        }
-        break;
-        
-      case 'STATISTICS':
-        if (msg.data) {
-          setStatistics(msg.data);
-        }
-        break;
 
-      case 'SYSTEM_NOTIFICATION':
-        const level = msg.level || 'info';
-        const notificationMsg = msg.message || '系统通知';
-        
-        if (level === 'error') {
-          message.error(notificationMsg);
-        } else if (level === 'warning') {
-          message.warning(notificationMsg);
-        } else if (level === 'success') {
-          message.success(notificationMsg);
-        } else {
-          message.info(notificationMsg);
-        }
-        break;
+    if (msg.type === 'NEW_LOGS') {
+      if (msg.logs && Array.isArray(msg.logs)) {
+        setLogs(prev => [...msg.logs, ...prev.slice(0, 100)]); // 限制日志数量
+      }
+    } else if (msg.type === 'SINGLE_LOG') {
+      if (msg.log) {
+        setLogs(prev => [msg.log, ...prev.slice(0, 100)]);
+      }
+    } else if (msg.type === 'SECURITY_ALERT') {
+      // @ts-ignore
+      const alert: SecurityAlert = {
+        id: msg.id || `alert_${Date.now()}`,
+        alertLevel: msg.level,
+        alertType: msg.alertType,
+        description: msg.description,
+        handled: false,
+        createdTime: msg.timestamp || new Date().toISOString(),
+        eventId: msg.eventId,
+        source: msg.source,
+        computerName: msg.computerName,
+      };
+      setAlerts(prev => [alert, ...prev.slice(0, 50)]); // 限制警报数量
 
-      case 'SYSTEM_INFO':
-        message.info(msg.content || '系统信息');
-        break;
+      // 显示高危警报通知
+      if (msg.level === 'CRITICAL' || msg.level === 'HIGH') {
+        message.error(`安全警报: ${msg.description}`, 5);
+      } else if (msg.level === 'MEDIUM') {
+        message.warning(`安全警报: ${msg.description}`, 3);
+      } else {
+        message.info(`安全警报: ${msg.description}`, 2);
+      }
+    } else if (msg.type === 'STATISTICS') {
+      if (msg.data) {
+        setStatistics(msg.data);
+      }
+    } else if (msg.type === 'SYSTEM_NOTIFICATION') {
+      const level = msg.level || 'info';
+      const notificationMsg = msg.message || '系统通知';
 
-      case 'SYSTEM_ERROR':
-        message.error(msg.content || '系统错误');
-        break;
-
-      case 'TEST_MESSAGE':
-        console.log('收到测试消息:', msg);
-        message.info(`测试消息: ${msg.content || msg.message}`);
-        break;
-
-      case 'HEARTBEAT':
-        // 心跳消息，可以用于监控连接状态
-        console.log('收到心跳消息:', msg);
-        break;
-        
-      default:
-        console.warn('未知的消息类型:', msg.type, msg);
+      if (level === 'error') {
+        message.error(notificationMsg);
+      } else if (level === 'warning') {
+        message.warning(notificationMsg);
+      } else if (level === 'success') {
+        message.success(notificationMsg);
+      } else {
+        message.info(notificationMsg);
+      }
+    } else if (msg.type === 'SYSTEM_INFO') {
+      message.info(msg.content || '系统信息');
+    } else if (msg.type === 'SYSTEM_ERROR') {
+      message.error(msg.content || '系统错误');
+    } else if (msg.type === 'TEST_MESSAGE') {
+      console.log('收到测试消息:', msg);
+      message.info(`测试消息: ${msg.content || msg.message}`);
+    } else if (msg.type === 'HEARTBEAT') {// 心跳消息，可以用于监控连接状态
+      console.log('收到心跳消息:', msg);
+    } else {
+      console.warn('未知的消息类型:', msg.type, msg);
     }
   }, []);
 
@@ -351,7 +328,9 @@ export const webSocketTest = {
       return await response.json();
     } catch (error) {
       console.error('检查状态失败:', error);
-      return { status: 'error', error: error.message };
+      // 类型断言确保 error 对象有 message 属性
+      const errorMessage = (error as Error).message;
+      return { status: 'error', error: errorMessage };
     }
   }
 };

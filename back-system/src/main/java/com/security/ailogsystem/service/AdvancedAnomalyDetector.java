@@ -5,6 +5,7 @@ import com.security.ailogsystem.repository.UnifiedEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -17,6 +18,7 @@ import java.util.regex.Pattern;
 public class AdvancedAnomalyDetector {
 
     private final UnifiedEventRepository eventRepository;
+    private final ThreatSignatureService threatSignatureService;
 
     // 关键词模式
     private static final Map<String, Pattern> THREAT_PATTERNS = Map.of(
@@ -40,10 +42,23 @@ public class AdvancedAnomalyDetector {
             "LOGIN_FAILURE", "AUTH_FAILURE", "SECURITY_EVENT", "SUSPICIOUS_PROCESS"
     );
 
+    private static final Map<String, Integer> THREAT_LEVEL_PRIORITY = Map.of(
+            "LOW", 0,
+            "MEDIUM", 1,
+            "HIGH", 2,
+            "CRITICAL", 3
+    );
+
     public void detectAnomalies(UnifiedSecurityEvent event) {
         AnomalyDetectionResult result = new AnomalyDetectionResult();
 
         try {
+            // 0. 特征库匹配
+            threatSignatureService.matchSignatures(event).ifPresent(match -> {
+                result.addScore(match.score(), match.reason());
+                applySignatureImpact(event, match);
+            });
+
             // 1. 关键词检测（无数据库查询）
             result.addScore(detectByKeywords(event), "关键词匹配");
 
@@ -79,6 +94,30 @@ public class AdvancedAnomalyDetector {
             log.warn("异常检测过程中发生错误: {}", e.getMessage());
             // 不中断处理，继续保存事件
         }
+    }
+
+    private void applySignatureImpact(UnifiedSecurityEvent event, ThreatSignatureService.SignatureMatch match) {
+        if (match == null || match.signature() == null) {
+            return;
+        }
+
+        var signature = match.signature();
+
+        if (StringUtils.hasText(signature.getSeverity())) {
+            String candidate = signature.getSeverity().toUpperCase(Locale.ROOT);
+            String current = Optional.ofNullable(event.getThreatLevel()).orElse("LOW");
+            event.setThreatLevel(maxThreatLevel(current, candidate));
+        }
+
+        if (StringUtils.hasText(signature.getThreatType()) && !StringUtils.hasText(event.getEventSubType())) {
+            event.setEventSubType(signature.getThreatType());
+        }
+    }
+
+    private String maxThreatLevel(String current, String candidate) {
+        Integer currentScore = THREAT_LEVEL_PRIORITY.getOrDefault(current.toUpperCase(Locale.ROOT), 0);
+        Integer candidateScore = THREAT_LEVEL_PRIORITY.getOrDefault(candidate.toUpperCase(Locale.ROOT), 0);
+        return candidateScore > currentScore ? candidate.toUpperCase(Locale.ROOT) : current.toUpperCase(Locale.ROOT);
     }
 
     private double detectByKeywords(UnifiedSecurityEvent event) {

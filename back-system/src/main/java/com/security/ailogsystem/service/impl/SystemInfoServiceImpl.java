@@ -2,14 +2,18 @@ package com.security.ailogsystem.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.security.ailogsystem.config.ScriptProperties;
 import com.security.ailogsystem.service.SystemInfoService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,7 +26,10 @@ public class SystemInfoServiceImpl implements SystemInfoService {
     private long lastCollectionTime = 0;
     private static final long CACHE_EXPIRY_MS = 1000; // 1秒缓存
 
-    @Value("${system.info.python.script.path:D:/projects/ai-log-check/back-system/src/scripts/system_info_collector.py}")
+    @Autowired
+    private ScriptProperties scriptProperties;
+
+    @Value("${system.info.python.script.path:}")
     private String pythonScriptPath;
 
     // 数据采集间隔配置
@@ -369,13 +376,31 @@ public class SystemInfoServiceImpl implements SystemInfoService {
     // ================ 私有辅助方法 ================
 
     private String getPythonScriptPath() {
+        // 如果有明确配置路径，则使用配置的路径
         if (pythonScriptPath != null && !pythonScriptPath.trim().isEmpty()) {
             return pythonScriptPath;
         }
 
+        // 否则使用与ScriptExecutionServiceImpl相同的路径解析机制
+        ScriptProperties.ScriptDefinition definition = scriptProperties.getAllowed().get("system_info_collector");
+        if (definition != null) {
+            Path scriptPath = resolveScriptPath(definition.getFile());
+            log.info("使用Python脚本路径: {}", scriptPath.toString());
+            return scriptPath.toString();
+        }
+
+        // 最后回退到默认路径
         String defaultPath = "D:/projects/ai-log-check/back-system/src/scripts/system_info_collector.py";
-        log.info("使用Python脚本路径: {}", defaultPath);
+        log.info("使用默认Python脚本路径: {}", defaultPath);
         return defaultPath;
+    }
+
+    private Path resolveScriptDirectory() {
+        return Paths.get(scriptProperties.getBasePath()).toAbsolutePath().normalize();
+    }
+
+    private Path resolveScriptPath(String fileName) {
+        return resolveScriptDirectory().resolve(fileName).normalize();
     }
 
     private Map<String, Object> createErrorResponse(String error) {

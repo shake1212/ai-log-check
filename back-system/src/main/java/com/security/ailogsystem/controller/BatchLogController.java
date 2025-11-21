@@ -25,7 +25,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/logs/batch")
+@RequestMapping("/logs/batch")
 @Tag(name = "批量日志操作", description = "批量日志操作和查询优化接口")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")

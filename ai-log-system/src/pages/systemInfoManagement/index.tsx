@@ -70,11 +70,11 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
     return { hasError: true };
   }
 
-  componentDidCatch(error: any, errorInfo: any) {
+  override componentDidCatch(error: any, errorInfo: any) {
     console.error('Component error:', error, errorInfo);
   }
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       return (
         <div style={{ padding: 24 }}>
@@ -225,17 +225,27 @@ const SystemInfoManagement: React.FC = () => {
     }
   }, []);
 
-  // 加载实时信息 - 适配新的数据结构
+  // 带超时的 Promise 包装函数
+  const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number = 5000): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) => 
+        setTimeout(() => reject(new Error('请求超时')), timeoutMs)
+      )
+    ]);
+  };
+
+  // 加载实时信息 - 适配新的数据结构，添加超时处理
   const loadRealTimeInfo = useCallback(async () => {
     setLoading(prev => ({ ...prev, realtime: true }));
     try {
       console.log('Loading realtime info...');
       const [system, cpu, memory, disk, processes] = await Promise.allSettled([
-        systemInfoApiService.getRealTimeSystemInfo(),
-        systemInfoApiService.getRealTimeCpuInfo(),
-        systemInfoApiService.getRealTimeMemoryInfo(),
-        systemInfoApiService.getRealTimeDiskInfo(),
-        systemInfoApiService.getRealTimeProcessInfo()
+        withTimeout(systemInfoApiService.getRealTimeSystemInfo(), 5000).catch(() => null),
+        withTimeout(systemInfoApiService.getRealTimeCpuInfo(), 5000).catch(() => null),
+        withTimeout(systemInfoApiService.getRealTimeMemoryInfo(), 5000).catch(() => null),
+        withTimeout(systemInfoApiService.getRealTimeDiskInfo(), 5000).catch(() => null),
+        withTimeout(systemInfoApiService.getRealTimeProcessInfo(), 5000).catch(() => null)
       ]);
 
       // 处理每个实时信息 - 适配新的数据结构
@@ -281,23 +291,32 @@ const SystemInfoManagement: React.FC = () => {
     }
   }, []);
 
-  // 初始化加载数据
+  // 初始化加载数据 - 优化加载策略
   useEffect(() => {
     const initializeData = async () => {
       console.log('Initializing system info management...');
       try {
+        // 第一阶段：立即加载关键数据（快速响应）
         await Promise.allSettled([
           loadConnections(),
           loadQueries(),
-          loadQueryResults(),
-          loadStatistics(),
-          loadRealTimeInfo()
+          loadQueryResults()
         ]);
+        
+        // 设置初始加载完成，让用户先看到页面
+        setInitialLoading(false);
+        console.log('Initial loading completed');
+
+        // 第二阶段：延迟加载较慢的数据（统计和实时信息）
+        setTimeout(async () => {
+          await Promise.allSettled([
+            loadStatistics(),
+            loadRealTimeInfo()
+          ]);
+        }, 500); // 延迟500ms加载，避免阻塞初始渲染
       } catch (error) {
         console.error('Initialization failed:', error);
-      } finally {
         setInitialLoading(false);
-        console.log('Initialization completed');
       }
     };
 
@@ -386,7 +405,12 @@ const SystemInfoManagement: React.FC = () => {
         message.warning('请先创建连接');
         return;
       }
-      const connectionId = connections[0].id;
+      const firstConnection = connections[0];
+      if (!firstConnection || !firstConnection.id) {
+        message.error('连接ID无效');
+        return;
+      }
+      const connectionId = firstConnection.id;
       await systemInfoApiService.executeQuery(queryId, connectionId);
       message.success('查询执行成功');
       loadQueryResults();

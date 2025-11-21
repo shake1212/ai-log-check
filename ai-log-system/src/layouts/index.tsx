@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 // import { history } from 'umi';
-import { Layout, Menu, Typography, Avatar, Dropdown, Badge, Button, Space } from 'antd';
+import { Layout, Menu, Typography, Avatar, Dropdown, Badge, Button, Space, Tabs } from 'antd';
 import { useNotification } from '../hooks/useNotification';
 import NotificationPanel from '../components/NotificationPanel';
 import {
@@ -24,32 +24,42 @@ import {
 import EnhancedDashboard from '../components/EnhancedDashboard';
 import WMIManagement from '../pages/wmi/index';
 import SystemInfoManagement from '../pages/systemInfoManagement/index';
-// import DatabaseManagement from '../pages/database/index';
 import DebugRoute from '../pages/debug-route';
 import EventsPage from '../pages/events/index';
 import BatchOperationsPage from '../pages/batch-operations/index';
+import DatabaseManagement from '../pages/database/index';
 // 新增导入
-import LogsPage from '../pages/logs/logs';
+import LogsPage from '../pages/logs/index';
 import AlertsPage from '../pages/alerts/alerts';
-// import { useModel } from '@/utils/useModel';
-// import styles from './index.less';
+import SystemPage from '../pages/system';
+import initialConfig from '../pages/settings/index';
+import { useModel } from '@/utils/useModel';
 
 const { Header, Content, Footer, Sider } = Layout;
 const { Title, Text } = Typography;
+const { TabPane } = Tabs;
 
 export default function DefaultLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const [notificationPanelVisible, setNotificationPanelVisible] = useState(false);
   const [currentPath, setCurrentPath] = useState('/dashboard');
+  const [activeTab, setActiveTab] = useState('/dashboard');
   // const { initialState, setInitialState } = useModel('@@initialState');
 
   // 监听URL hash变化
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash;
-      const path = hash.startsWith('#') ? hash.substring(1) : hash;
-      if (path && path !== currentPath) {
-        setCurrentPath(path);
+      const rawPath = hash.startsWith('#') ? hash.substring(1) : hash;
+      const normalizedPath = rawPath === '/realtime' ? '/dashboard' : rawPath;
+
+      if (normalizedPath && normalizedPath !== rawPath) {
+        window.location.hash = normalizedPath;
+      }
+
+      if (normalizedPath && normalizedPath !== currentPath) {
+        setCurrentPath(normalizedPath);
+        setActiveTab(normalizedPath);
       }
     };
 
@@ -74,14 +84,25 @@ export default function DefaultLayout() {
       label: '仪表盘',
     },
     {
-      key: '/realtime',
-      icon: <BellOutlined />,
-      label: '实时监控',
-    },
-    {
       key: '/alerts',
       icon: <AlertOutlined />,
       label: '告警管理',
+    },
+    {
+      key: '/events',
+      icon: <FileTextOutlined />,
+      label: '事件查询统计',
+    },
+    {
+      key: '/systemInfoManagement',
+      icon: <SettingOutlined />,
+      label: '系统信息管理',
+    },
+    {
+      key: '/system',
+      icon: <TeamOutlined />,
+      label: '系统管理后台',
+      access: 'admin',
     },
     {
       key: '/whitelist',
@@ -104,30 +125,14 @@ export default function DefaultLayout() {
       label: 'WMI基础',
     },
     {
-      key: '/systemInfoManagement',
-      icon: <SettingOutlined />,
-      label: '系统信息管理',
-    },
-    {
       key: '/database',
       icon: <DatabaseOutlined />,
       label: '数据库管理',
     },
     {
-      key: '/events',
-      icon: <FileTextOutlined />,
-      label: '事件查询统计',
-    },
-    {
       key: '/batch-operations',
       icon: <SettingOutlined />,
       label: '批量操作管理',
-      access: 'admin',
-    },
-    {
-      key: '/system',
-      icon: <TeamOutlined />,
-      label: '系统管理后台',
       access: 'admin',
     },
     {
@@ -180,6 +185,67 @@ export default function DefaultLayout() {
     return true;
   });
 
+  const handleTabChange = (key: string) => {
+    setActiveTab(key);
+    setCurrentPath(key);
+    window.location.hash = key;
+  };
+
+  const renderTabContent = (key: string) => {
+    switch (key) {
+      case '/dashboard':
+        return <EnhancedDashboard />;
+      case '/alerts':
+        return <AlertsPage />;
+      case '/whitelist':
+        return (
+          <div style={{ padding: '20px' }}>
+            <h1>白名单管理页面</h1>
+            <p>白名单管理功能正在开发中...</p>
+          </div>
+        );
+      case '/logs':
+        return <LogsPage />;
+      case '/settings':
+        return (
+          <div style={{ padding: '20px' }}>
+            <h1>系统设置页面</h1>
+            <p>系统设置功能正在开发中...</p>
+          </div>
+        );
+      case '/wmi':
+        return <WMIManagement />;
+      case '/systemInfoManagement':
+        return <SystemInfoManagement />;
+      case '/events':
+        return <EventsPage />;
+      case '/batch-operations':
+        return <BatchOperationsPage />;
+      case '/database':
+        return <DatabaseManagement />;
+      case '/debug-route':
+        return <DebugRoute />;
+      case '/system':
+        return <SystemPage />;
+      case '/docs':
+        return (
+          <div style={{ padding: '20px' }}>
+            <h1>API文档</h1>
+            <p>API文档功能正在开发中...</p>
+          </div>
+        );
+      case '/profile':
+        return (
+          <div style={{ padding: '20px' }}>
+            <h1>个人资料</h1>
+            <p>个人资料功能正在开发中...</p>
+          </div>
+        );
+      default:
+        return <EnhancedDashboard />;
+    }
+  };
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       {/* 通知面板 */}
@@ -212,103 +278,62 @@ export default function DefaultLayout() {
           items={filteredMenuItems}
           onClick={({ key }) => {
             setCurrentPath(key);
+            setActiveTab(key);
             window.location.hash = key;
           }}
         />
-      </Sider>
-      <Layout>
-        <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{ 
+          position: 'absolute', 
+          bottom: 0, 
+          width: '100%', 
+          padding: '16px', 
+          textAlign: 'center',
+          backgroundColor: 'rgba(0, 0, 0, 0.2)'
+        }}>
+          <Space>
+            <Badge count={unreadCount} size="small">
+              <Button 
+                type="text" 
+                icon={<BellOutlined style={{ color: 'white' }} />}
+                onClick={() => setNotificationPanelVisible(true)}
+                size="small"
+              />
+            </Badge>
+            <Dropdown 
+              menu={{ 
+                items: userMenu, 
+                onClick: handleUserMenuClick 
+              }} 
+              placement="topLeft"
+              arrow
+            >
+              <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <Avatar size="small" icon={<UserOutlined />} />
+                {!collapsed && (
+                  <div style={{ marginLeft: '8px' }}>
+                    <Text style={{ color: 'white', display: 'block', fontSize: '12px' }}>管理员</Text>
+                  </div>
+                )}
+              </div>
+            </Dropdown>
             <Button
               type="text"
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              icon={collapsed ? <MenuUnfoldOutlined style={{ color: 'white' }} /> : <MenuFoldOutlined style={{ color: 'white' }} />}
               onClick={() => setCollapsed(!collapsed)}
+              size="small"
             />
-            <div style={{ marginLeft: '16px' }}>
-              <Text strong>当前位置: </Text>
-              <Text>{filteredMenuItems.find(item => item.key === currentPath)?.label || '首页'}</Text>
-            </div>
+          </Space>
+        </div>
+      </Sider>
+      <Layout>
+        <Content style={{ padding: '16px', background: '#f0f2f5' }}>
+          <div className="tab-content-container" style={{ height: 'calc(100vh - 120px)', overflow: 'visible' }}>
+            {/* 移除了顶部的Tabs菜单，只保留侧边栏菜单 */}
+            {renderTabContent(activeTab)}
           </div>
-          <div>
-            <Space size="middle">
-              <Badge count={unreadCount} size="small">
-                <Button 
-                  type="text" 
-                  icon={<BellOutlined />}
-                  onClick={() => setNotificationPanelVisible(true)}
-                />
-              </Badge>
-              <Dropdown 
-                menu={{ 
-                  items: userMenu, 
-                  onClick: handleUserMenuClick 
-                }} 
-                placement="bottomRight"
-                arrow
-              >
-                <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                  <Avatar icon={<UserOutlined />} />
-                  {!collapsed && (
-                    <div style={{ marginLeft: '8px' }}>
-                      <Text strong>管理员</Text>
-                      <br />
-                      <Text type="secondary">管理员</Text>
-                    </div>
-                  )}
-                </div>
-              </Dropdown>
-            </Space>
-          </div>
-        </Header>
-        <Content style={{ padding: '24px', background: '#f0f2f5' }}>
-          {currentPath === '/dashboard' && <EnhancedDashboard />}
-          {currentPath === '/realtime' && (
-            <div style={{ padding: '20px' }}>
-              <h1>实时监控页面</h1>
-              <p>实时监控功能正在开发中...</p>
-            </div>
-          )}
-          {currentPath === '/alerts' && <AlertsPage />}
-          {currentPath === '/whitelist' && (
-            <div style={{ padding: '20px' }}>
-              <h1>白名单管理页面</h1>
-              <p>白名单管理功能正在开发中...</p>
-            </div>
-          )}
-          {currentPath === '/logs' && <LogsPage />}
-          {currentPath === '/settings' && (
-            <div style={{ padding: '20px' }}>
-              <h1>系统设置页面</h1>
-              <p>系统设置功能正在开发中...</p>
-            </div>
-          )}
-          {currentPath === '/wmi' && <WMIManagement />}
-          {currentPath === '/systemInfoManagement' && <SystemInfoManagement />}
-          {currentPath === '/events' && <EventsPage />}
-          {currentPath === '/batch-operations' && <BatchOperationsPage />}
-          {currentPath === '/database' && <DatabaseManagement />}
-          {currentPath === '/debug-route' && <DebugRoute />}
-          {currentPath === '/system' && (
-            <div style={{ padding: '20px' }}>
-              <h1>系统管理后台</h1>
-              <p>系统管理功能正在开发中...</p>
-            </div>
-          )}
-          {currentPath === '/docs' && (
-            <div style={{ padding: '20px' }}>
-              <h1>API文档</h1>
-              <p>API文档功能正在开发中...</p>
-            </div>
-          )}
-          {currentPath === '/profile' && (
-            <div style={{ padding: '20px' }}>
-              <h1>个人资料</h1>
-              <p>个人资料功能正在开发中...</p>
-            </div>
-          )}
         </Content>
-        <Footer style={{ textAlign: 'center', background: '#fff' }}>
-          <Text type="secondary">
+        <Footer style={{ textAlign: 'center', background: '#fff', padding: '12px 24px' }}>
+          <Text type="secondary" style={{ fontSize: '12px' }}>
             安全日志异常检测与预警系统 ©{new Date().getFullYear()} | 技术支持: AI安全团队
           </Text>
         </Footer>

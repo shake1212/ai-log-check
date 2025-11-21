@@ -14,7 +14,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/performance")
+@RequestMapping("/performance")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class PerformanceMonitorController {

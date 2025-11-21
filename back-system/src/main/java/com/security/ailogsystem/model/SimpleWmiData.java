@@ -85,7 +85,13 @@ public class SimpleWmiData {
         NETWORK_TRAFFIC("网络流量"),
         PROCESS_COUNT("进程数量"),
         SERVICE_STATUS("服务状态"),
-        SYSTEM_INFO("系统信息");
+        SYSTEM_INFO("系统信息"),
+        SYSTEM_PERFORMANCE("系统性能"),
+        CPU_INFO("CPU信息"),
+        SYSTEM_BASIC("系统基础信息"),
+        MEMORY_INFO("内存信息"),
+        DISK_INFO("磁盘信息"),
+        PROCESS_INFO("进程信息");
         
         private final String description;
         

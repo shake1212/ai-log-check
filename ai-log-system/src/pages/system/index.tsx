@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import type { ColumnsType } from 'antd/es/table';
+import type { SortOrder } from 'antd/es/table/interface';
+
 import {
   Card,
   Table,
@@ -10,30 +13,29 @@ import {
   Select,
   Tabs,
   Tag,
-  Switch,
-  Divider,
-  Typography,
   Row,
   Col,
   Tooltip,
   Popconfirm,
   message,
-  Badge
+  Badge,
+  Descriptions
 } from 'antd';
+
 import {
   UserOutlined,
   TeamOutlined,
-  SettingOutlined,
   LockOutlined,
   AuditOutlined,
   PlusOutlined,
   EditOutlined,
   DeleteOutlined,
-  ExclamationCircleOutlined
+  ReloadOutlined,
+  PlayCircleOutlined
 } from '@ant-design/icons';
+import request from '@/utils/request';
 
 const { TabPane } = Tabs;
-const { Title } = Typography;
 
 // 用户角色枚举
 const UserRole = {
@@ -65,11 +67,46 @@ interface User {
 interface AuditLog {
   id: string;
   timestamp: string;
-  username: string;
+  user: string;
   action: string;
   module: string;
+  address: string;
   details: string;
-  ip: string;
+}
+
+// 脚本信息接口
+interface ScrtInfo {
+  key: string;
+  name: string;
+  descrtion: string;
+  cooldownSeconds: number;
+  allowManualTrigger: boolean;
+}
+
+// 脚本执行记录接口
+interface ScrtExecution {
+  executionId: string;
+  scrtKey: string;
+  scrtName?: string;
+  status: string;
+  startedAt?: string;
+  finishedAt?: string;
+  message?: string;
+  exitCode?: number;
+  args?: string[];
+}
+
+// 计划任务状态接口
+interface ScheduledTaskStatus {
+  taskName: string;
+  exists: boolean;
+  status?: string;
+  nextRunTime?: string;
+  lastRunTime?: string;
+  lastRunResult?: string;
+  trigger?: string;
+  taskPath?: string;
+  error?: string;
 }
 
 // 模拟用户数据
@@ -105,52 +142,39 @@ const generateMockUsers = (): User[] => {
       status: UserStatus.ACTIVE,
       lastLogin: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
     },
-    {
-      id: 'user-004',
-      username: 'operator2',
-      name: '安全运维员2',
-      email: 'operator2@example.com',
-      role: UserRole.OPERATOR,
-      department: '网络安全部',
-      status: UserStatus.INACTIVE,
-      lastLogin: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    },
-    {
-      id: 'user-005',
-      username: 'viewer2',
-      name: '安全分析师2',
-      email: 'viewer2@example.com',
-      role: UserRole.VIEWER,
-      department: '安全运营中心',
-      status: UserStatus.LOCKED,
-      lastLogin: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
-    }
   ];
 };
 
 // 模拟操作日志数据
 const generateMockAuditLogs = (count: number): AuditLog[] => {
-  const actions = ['登录', '查看日志', '修改配置', '处理预警', '创建用户', '删除用户', '修改用户权限'];
-  const modules = ['用户管理', '系统配置', '日志查看', '预警处理', '仪表盘'];
-  const usernames = ['admin', 'operator1', 'operator2', 'viewer1', 'viewer2'];
-  const ips = ['192.168.1.1', '10.0.0.5', '172.16.0.10', '192.168.0.15', '10.10.10.10'];
-  
+  const actions: string[] = ['登录', '查看日志', '修改配置', '处理预警', '创建用户', '删除用户', '修改用户权限'];
+  const modules: string[] = ['用户管理', '系统配置', '日志查看', '预警处理', '仪表盘'];
+  const users: string[] = ['admin', 'operator1', 'operator2', 'viewer1', 'viewer2'];
+  const addresses: string[] = ['192.168.1.1', '10.0.0.5', '172.16.0.10', '192.168.0.15', '10.10.10.10'];
+
+  const pickRandom = (list: string[]): string => {
+    if (list.length === 0) {
+      return '';
+    }
+    return list[Math.floor(Math.random() * list.length)];
+  };
+
   return Array.from({ length: count }, (_, i) => {
     const now = new Date();
     const timestamp = new Date(now.getTime() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString();
-    const username = usernames[Math.floor(Math.random() * usernames.length)];
-    const action = actions[Math.floor(Math.random() * actions.length)];
-    const module = modules[Math.floor(Math.random() * modules.length)];
-    const ip = ips[Math.floor(Math.random() * ips.length)];
-    
+    const action = pickRandom(actions) || '登录';
+    const module = pickRandom(modules) || '用户管理';
+    const user = pickRandom(users) || 'admin';
+    const address = pickRandom(addresses) || '192.168.1.1';
+
     return {
       id: `log-${(10000 + i).toString()}`,
       timestamp,
-      username,
+      user,
       action,
       module,
-      details: `用户 ${username} 在 ${module} 模块执行了 ${action} 操作`,
-      ip
+      address,
+      details: `用户 ${user} 在 ${module} 模块执行了 ${action} 操作`,
     };
   });
 };
@@ -162,25 +186,110 @@ const SystemPage: React.FC = () => {
   const [userModalVisible, setUserModalVisible] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [form] = Form.useForm();
-  
-  // 加载数据
+  const [scrtList, setScrtList] = useState<ScrtInfo[]>([]);
+  const [scrtHistory, setScrtHistory] = useState<ScrtExecution[]>([]);
+  const [scrtListLoading, setScrtListLoading] = useState<boolean>(false);
+  const [scrtHistoryLoading, setScrtHistoryLoading] = useState<boolean>(false);
+  const [runningScrtKey, setRunningScrtKey] = useState<string | null>(null);
+  const [latestScrtStatus, setLatestScrtStatus] = useState<Record<string, ScrtExecution>>({});
+  const [scrtArgInputs, setScrtArgInputs] = useState<Record<string, string>>({});
+  const [scheduledTasks, setScheduledTasks] = useState<ScheduledTaskStatus[]>([]);
+  const [scheduledTasksLoading, setScheduledTasksLoading] = useState<boolean>(false);
+
+  const scrtRequest = useCallback(<T = any>(
+    path: string,
+    options?: { method?: 'GET' | 'POST'; data?: any }
+  ): Promise<T> => {
+    return request({
+      url: `/scripts${path}`,
+      method: options?.method ?? 'GET',
+      data: options?.data,
+    });
+  }, []);
+
+  const loadScrts = useCallback(async () => {
+    try {
+      setScrtListLoading(true);
+      const response = await scrtRequest<ScrtInfo[]>('/available');
+      setScrtList(response || []);
+    } catch (error) {
+      message.error('获取脚本列表失败');
+    } finally {
+      setScrtListLoading(false);
+    }
+  }, [scrtRequest]);
+
+  const processScrtHistory = (records: ScrtExecution[]) => {
+    const sorted = [...records].sort((a, b) => {
+      const aTime = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+      const bTime = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    const statusMap: Record<string, ScrtExecution> = {};
+    sorted.forEach((record) => {
+      if (!statusMap[record.scrtKey]) {
+        statusMap[record.scrtKey] = record;
+      }
+    });
+
+    setScrtHistory(sorted);
+    setLatestScrtStatus(statusMap);
+  };
+
+  const loadScrtHistory = useCallback(async () => {
+    try {
+      setScrtHistoryLoading(true);
+      const response = await scrtRequest<ScrtExecution[]>('/history');
+      processScrtHistory(response || []);
+    } catch (error) {
+      message.error('获取脚本历史失败');
+    } finally {
+      setScrtHistoryLoading(false);
+    }
+  }, [scrtRequest]);
+
+  const loadScheduledTasks = useCallback(async () => {
+    try {
+      setScheduledTasksLoading(true);
+      const response = await scrtRequest<ScheduledTaskStatus[]>('/scheduled-tasks');
+      setScheduledTasks(response || []);
+    } catch (error) {
+      message.error('获取计划任务状态失败');
+    } finally {
+      setScheduledTasksLoading(false);
+    }
+  }, [scrtRequest]);
+
   useEffect(() => {
     setLoading(true);
-    // 模拟API请求延迟
-    setTimeout(() => {
+    const mockTimer = setTimeout(() => {
       const mockUsers = generateMockUsers();
       const mockLogs = generateMockAuditLogs(50);
       setUsers(mockUsers);
       setAuditLogs(mockLogs);
       setLoading(false);
     }, 1000);
-  }, []);
-  
-  // 添加/编辑用户
+
+    loadScrts();
+    loadScrtHistory();
+    loadScheduledTasks();
+
+    const historyInterval = setInterval(() => {
+      loadScrtHistory();
+      loadScheduledTasks();
+    }, 15000);
+
+    return () => {
+      clearTimeout(mockTimer);
+      clearInterval(historyInterval);
+    };
+  }, [loadScrts, loadScrtHistory]);
+
   const showUserModal = (user?: User) => {
     setCurrentUser(user || null);
     setUserModalVisible(true);
-    
+
     if (user) {
       form.setFieldsValue({
         username: user.username,
@@ -194,11 +303,9 @@ const SystemPage: React.FC = () => {
       form.resetFields();
     }
   };
-  
-  // 保存用户
+
   const handleSaveUser = (values: any) => {
     if (currentUser) {
-      // 更新用户
       const updatedUsers = users.map(user => {
         if (user.id === currentUser.id) {
           return {
@@ -211,7 +318,6 @@ const SystemPage: React.FC = () => {
       setUsers(updatedUsers);
       message.success('用户信息更新成功');
     } else {
-      // 添加新用户
       const newUser: User = {
         id: `user-${Date.now().toString(36)}`,
         ...values
@@ -219,18 +325,84 @@ const SystemPage: React.FC = () => {
       setUsers([...users, newUser]);
       message.success('用户创建成功');
     }
-    
+
     setUserModalVisible(false);
   };
-  
-  // 删除用户
+
   const handleDeleteUser = (userId: string) => {
     const updatedUsers = users.filter(user => user.id !== userId);
     setUsers(updatedUsers);
     message.success('用户删除成功');
   };
-  
-  // 渲染用户状态标签
+
+  const updateScrtArgsInput = (key: string, value: string) => {
+    setScrtArgInputs(prev => ({
+      ...prev,
+      [key]: value,
+    }));
+  };
+
+  const getScrtArgs = (key: string) => {
+    const raw = scrtArgInputs[key]?.trim();
+    if (!raw) {
+      return [];
+    }
+    return raw.split(/\s+/).filter(Boolean);
+  };
+
+  const handleRunScrt = async (scrtKey: string) => {
+    try {
+      setRunningScrtKey(scrtKey);
+      const args = getScrtArgs(scrtKey);
+      const response = await scrtRequest('/run', {
+        method: 'POST',
+        data: { scrtKey, args },
+      });
+      const payload = response || {};
+      const status = payload?.status || 'RUNNING';
+      const msg = payload?.message || (status === 'RUNNING' ? '脚本已触发' : '操作完成');
+
+      if (status === 'BUSY' || status === 'COOLDOWN') {
+        message.warning(msg);
+      } else if (status === 'FAILED') {
+        message.error(msg);
+      } else {
+        message.success(msg);
+      }
+      await loadScrtHistory();
+      setTimeout(() => {
+        loadScrtHistory();
+      }, 3000);
+    } catch (error) {
+      message.error('脚本执行失败，请稍后再试');
+    } finally {
+      setRunningScrtKey(null);
+    }
+  };
+
+  const renderScrtStatus = (status?: string) => {
+    const upper = status ? status.toUpperCase() : 'UNKNOWN';
+    let color: string;
+    switch (upper) {
+      case 'SUCCESS':
+        color = 'green';
+        break;
+      case 'FAILED':
+        color = 'red';
+        break;
+      case 'RUNNING':
+        color = 'blue';
+        break;
+      case 'BUSY':
+      case 'COOLDOWN':
+        color = 'orange';
+        break;
+      default:
+        color = 'default';
+    }
+    return <Tag color={color}>{upper}</Tag>;
+  };
+
   const renderUserStatus = (status: string) => {
     switch (status) {
       case UserStatus.ACTIVE:
@@ -243,8 +415,7 @@ const SystemPage: React.FC = () => {
         return <Badge status="default" text="未知" />;
     }
   };
-  
-  // 渲染用户角色标签
+
   const renderUserRole = (role: string) => {
     switch (role) {
       case UserRole.ADMIN:
@@ -257,9 +428,8 @@ const SystemPage: React.FC = () => {
         return <Tag>未知</Tag>;
     }
   };
-  
-  // 用户表格列定义
-  const userColumns = [
+
+  const userColumns: ColumnsType<User> = [
     {
       title: '用户名',
       dataIndex: 'username',
@@ -285,7 +455,7 @@ const SystemPage: React.FC = () => {
         { text: '操作员', value: UserRole.OPERATOR },
         { text: '查看者', value: UserRole.VIEWER },
       ],
-      onFilter: (value: string, record: User) => record.role === value,
+      onFilter: (value, record) => record.role === (value as string),
     },
     {
       title: '部门',
@@ -302,7 +472,7 @@ const SystemPage: React.FC = () => {
         { text: '未激活', value: UserStatus.INACTIVE },
         { text: '锁定', value: UserStatus.LOCKED },
       ],
-      onFilter: (value: string, record: User) => record.status === value,
+      onFilter: (value, record) => record.status === (value as string),
     },
     {
       title: '最后登录',
@@ -317,12 +487,12 @@ const SystemPage: React.FC = () => {
     },
     {
       title: '操作',
-      key: 'action',
+      key: 'actions',
       render: (_: any, record: User) => (
         <Space size="small">
-          <Button 
-            type="link" 
-            size="small" 
+          <Button
+            type="link"
+            size="small"
             icon={<EditOutlined />}
             onClick={() => showUserModal(record)}
           >
@@ -334,10 +504,10 @@ const SystemPage: React.FC = () => {
             okText="确定"
             cancelText="取消"
           >
-            <Button 
-              type="link" 
-              size="small" 
-              danger 
+            <Button
+              type="link"
+              size="small"
+              danger
               icon={<DeleteOutlined />}
             >
               删除
@@ -347,21 +517,20 @@ const SystemPage: React.FC = () => {
       ),
     },
   ];
-  
-  // 操作日志表格列定义
-  const auditLogColumns = [
+
+  const auditLogColumns: ColumnsType<AuditLog> = [
     {
       title: '时间',
       dataIndex: 'timestamp',
       key: 'timestamp',
       render: (text: string) => new Date(text).toLocaleString(),
       sorter: (a: AuditLog, b: AuditLog) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-      defaultSortOrder: 'descend',
+      defaultSortOrder: 'descend' as SortOrder,
     },
     {
       title: '用户',
-      dataIndex: 'username',
-      key: 'username',
+      dataIndex: 'user',
+      key: 'user',
       filters: [
         { text: 'admin', value: 'admin' },
         { text: 'operator1', value: 'operator1' },
@@ -369,7 +538,7 @@ const SystemPage: React.FC = () => {
         { text: 'viewer1', value: 'viewer1' },
         { text: 'viewer2', value: 'viewer2' },
       ],
-      onFilter: (value: string, record: AuditLog) => record.username === value,
+      onFilter: (value, record) => record.user === (value as string),
     },
     {
       title: '操作',
@@ -384,7 +553,7 @@ const SystemPage: React.FC = () => {
         { text: '删除用户', value: '删除用户' },
         { text: '修改用户权限', value: '修改用户权限' },
       ],
-      onFilter: (value: string, record: AuditLog) => record.action === value,
+      onFilter: (value, record) => record.action === (value as string),
     },
     {
       title: '模块',
@@ -397,7 +566,7 @@ const SystemPage: React.FC = () => {
         { text: '预警处理', value: '预警处理' },
         { text: '仪表盘', value: '仪表盘' },
       ],
-      onFilter: (value: string, record: AuditLog) => record.module === value,
+      onFilter: (value, record) => record.module === (value as string),
     },
     {
       title: '详情',
@@ -406,15 +575,265 @@ const SystemPage: React.FC = () => {
       ellipsis: true,
     },
     {
-      title: 'IP地址',
-      dataIndex: 'ip',
-      key: 'ip',
+      title: '地址',
+      dataIndex: 'address',
+      key: 'address',
     },
   ];
-  
+
+  const scrtColumns: ColumnsType<ScrtInfo> = [
+    {
+      title: '脚本名称',
+      dataIndex: 'name',
+      key: 'name',
+    },
+    {
+      title: '描述',
+      dataIndex: 'descrtion',
+      key: 'descrtion',
+      ellipsis: true,
+    },
+    {
+      title: '自定义参数',
+      key: 'customArgs',
+      render: (_: any, record: ScrtInfo) => (
+        <Input
+          placeholder="以空格分隔，留空表示使用默认参数"
+          value={scrtArgInputs[record.key] || ''}
+          onChange={(e) => updateScrtArgsInput(record.key, e.target.value)}
+          allowClear
+        />
+      ),
+    },
+    {
+      title: '冷却时间',
+      dataIndex: 'cooldownSeconds',
+      key: 'cooldownSeconds',
+      render: (seconds: number) => {
+        if (!seconds) return '无';
+        if (seconds < 60) {
+          return `${seconds} 秒`;
+        }
+        return `${Math.round(seconds / 60)} 分钟`;
+      },
+    },
+    {
+      title: '当前状态',
+      key: 'status',
+      render: (_: any, record: ScrtInfo) => {
+        const status = latestScrtStatus[record.key];
+        if (!status) {
+          return <Tag color="default">未执行</Tag>;
+        }
+        return (
+          <div>
+            {renderScrtStatus(status.status)}
+            <div style={{ fontSize: 12, color: '#999' }}>
+              {status.message || '无状态信息'}
+              {status.startedAt && ` · ${new Date(status.startedAt).toLocaleString()}`}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      render: (_: any, record: ScrtInfo) => (
+        <Tooltip
+          title={
+            !record.allowManualTrigger
+              ? '脚本禁止手动触发'
+              : latestScrtStatus[record.key]?.status?.toUpperCase() === 'RUNNING' && !latestScrtStatus[record.key]?.finishedAt
+                ? '脚本正在运行，请稍后再试'
+                : undefined
+          }
+        >
+          <Button
+            type="primary"
+            icon={<PlayCircleOutlined />}
+            loading={runningScrtKey === record.key}
+            onClick={() => handleRunScrt(record.key)}
+            disabled={
+              !record.allowManualTrigger ||
+              (latestScrtStatus[record.key]?.status?.toUpperCase() === 'RUNNING' && !latestScrtStatus[record.key]?.finishedAt)
+            }
+          >
+            立即执行
+          </Button>
+        </Tooltip>
+      ),
+    },
+  ];
+
+  const scrtHistoryColumns: ColumnsType<ScrtExecution> = [
+    {
+      title: '脚本',
+      dataIndex: 'scrtName',
+      key: 'scrtName',
+      render: (_: any, record: ScrtExecution) => record.scrtName || record.scrtKey,
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: string) => renderScrtStatus(status),
+    },
+    {
+      title: '参数',
+      dataIndex: 'args',
+      key: 'args',
+      render: (args?: string[]) => (args && args.length > 0 ? args.join(' ') : '-'),
+    },
+    {
+      title: '开始时间',
+      dataIndex: 'startedAt',
+      key: 'startedAt',
+      render: (text?: string) => (text ? new Date(text).toLocaleString() : '-'),
+    },
+    {
+      title: '结束时间',
+      dataIndex: 'finishedAt',
+      key: 'finishedAt',
+      render: (text?: string) => (text ? new Date(text).toLocaleString() : '-'),
+    },
+    {
+      title: '退出码',
+      dataIndex: 'exitCode',
+      key: 'exitCode',
+      render: (code?: number) => (code ?? '-'),
+    },
+    {
+      title: '信息',
+      dataIndex: 'message',
+      key: 'message',
+      ellipsis: true,
+    },
+  ];
+
   return (
     <div>
       <h2>系统管理后台</h2>
+
+      <Card
+        title="采集脚本控制"
+        style={{ marginBottom: 24 }}
+        extra={
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={loadScrts} loading={scrtListLoading}>
+              刷新脚本
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={loadScrtHistory} loading={scrtHistoryLoading}>
+              刷新历史
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={loadScheduledTasks} loading={scheduledTasksLoading}>
+              刷新计划任务
+            </Button>
+          </Space>
+        }
+      >
+        <Row gutter={16}>
+          <Col xs={24} lg={12}>
+            <Card type="inner" title="可用脚本">
+              <Table
+                columns={scrtColumns}
+                dataSource={scrtList}
+                rowKey="key"
+                loading={scrtListLoading}
+                pagination={false}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} lg={12} style={{ marginTop: 16, height: '100%' }}>
+            <Card type="inner" title="最近执行记录">
+              <Table
+                columns={scrtHistoryColumns}
+                dataSource={scrtHistory}
+                rowKey={(record) => record.executionId || `${record.scrtKey}-${record.startedAt}`}
+                loading={scrtHistoryLoading}
+                pagination={{ pageSize: 5 }}
+              />
+            </Card>
+          </Col>
+        </Row>
+      </Card>
+
+      <Card
+        title="计划任务状态"
+        style={{ marginBottom: 24 }}
+        extra={
+          <Button icon={<ReloadOutlined />} onClick={loadScheduledTasks} loading={scheduledTasksLoading}>
+            刷新
+          </Button>
+        }
+      >
+        {scheduledTasks.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+            {scheduledTasksLoading ? '加载中...' : '暂无计划任务信息'}
+          </div>
+        ) : (
+          <Row gutter={16}>
+            {scheduledTasks.map((task) => (
+              <Col xs={24} lg={12} key={task.taskName} style={{ marginBottom: 16 }}>
+                <Card
+                  type="inner"
+                  title={task.taskName}
+                  extra={
+                    <Tag color={task.exists ? (task.status === 'Ready' ? 'green' : task.status === 'Running' ? 'blue' : 'orange') : 'red'}>
+                      {task.exists ? (task.status || '未知') : '不存在'}
+                    </Tag>
+                  }
+                >
+                  {task.error ? (
+                    <div style={{ color: '#ff4d4f' }}>{task.error}</div>
+                  ) : (
+                    <Descriptions column={1} size="small">
+                      <Descriptions.Item label="状态">
+                        {task.exists ? (
+                          <Tag color={task.status === 'Ready' ? 'green' : task.status === 'Running' ? 'blue' : 'orange'}>
+                            {task.status || '未知'}
+                          </Tag>
+                        ) : (
+                          <Tag color="red">任务不存在</Tag>
+                        )}
+                      </Descriptions.Item>
+                      {task.trigger && (
+                        <Descriptions.Item label="触发器">{task.trigger}</Descriptions.Item>
+                      )}
+                      {task.nextRunTime && (
+                        <Descriptions.Item label="下次运行时间">
+                          {new Date(task.nextRunTime).toLocaleString()}
+                        </Descriptions.Item>
+                      )}
+                      {task.lastRunTime && (
+                        <Descriptions.Item label="上次运行时间">
+                          {new Date(task.lastRunTime).toLocaleString()}
+                        </Descriptions.Item>
+                      )}
+                      {task.lastRunResult && (
+                        <Descriptions.Item label="上次运行结果">
+                          <Tag color={task.lastRunResult === 'Success' ? 'green' : 'red'}>
+                            {task.lastRunResult}
+                          </Tag>
+                        </Descriptions.Item>
+                      )}
+                      {task.taskPath && (
+                        <Descriptions.Item label="任务路径">
+                          <Tooltip title={task.taskPath}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>
+                              {task.taskPath}
+                            </span>
+                          </Tooltip>
+                        </Descriptions.Item>
+                      )}
+                    </Descriptions>
+                  )}
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        )}
+      </Card>
       
       <Tabs defaultActiveKey="users">
         <TabPane 

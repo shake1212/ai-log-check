@@ -157,3 +157,21 @@ log:
     brute-force:
       threshold: 5
       window-minutes: 10
+
+scripts:
+  base-path: "D:/app/Git/ai-log -check/ai-log-check/back-system/src/scripts"
+  python:
+    executable: "D:/app/py/Python-3.8.10/python.exe"
+  allowed:
+    unified_log_collector:
+      name: "安全日志采集脚本"
+      description: "聚合Windows/网络/进程日志并推送至Java分析端"
+      file: "unified_log_collector.py"
+      cooldown-seconds: 300
+      allow-manual-trigger: true
+    system_info_collector:
+      name: "系统信息采集脚本"
+      description: "采集主机性能与进程信息"
+      file: "system_info_collector.py"
+      cooldown-seconds: 300
+      allow-manual-trigger: true

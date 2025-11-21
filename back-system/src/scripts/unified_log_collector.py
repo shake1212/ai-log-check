@@ -19,10 +19,11 @@ class SecurityLogCollector:
     def __init__(self, java_backend_url: str = "http://localhost:8080"):
         self.java_backend_url = java_backend_url
         self.session = requests.Session()
+        self.collector_host = platform.node() or "unknown-host"
 
         # 配置请求头
         self.session.headers.update({
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/json; charset=utf-8',
             'User-Agent': 'SecurityLogCollector/1.0'
         })
 
@@ -86,7 +87,7 @@ class SecurityLogCollector:
                 }
                 formatted_events.append(formatted_event)
 
-            payload = json.dumps(formatted_events, default=str, ensure_ascii=False)
+            payload = json.dumps(formatted_events, default=str, ensure_ascii=False).encode('utf-8')
 
             response = self.session.post(url, data=payload, timeout=30)
 
@@ -154,8 +155,14 @@ class SecurityLogCollector:
             ConvertTo-Json -Depth 3
             """
 
-            result = subprocess.run(["powershell", "-Command", powershell_cmd],
-                                    capture_output=True, text=True, timeout=60)
+            result = subprocess.run(
+                ["powershell", "-Command", powershell_cmd],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                encoding='utf-8',
+                errors='ignore'
+            )
 
             if result.returncode == 0 and result.stdout.strip():
                 events_data = json.loads(result.stdout)
@@ -232,7 +239,14 @@ class SecurityLogCollector:
             is_windows = platform.system() == "Windows"
             cmd = ["netstat", "-an"] if is_windows else ["netstat", "-tuln"]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding='utf-8',
+                errors='ignore'
+            )
 
             connections = []
             for line in result.stdout.split('\n'):
@@ -311,6 +325,20 @@ class SecurityLogCollector:
             event_type = self._map_windows_security_event_id(event_id)
             severity = self._map_windows_security_level(event_id, event.get("LevelDisplayName", ""))
 
+            event_data = {
+                "logName": event.get("LogName"),
+                "provider": event.get("ProviderName"),
+                "level": event.get("LevelDisplayName"),
+                "machineName": event.get("MachineName"),
+                "collectorHost": self.collector_host,
+                "userId": event.get("UserId"),
+                "recordId": event.get("RecordId"),
+                "keywords": event.get("Keywords")
+            }
+
+            if event.get("ReplacementStrings"):
+                event_data["replacementStrings"] = event.get("ReplacementStrings")
+
             security_event = {
                 "timestamp": event.get("TimeCreated", "").replace("Z", ""),
                 "sourceSystem": "WINDOWS",
@@ -322,7 +350,8 @@ class SecurityLogCollector:
                 "normalizedMessage": f"Windows安全事件[{event_id}]: {event_type}",
                 "hostName": event.get("MachineName", ""),
                 "userId": event.get("UserId"),
-                "rawData": json.dumps(event)
+                "eventData": event_data,
+                "rawData": self._safe_json_dumps(event)
             }
 
             # 注意：这里不设置异常相关字段，由Java端分析检测
@@ -353,7 +382,15 @@ class SecurityLogCollector:
                 "severity": severity,
                 "rawMessage": line,
                 "normalizedMessage": self._create_unix_security_message(line, event_type),
-                "rawData": line
+                "eventData": {
+                    "logFile": log_file,
+                    "collectorHost": self.collector_host,
+                    "originalLine": line
+                },
+                "rawData": self._safe_json_dumps({
+                    "logFile": log_file,
+                    "line": line
+                })
             }
 
             if user_match:
@@ -414,7 +451,8 @@ class SecurityLogCollector:
                     # 检测可疑连接（只设置基础标记，Java端会详细分析）
                     if self._is_suspicious_connection(event):
                         event["severity"] = "WARN"
-                        # 不设置异常字段，由Java分析
+                        event.setdefault("eventData", {})
+                        event["eventData"]["suspiciousReason"] = self._get_suspicious_connection_reason(event)
 
             elif not is_windows and len(parts) >= 6:
                 event["protocol"] = parts[0]
@@ -443,7 +481,24 @@ class SecurityLogCollector:
                 # 检测可疑连接（只设置基础标记，Java端会详细分析）
                 if self._is_suspicious_connection(event):
                     event["severity"] = "WARN"
-                    # 不设置异常字段，由Java分析
+                    event.setdefault("eventData", {})
+                    event["eventData"]["suspiciousReason"] = self._get_suspicious_connection_reason(event)
+
+            connection_snapshot = {
+                "collectorHost": self.collector_host,
+                "connectionLine": line,
+                "protocol": event.get("protocol"),
+                "state": event.get("eventSubType"),
+                "sourceIp": event.get("hostIp"),
+                "sourcePort": event.get("sourcePort"),
+                "destinationIp": event.get("destinationIp"),
+                "destinationPort": event.get("destinationPort")
+            }
+            if event.get("eventData"):
+                connection_snapshot.update(event["eventData"])
+
+            event["eventData"] = connection_snapshot
+            event["rawData"] = self._safe_json_dumps(connection_snapshot)
 
             return event
 
@@ -472,8 +527,12 @@ class SecurityLogCollector:
                 "eventData": {
                     "exe_path": exe_path,
                     "cmdline": proc_info.get('cmdline', []),
-                    "create_time": proc_info.get('create_time')
-                }
+                    "create_time": proc_info.get('create_time'),
+                    "memory_info": proc_info.get('memory_info'),
+                    "cpu_percent": proc_info.get('cpu_percent'),
+                    "collectorHost": self.collector_host
+                },
+                "rawData": self._safe_json_dumps(proc_info)
             }
 
             return event
@@ -494,7 +553,14 @@ class SecurityLogCollector:
                 "processId": proc_info.get('pid'),
                 "processName": proc_info.get('name', ''),
                 "userId": proc_info.get('username', ''),
-                "normalizedMessage": f"高权限进程: {proc_info.get('name', '')} (用户: {proc_info.get('username', '')})"
+                "normalizedMessage": f"高权限进程: {proc_info.get('name', '')} (用户: {proc_info.get('username', '')})",
+                "eventData": {
+                    "exe_path": proc_info.get('exe'),
+                    "cmdline": proc_info.get('cmdline'),
+                    "collectorHost": self.collector_host,
+                    "create_time": proc_info.get('create_time')
+                },
+                "rawData": self._safe_json_dumps(proc_info)
             }
 
             return event
@@ -521,8 +587,14 @@ class SecurityLogCollector:
                             "eventData": {
                                 "interface": interface,
                                 "ip_address": addr.address,
+                                "netmask": addr.netmask,
+                                "collectorHost": self.collector_host
+                            },
+                            "rawData": self._safe_json_dumps({
+                                "interface": interface,
+                                "address": addr.address,
                                 "netmask": addr.netmask
-                            }
+                            })
                         }
                         events.append(event)
         except Exception as e:
@@ -538,7 +610,10 @@ class SecurityLogCollector:
                 # Windows防火墙状态
                 result = subprocess.run(
                     ["netsh", "advfirewall", "show", "allprofiles"],
-                    capture_output=True, text=True
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='ignore'
                 )
                 if result.returncode == 0:
                     event = {
@@ -548,14 +623,23 @@ class SecurityLogCollector:
                         "category": "NETWORK_SECURITY",
                         "severity": "INFO",
                         "normalizedMessage": "Windows防火墙状态检查",
-                        "rawData": result.stdout
+                        "eventData": {
+                            "collectorHost": self.collector_host,
+                            "output": result.stdout
+                        },
+                        "rawData": self._safe_json_dumps({
+                            "output": result.stdout
+                        })
                     }
                     events.append(event)
             else:
                 # Linux iptables状态
                 result = subprocess.run(
                     ["iptables", "-L", "-n"],
-                    capture_output=True, text=True
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='ignore'
                 )
                 if result.returncode == 0:
                     event = {
@@ -565,7 +649,13 @@ class SecurityLogCollector:
                         "category": "NETWORK_SECURITY",
                         "severity": "INFO",
                         "normalizedMessage": "iptables防火墙规则",
-                        "rawData": result.stdout
+                        "eventData": {
+                            "collectorHost": self.collector_host,
+                            "output": result.stdout
+                        },
+                        "rawData": self._safe_json_dumps({
+                            "output": result.stdout
+                        })
                     }
                     events.append(event)
 
@@ -700,8 +790,23 @@ class SecurityLogCollector:
             "category": "SYSTEM",
             "severity": "ERROR",
             "normalizedMessage": f"安全收集器 {collector} 错误: {error}",
-            "isAnomaly": False
+            "isAnomaly": False,
+            "eventData": {
+                "collector": collector,
+                "error": error,
+                "collectorHost": self.collector_host
+            },
+            "rawData": self._safe_json_dumps({
+                "collector": collector,
+                "error": error
+            })
         }
+
+    def _safe_json_dumps(self, data: Any) -> str:
+        try:
+            return json.dumps(data, ensure_ascii=False, default=str)
+        except Exception:
+            return str(data)
 
     def start_security_collection(self, interval_minutes: int = 5):
         """启动安全日志定时收集"""
@@ -743,7 +848,7 @@ def main():
     if collector.send_to_java_backend(test_events):
         logger.info("Java后端安全服务连接测试成功")
     else:
-        logger.warning("Java后端安全服务连接测试失败，请检查后端服务是否启动")
+        logger.wning("Java后端安全服务连接测试失败，请检查后端服务是否启动")
         return
 
     # 启动安全日志定时收集
