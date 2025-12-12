@@ -41,6 +41,9 @@ public class SecurityLog {
     @Column(name = "result_code")
     private Integer resultCode;
 
+    @Column(name = "source")
+    private String source;
+
     @Column(name = "raw_message", columnDefinition = "TEXT")
     private String rawMessage;
 

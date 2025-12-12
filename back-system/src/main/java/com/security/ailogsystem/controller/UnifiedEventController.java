@@ -2,6 +2,7 @@ package com.security.ailogsystem.controller;
 
 import com.security.ailogsystem.dto.UnifiedEventQueryDTO;
 import com.security.ailogsystem.dto.UnifiedSecurityEventDTO;
+import com.security.ailogsystem.repository.UnifiedEventRepository;
 import com.security.ailogsystem.service.UnifiedEventService;
 import com.security.ailogsystem.service.UnifiedLogCollector;
 import lombok.RequiredArgsConstructor;
@@ -13,10 +14,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+
+import java.security.Timestamp;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.time.LocalTime;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -27,6 +30,7 @@ public class UnifiedEventController {
 
     private final UnifiedEventService eventService;
     private final UnifiedLogCollector logCollector;
+    private final UnifiedEventRepository eventRepository;
 
 
 
@@ -257,6 +261,105 @@ public class UnifiedEventController {
                             "status", "error",
                             "message", "清理旧数据失败: " + e.getMessage()
                     ));
+        }
+    }
+    /**
+     * 获取仪表板统计信息（无需时间参数）
+     */
+    @GetMapping("/dashboard-stats")
+    public ResponseEntity<Map<String, Object>> getDashboardStats() {
+        log.debug("获取仪表板统计信息");
+
+        try {
+            Map<String, Object> stats = new HashMap<>();
+            LocalDateTime now = LocalDateTime.now();
+
+            // 1. 总事件数
+            long totalEvents = eventRepository.count();
+            stats.put("totalLogs", totalEvents);
+
+            // 2. 今日事件数（从当天00:00:00开始）
+            LocalDateTime todayStart = now.with(LocalTime.MIN);
+            long todayEvents = eventRepository.countByTimestampAfter(todayStart);
+            stats.put("todayLogs", todayEvents);
+
+            // 3. 最近7天每日统计
+            LocalDateTime weekAgo = now.minusDays(7);
+            List<Object[]> dailyStats = getDailyStatisticsNative(weekAgo);
+
+            // 转换格式
+            List<Object[]> dailyCounts = dailyStats.stream()
+                    .map(row -> new Object[]{
+                            row[0].toString(),  // 日期
+                            row[1]              // 数量
+                    })
+                    .collect(Collectors.toList());
+
+            stats.put("dailyCounts", dailyCounts);
+
+            // 4. 异常事件数量
+            long anomalyCount = eventRepository.countByIsAnomalyTrue();
+            stats.put("anomalyCount", anomalyCount);
+
+            // 5. 按严重程度统计所有事件
+            List<Object[]> severityStats = getSeverityStatisticsNative();
+            Map<String, Long> severityCounts = new HashMap<>();
+            for (Object[] row : severityStats) {
+                if (row[0] != null && row[1] != null) {
+                    severityCounts.put(row[0].toString(), ((Number) row[1]).longValue());
+                }
+            }
+            stats.put("severityCounts", severityCounts);
+
+            // 6. 最后更新时间
+            stats.put("lastUpdate", now.toString());
+
+            // 7. 计算平均每日事件数
+            double avgDailyEvents = dailyStats.isEmpty() ? 0 :
+                    dailyStats.stream()
+                            .mapToLong(row -> ((Number) row[1]).longValue())
+                            .average()
+                            .orElse(0.0);
+            stats.put("avgDailyEvents", avgDailyEvents);
+
+            log.info("仪表板统计 - 总事件数: {}, 今日事件数: {}, 异常事件数: {}",
+                    totalEvents, todayEvents, anomalyCount);
+
+            return ResponseEntity.ok(stats);
+
+        } catch (Exception e) {
+            log.error("获取仪表板统计信息失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * 获取每日统计（使用原生SQL）
+     */
+    private List<Object[]> getDailyStatisticsNative(LocalDateTime startDate) {
+        try {
+            // 使用现有的高级统计查询方法，或创建新查询
+            // 这里假设你已经有 countBySourceSystemGroup 方法
+            // 暂时返回空列表或调用其他可用方法
+            return new ArrayList<>();
+        } catch (Exception e) {
+            log.error("获取每日统计失败", e);
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * 获取严重程度统计（使用原生SQL）
+     */
+    private List<Object[]> getSeverityStatisticsNative() {
+        try {
+            // 查询所有时间的严重程度统计
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime longTimeAgo = now.minusYears(10); // 很久以前
+            return eventRepository.countBySeverityGroup(longTimeAgo, now);
+        } catch (Exception e) {
+            log.error("获取严重程度统计失败", e);
+            return new ArrayList<>();
         }
     }
 }

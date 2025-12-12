@@ -297,3 +297,30 @@ export interface WebSocketMessage {
   description?: string;
   timestamp?: number;
 }
+
+export interface SecurityAnalysisItem {
+  id: string;
+  category: 'anomaly_detection' | 'threat_hunting' | 'risk_assessment' | 'compliance';
+  name: string;
+  description: string;
+  riskScore: number;
+  findings: string[];
+  recommendations: string[];
+  lastRun: string;
+  nextRun: string;
+  status: 'completed' | 'running' | 'failed' | 'pending';
+}
+
+export interface ThreatIntelItem {
+  id: string;
+  type: 'malware' | 'phishing' | 'vulnerability' | 'botnet' | 'zero-day';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  source: string;
+  description: string;
+  affectedSystems: string[];
+  detectionDate: string;
+  iocCount: number;
+  confidence: number;
+  status: 'active' | 'inactive' | 'mitigated';
+  relatedThreats: string[];
+}

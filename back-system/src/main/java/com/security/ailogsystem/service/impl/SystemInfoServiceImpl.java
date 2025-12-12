@@ -82,7 +82,7 @@ public class SystemInfoServiceImpl implements SystemInfoService {
 
             // 构建进程命令
             List<String> command = new ArrayList<>();
-            command.add("python");
+            command.add("D:/projects/ai-log-check/back-system/.venv/Scripts/python.exe");
             command.add(scriptPath);
             command.add(infoType);
 

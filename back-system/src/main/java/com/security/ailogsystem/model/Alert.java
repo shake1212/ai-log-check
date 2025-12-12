@@ -1,3 +1,4 @@
+// Alert.java - 完整修改
 package com.security.ailogsystem.model;
 
 import lombok.AllArgsConstructor;
@@ -21,7 +22,7 @@ public class Alert {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(name = "alert_id", unique = true, nullable = false)
     private String alertId;
 
     @Column(nullable = false)
@@ -30,11 +31,11 @@ public class Alert {
     @Column(nullable = false)
     private String source;
 
-    @Column(nullable = false)
-    private String type;
+    @Column(name = "alert_type", nullable = false)
+    private String alertType;
 
-    @Column(nullable = false)
-    private String level;
+    @Column(name = "alert_level", nullable = false)
+    private String alertLevel;
 
     @Column(columnDefinition = "TEXT")
     private String description;
@@ -55,20 +56,30 @@ public class Alert {
     @JoinColumn(name = "log_entry_id")
     private LogEntry logEntry;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    @Column(name = "created_time", nullable = false, updatable = false)
+    private LocalDateTime createdTime;
 
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    @Column(name = "updated_time")
+    private LocalDateTime updatedTime;
+
+    @Column(name = "handled", nullable = false)
+    private Boolean handled;
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
+        createdTime = LocalDateTime.now();
+        timestamp = LocalDateTime.now();
+        if (handled == null) {
+            handled = false;
+        }
+        if (status == null) {
+            status = AlertStatus.PENDING;
+        }
     }
 
     @PreUpdate
     protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+        updatedTime = LocalDateTime.now();
     }
 
     public enum AlertStatus {
@@ -77,4 +88,4 @@ public class Alert {
         RESOLVED,
         FALSE_POSITIVE
     }
-} 
+}

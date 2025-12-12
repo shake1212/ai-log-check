@@ -21,15 +21,15 @@ import {
   SyncOutlined,
   DatabaseOutlined,
 } from '@ant-design/icons';
-import EnhancedDashboard from '../components/EnhancedDashboard';
+import EnhancedDashboard from '../components/EnhancedDashboard/EnhancedDashboard';
 import WMIManagement from '../pages/wmi/index';
 import SystemInfoManagement from '../pages/systemInfoManagement/index';
 import DebugRoute from '../pages/debug-route';
 import EventsPage from '../pages/events/index';
 import BatchOperationsPage from '../pages/batch-operations/index';
-import DatabaseManagement from '../pages/database/index';
+// import DatabaseManagement from '../pages/database/index';
 // 新增导入
-import LogsPage from '../pages/logs/index';
+// import LogsPage from '../pages/logs/index';
 import AlertsPage from '../pages/alerts/alerts';
 import SystemPage from '../pages/system';
 import initialConfig from '../pages/settings/index';
@@ -109,11 +109,11 @@ export default function DefaultLayout() {
       icon: <CheckCircleOutlined />,
       label: '白名单管理',
     },
-    {
-      key: '/logs',
-      icon: <FileTextOutlined />,
-      label: '日志查询',
-    },
+    // {
+    //   key: '/logs',
+    //   icon: <FileTextOutlined />,
+    //   label: '日志查询',
+    // },
     {
       key: '/settings',
       icon: <SettingOutlined />,
@@ -204,8 +204,8 @@ export default function DefaultLayout() {
             <p>白名单管理功能正在开发中...</p>
           </div>
         );
-      case '/logs':
-        return <LogsPage />;
+      // case '/logs':
+      //   return <LogsPage />;
       case '/settings':
         return (
           <div style={{ padding: '20px' }}>
@@ -221,8 +221,8 @@ export default function DefaultLayout() {
         return <EventsPage />;
       case '/batch-operations':
         return <BatchOperationsPage />;
-      case '/database':
-        return <DatabaseManagement />;
+      // case '/database':
+      //   return <DatabaseManagement />;
       case '/debug-route':
         return <DebugRoute />;
       case '/system':
@@ -247,7 +247,7 @@ export default function DefaultLayout() {
   };
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: '100vh', display: 'flex' }}>
       {/* 通知面板 */}
       <NotificationPanel 
         visible={notificationPanelVisible}
@@ -258,9 +258,24 @@ export default function DefaultLayout() {
         collapsible 
         collapsed={collapsed} 
         onCollapse={(value) => setCollapsed(value)}
+        trigger={null}  // 隐藏默认触发器
         theme="dark"
+        style={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          height: '100vh',
+          position: 'sticky',
+          top: 0,
+          left: 0,
+          overflow: 'hidden'
+        }}
       >
-        <div style={{ padding: '16px', textAlign: 'center' }}>
+        {/* Logo区域 */}
+        <div style={{ 
+          padding: '16px', 
+          textAlign: 'center',
+          flexShrink: 0
+        }}>
           <div style={{ fontSize: '24px', marginBottom: '8px' }}>🛡️</div>
           {!collapsed && (
             <div>
@@ -271,68 +286,143 @@ export default function DefaultLayout() {
             </div>
           )}
         </div>
-        <Menu
-          theme="dark" 
-          mode="inline" 
-          selectedKeys={[currentPath]}
-          items={filteredMenuItems}
-          onClick={({ key }) => {
-            setCurrentPath(key);
-            setActiveTab(key);
-            window.location.hash = key;
-          }}
-        />
+        
+        {/* 菜单区域 - 可滚动，占据剩余空间 */}
         <div style={{ 
-          position: 'absolute', 
-          bottom: 0, 
-          width: '100%', 
-          padding: '16px', 
-          textAlign: 'center',
-          backgroundColor: 'rgba(0, 0, 0, 0.2)'
+          flex: 1,
+          overflow: 'auto',
+          height: '80%',
+          minHeight: 0
         }}>
-          <Space>
-            <Badge count={unreadCount} size="small">
-              <Button 
-                type="text" 
-                icon={<BellOutlined style={{ color: 'white' }} />}
-                onClick={() => setNotificationPanelVisible(true)}
+          <Menu
+            theme="dark" 
+            mode="inline" 
+            selectedKeys={[currentPath]}
+            items={filteredMenuItems}
+            onClick={({ key }) => {
+              setCurrentPath(key);
+              setActiveTab(key);
+              window.location.hash = key;
+            }}
+            style={{ 
+              borderRight: 'none',
+              paddingBottom: '8px'
+            }}
+          />
+        </div>
+        
+        {/* 登录图标区域 - 直接放在Sider最底部 */}
+        <div style={{ 
+          backgroundColor: 'rgba(0, 0, 0, 0.2)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+          padding: '16px',
+          flexShrink: 0,
+          marginTop: 'auto' // 确保在Sider最底部
+        }}>
+          <div style={{ 
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%'
+          }}>
+            {/* 左侧：登录图标和通知按钮 */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              gap: '8px',
+              flex: collapsed ? 0 : 1,
+              justifyContent: collapsed ? 'center' : 'flex-start',
+              overflow: 'hidden'
+            }}>
+              {!collapsed && (
+                <Badge count={unreadCount} size="small">
+                  <Button 
+                    type="text" 
+                    icon={<BellOutlined style={{ color: 'white' }} />}
+                    onClick={() => setNotificationPanelVisible(true)}
+                    size="small"
+                    style={{ color: 'white' }}
+                  />
+                </Badge>
+              )}
+              
+              <Dropdown 
+                menu={{ 
+                  items: userMenu, 
+                  onClick: handleUserMenuClick 
+                }} 
+                placement="topLeft"
+                arrow
+              >
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  cursor: 'pointer',
+                  minWidth: collapsed ? 'auto' : '100px'
+                }}>
+                  <Avatar size="small" icon={<UserOutlined />} />
+                  {!collapsed && (
+                    <div style={{ marginLeft: '8px', overflow: 'hidden' }}>
+                      <Text style={{ 
+                        color: 'white', 
+                        display: 'block', 
+                        fontSize: '12px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis'
+                      }}>
+                        管理员
+                      </Text>
+                    </div>
+                  )}
+                </div>
+              </Dropdown>
+            </div>
+            
+            {/* 右侧：折叠图标 */}
+            <div style={{ 
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Button
+                type="text"
+                icon={collapsed ? <MenuUnfoldOutlined style={{ color: 'white' }} /> : <MenuFoldOutlined style={{ color: 'white' }} />}
+                onClick={() => setCollapsed(!collapsed)}
                 size="small"
+                style={{ color: 'white' }}
               />
-            </Badge>
-            <Dropdown 
-              menu={{ 
-                items: userMenu, 
-                onClick: handleUserMenuClick 
-              }} 
-              placement="topLeft"
-              arrow
-            >
-              <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                <Avatar size="small" icon={<UserOutlined />} />
-                {!collapsed && (
-                  <div style={{ marginLeft: '8px' }}>
-                    <Text style={{ color: 'white', display: 'block', fontSize: '12px' }}>管理员</Text>
-                  </div>
-                )}
-              </div>
-            </Dropdown>
-            <Button
-              type="text"
-              icon={collapsed ? <MenuUnfoldOutlined style={{ color: 'white' }} /> : <MenuFoldOutlined style={{ color: 'white' }} />}
-              onClick={() => setCollapsed(!collapsed)}
-              size="small"
-            />
-          </Space>
+            </div>
+          </div>
         </div>
       </Sider>
-      <Layout>
-        <Content style={{ padding: '16px', background: '#f0f2f5' }}>
-          <div className="tab-content-container" style={{ height: 'calc(100vh - 120px)', overflow: 'visible' }}>
-            {/* 移除了顶部的Tabs菜单，只保留侧边栏菜单 */}
+      
+      <Layout style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <Content style={{ 
+          flex: 1,
+          padding: '16px',
+          background: '#f0f2f5',
+          overflow: 'auto'
+        }}>
+          <div 
+            style={{ 
+              height: '100%',
+              background: '#fff',
+              borderRadius: '8px',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              padding: '24px',
+              overflow: 'auto'
+            }}
+          >
             {renderTabContent(activeTab)}
           </div>
         </Content>
-        <Footer style={{ textAlign: 'center', background: '#fff', padding: '12px 24px' }}>
+        <Footer style={{ 
+          textAlign: 'center', 
+          background: '#fff', 
+          padding: '12px 24px',
+          flexShrink: 0
+        }}>
           <Text type="secondary" style={{ fontSize: '12px' }}>
             安全日志异常检测与预警系统 ©{new Date().getFullYear()} | 技术支持: AI安全团队
           </Text>

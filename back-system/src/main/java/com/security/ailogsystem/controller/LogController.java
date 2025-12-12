@@ -105,12 +105,22 @@ public class LogController {
         List<Object[]> dailyCounts = logRepository.getDailyLogCounts(last24Hours);
         List<Object[]> bruteForceAttempts = logRepository.findBruteForceAttempts(last24Hours, 5L);
 
+        // 添加威胁等级统计
+        Map<String, Long> threatLevels = new HashMap<>();
+        threatLevels.put("LOW", logRepository.countByThreatLevelAndEventTimeAfter("LOW", last24Hours));
+        threatLevels.put("MEDIUM", logRepository.countByThreatLevelAndEventTimeAfter("MEDIUM", last24Hours));
+        threatLevels.put("HIGH", logRepository.countByThreatLevelAndEventTimeAfter("HIGH", last24Hours));
+        threatLevels.put("CRITICAL", logRepository.countByThreatLevelAndEventTimeAfter("CRITICAL", last24Hours));
+
         Map<String, Object> stats = new HashMap<>();
         stats.put("eventCounts", eventCounts);
         stats.put("dailyCounts", dailyCounts);
         stats.put("bruteForceAttempts", bruteForceAttempts);
         stats.put("totalAlerts", alertRepository.count());
         stats.put("unhandledAlerts", alertRepository.findByHandledFalseOrderByCreatedTimeDesc().size());
+
+        // 添加威胁等级数据
+        stats.put("threatLevels", threatLevels);
 
         return ResponseEntity.ok(stats);
     }
@@ -135,4 +145,21 @@ public class LogController {
 
         return ResponseEntity.ok(List.of());
     }
+    @GetMapping("/threat-levels")
+    public ResponseEntity<Map<String, Long>> getThreatLevels(
+            @RequestParam(defaultValue = "24") int hours) {
+
+        LocalDateTime since = LocalDateTime.now().minusHours(hours);
+
+        // 实现获取威胁等级统计的逻辑
+        // 如果SecurityLogRepository没有这个方法，需要添加
+        Map<String, Long> threatLevels = new HashMap<>();
+        threatLevels.put("LOW", logRepository.countByThreatLevelAndEventTimeAfter("LOW", since));
+        threatLevels.put("MEDIUM", logRepository.countByThreatLevelAndEventTimeAfter("MEDIUM", since));
+        threatLevels.put("HIGH", logRepository.countByThreatLevelAndEventTimeAfter("HIGH", since));
+        threatLevels.put("CRITICAL", logRepository.countByThreatLevelAndEventTimeAfter("CRITICAL", since));
+
+        return ResponseEntity.ok(threatLevels);
+    }
+
 }

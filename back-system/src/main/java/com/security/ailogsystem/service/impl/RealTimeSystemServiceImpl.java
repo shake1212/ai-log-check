@@ -277,22 +277,31 @@ public class RealTimeSystemServiceImpl implements RealTimeSystemService {
 
     @Override
     public List<Map<String, Object>> executeSystemInfoQuery(String infoType) {
-        Optional<Map<String, Object>> storedResult = buildStoredResult(infoType);
-        if (storedResult.isPresent()) {
-            return List.of(storedResult.get());
-        }
+        log.info("执行系统信息查询，类型: {}", infoType);
 
         try {
+            // 直接调用Python脚本获取实时数据
             Map<String, Object> systemInfo = systemInfoService.collectSpecificInfo(infoType);
             Map<String, Object> resultItem = new HashMap<>();
             resultItem.put("infoType", infoType);
             resultItem.put("data", systemInfo);
             resultItem.put("collectionTime", LocalDateTime.now().toString());
-            resultItem.put("source", "SCRIPT");
+            resultItem.put("source", "PYTHON_SCRIPT");
+            resultItem.put("realTime", true);
             return List.of(resultItem);
         } catch (Exception e) {
             log.error("执行系统信息查询失败: {}", e.getMessage(), e);
-            throw new RuntimeException("系统信息查询失败: " + e.getMessage());
+
+            // 返回一个空结果，而不是模拟数据
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("infoType", infoType);
+            errorResult.put("data", new HashMap<>());
+            errorResult.put("collectionTime", LocalDateTime.now().toString());
+            errorResult.put("source", "ERROR");
+            errorResult.put("realTime", true);
+            errorResult.put("error", e.getMessage());
+
+            return List.of(errorResult);
         }
     }
 
@@ -410,6 +419,7 @@ public class RealTimeSystemServiceImpl implements RealTimeSystemService {
                 return "未知数据类型";
         }
     }
+
 
     @Override
     public Map<String, Object> getRealTimeStatus() {

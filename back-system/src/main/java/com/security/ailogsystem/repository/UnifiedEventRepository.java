@@ -118,4 +118,31 @@ public interface UnifiedEventRepository extends JpaRepository<UnifiedSecurityEve
             "FROM UnifiedSecurityEvent WHERE timestamp BETWEEN :start AND :end " +
             "GROUP BY FUNCTION('DATE_FORMAT', timestamp, '%Y-%m-%d %H:00:00') ORDER BY hour")
     List<Object[]> getHourlyStatisticsCompatible(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+    // 1. 添加：统计某个时间点之后的事件数量（今日事件数）
+    long countByTimestampAfter(LocalDateTime timestamp);
+
+    // 2. 添加：获取最近N天的每日统计
+    @Query(value = "SELECT DATE(timestamp) as date, COUNT(*) as count " +
+            "FROM unified_security_events " +
+            "WHERE timestamp >= :startDate " +
+            "GROUP BY DATE(timestamp) " +
+            "ORDER BY date DESC",
+            nativeQuery = true)
+    List<Object[]> getDailyStatistics(@Param("startDate") LocalDateTime startDate);
+
+    // 3. 添加：按事件级别（level）分组统计
+    @Query("SELECT e.level, COUNT(e) FROM UnifiedSecurityEvent e GROUP BY e.level")
+    List<Object[]> countByLevelGroup();
+
+    // 4. 添加：统计异常事件数量
+    long countByIsAnomalyTrue();
+
+    // 5. 添加：按严重程度（severity）分组统计所有事件
+    @Query("SELECT e.severity, COUNT(e) FROM UnifiedSecurityEvent e GROUP BY e.severity")
+    List<Object[]> countBySeverityGroupAll();
+
+    // 6. 添加：统计威胁级别（threatLevel）分组
+    @Query("SELECT e.threatLevel, COUNT(e) FROM UnifiedSecurityEvent e GROUP BY e.threatLevel")
+    List<Object[]> countByThreatLevelGroupAll();
 }

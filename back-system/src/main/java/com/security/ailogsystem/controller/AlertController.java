@@ -1,212 +1,149 @@
-// controller/AlertController.java
 package com.security.ailogsystem.controller;
 
-import com.security.ailogsystem.entity.SecurityAlert;
+import com.security.ailogsystem.dto.request.AlertRequest;
+import com.security.ailogsystem.dto.response.AlertResponse;
+import com.security.ailogsystem.model.Alert;
+import com.security.ailogsystem.repository.AlertRepository;
 import com.security.ailogsystem.service.AlertService;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/alerts")
+@RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class AlertController {
 
-    @Autowired
-    private AlertService alertService;
+    private final AlertService alertService;
+    private final AlertRepository alertRepository;
 
-    /**
-     * 创建警报
-     */
     @PostMapping
-    public ResponseEntity<SecurityAlert> createAlert(@RequestBody SecurityAlert alert) {
+    public ResponseEntity<AlertResponse> createAlert(@RequestBody AlertRequest request) {
         try {
-            SecurityAlert createdAlert = alertService.createAlert(alert);
-            return ResponseEntity.ok(createdAlert);
+            AlertResponse response = alertService.createAlert(request);
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
+            log.error("创建告警失败", e);
             return ResponseEntity.badRequest().build();
         }
     }
 
-    /**
-     * 根据ID获取警报
-     */
     @GetMapping("/{id}")
-    public ResponseEntity<SecurityAlert> getAlertById(@PathVariable Long id) {
+    public ResponseEntity<AlertResponse> getAlert(@PathVariable Long id) {
         try {
-            SecurityAlert alert = alertService.getAlertById(id);
-            if (alert != null) {
-                return ResponseEntity.ok(alert);
-            } else {
-                return ResponseEntity.notFound().build();
-            }
+            AlertResponse response = alertService.getAlertById(id);
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
+            log.error("获取告警失败: {}", id, e);
+            return ResponseEntity.notFound().build();
         }
     }
 
-    /**
-     * 获取所有警报（分页）
-     */
     @GetMapping
-    public ResponseEntity<Page<SecurityAlert>> getAllAlerts(
+    public ResponseEntity<Page<AlertResponse>> getAllAlerts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "createdTime") String sort,
             @RequestParam(defaultValue = "desc") String direction) {
 
         try {
-            Sort.Direction sortDirection = direction.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
+            Sort.Direction sortDirection = direction.equalsIgnoreCase("asc")
+                    ? Sort.Direction.ASC : Sort.Direction.DESC;
             Pageable pageable = PageRequest.of(page, size, Sort.by(sortDirection, sort));
 
-            Page<SecurityAlert> alerts = alertService.getAllAlerts(pageable);
+            Page<AlertResponse> alerts = alertService.getAllAlerts(pageable);
             return ResponseEntity.ok(alerts);
         } catch (Exception e) {
+            log.error("获取告警列表失败", e);
             return ResponseEntity.badRequest().build();
         }
     }
 
-    /**
-     * 获取未处理警报
-     */
     @GetMapping("/unhandled")
-    public ResponseEntity<List<SecurityAlert>> getUnhandledAlerts() {
-        try {
-            List<SecurityAlert> alerts = alertService.getUnhandledAlerts();
-            return ResponseEntity.ok(alerts);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
-    }
-
-    /**
-     * 根据状态获取警报
-     */
-    @GetMapping("/status/{handled}")
-    public ResponseEntity<Page<SecurityAlert>> getAlertsByStatus(
-            @PathVariable Boolean handled,
+    public ResponseEntity<Page<AlertResponse>> getUnhandledAlerts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
         try {
             Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdTime"));
-            Page<SecurityAlert> alerts = alertService.getAlertsByStatus(handled, pageable);
+            Page<AlertResponse> alerts = alertService.getUnhandledAlerts(pageable);
             return ResponseEntity.ok(alerts);
         } catch (Exception e) {
+            log.error("获取未处理告警失败", e);
             return ResponseEntity.badRequest().build();
         }
     }
 
-    /**
-     * 搜索警报
-     */
     @GetMapping("/search")
-    public ResponseEntity<Page<SecurityAlert>> searchAlerts(
+    public ResponseEntity<Page<AlertResponse>> searchAlerts(
             @RequestParam(required = false) String keyword,
-            @RequestParam(required = false) SecurityAlert.AlertLevel level,
-            @RequestParam(required = false) String alertType,
+            @RequestParam(required = false) String alertLevel,
             @RequestParam(required = false) Boolean handled,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
+            @RequestParam(required = false) Alert.AlertStatus status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
         try {
             Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdTime"));
-            Page<SecurityAlert> alerts = alertService.searchAlerts(keyword, level, alertType, handled, startTime, endTime, pageable);
+            Page<AlertResponse> alerts = alertService.searchAlerts(keyword, alertLevel, handled, status, pageable);
             return ResponseEntity.ok(alerts);
         } catch (Exception e) {
+            log.error("搜索告警失败", e);
             return ResponseEntity.badRequest().build();
         }
     }
 
-    /**
-     * 更新警报状态
-     */
+    @PutMapping("/{id}/handle")
+    public ResponseEntity<Void> handleAlert(
+            @PathVariable Long id,
+            @RequestParam(required = false, defaultValue = "system") String handledBy,
+            @RequestParam(required = false, defaultValue = "通过界面处理") String resolution) {
+
+        try {
+            boolean success = alertService.markAlertAsHandled(id, handledBy, resolution);
+            if (success) {
+                return ResponseEntity.ok().build();
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            log.error("处理告警失败: {}", id, e);
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
     @PutMapping("/{id}/status")
     public ResponseEntity<Void> updateAlertStatus(
             @PathVariable Long id,
-            @RequestParam Boolean handled,
-            @RequestParam(required = false) String handledBy,
-            @RequestParam(required = false) String handledNote) {
+            @RequestParam Alert.AlertStatus status,
+            @RequestParam(required = false) String assignee,
+            @RequestParam(required = false) String resolution) {
 
         try {
-            boolean success = alertService.updateAlertStatus(id, handled, handledBy, handledNote);
+            boolean success = alertService.updateAlertStatus(id, status, assignee, resolution);
             if (success) {
                 return ResponseEntity.ok().build();
             } else {
                 return ResponseEntity.notFound().build();
             }
         } catch (Exception e) {
+            log.error("更新告警状态失败: {}", id, e);
             return ResponseEntity.badRequest().build();
         }
     }
 
-    /**
-     * 标记警报为已处理
-     */
-    @PutMapping("/{id}/handle")
-    public ResponseEntity<Void> handleAlert(@PathVariable Long id) {
-        try {
-            boolean success = alertService.markAlertAsHandled(id);
-            if (success) {
-                return ResponseEntity.ok().build();
-            } else {
-                return ResponseEntity.notFound().build();
-            }
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
-    }
-
-    /**
-     * 获取最近警报
-     */
-    @GetMapping("/recent")
-    public ResponseEntity<List<SecurityAlert>> getRecentAlerts(
-            @RequestParam(defaultValue = "10") int count) {
-
-        try {
-            List<SecurityAlert> alerts = alertService.getRecentAlerts(count);
-            return ResponseEntity.ok(alerts);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
-    }
-
-    /**
-     * 获取警报统计
-     */
-    @GetMapping("/statistics")
-    public ResponseEntity<Map<String, Object>> getAlertStatistics(
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
-
-        try {
-            Map<String, Object> statistics;
-            if (startTime != null && endTime != null) {
-                statistics = alertService.getAlertStatistics(startTime, endTime);
-            } else {
-                statistics = alertService.getAlertStatistics();
-            }
-            return ResponseEntity.ok(statistics);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
-    }
-
-    /**
-     * 删除警报
-     */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteAlert(@PathVariable Long id) {
         try {
@@ -217,29 +154,122 @@ public class AlertController {
                 return ResponseEntity.notFound().build();
             }
         } catch (Exception e) {
+            log.error("删除告警失败: {}", id, e);
             return ResponseEntity.badRequest().build();
         }
     }
 
-    /**
-     * 批量处理警报
-     */
-    @PutMapping("/batch/handle")
-    public ResponseEntity<Map<String, Object>> batchHandleAlerts(@RequestBody List<Long> alertIds) {
+    @GetMapping("/statistics")
+    public ResponseEntity<Map<String, Object>> getStatistics() {
         try {
-            int handledCount = alertService.markAlertsAsHandled(alertIds);
-            Map<String, Object> result = Map.of(
-                    "success", true,
-                    "handledCount", handledCount,
-                    "message", "成功处理 " + handledCount + " 个警报"
-            );
-            return ResponseEntity.ok(result);
+            Map<String, Object> statistics = alertService.getAlertStatistics();
+            return ResponseEntity.ok(statistics);
         } catch (Exception e) {
-            Map<String, Object> result = Map.of(
-                    "success", false,
-                    "message", "批量处理失败"
-            );
-            return ResponseEntity.badRequest().body(result);
+            log.error("获取告警统计失败", e);
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @GetMapping("/recent")
+    public ResponseEntity<Page<AlertResponse>> getRecentAlerts(
+            @RequestParam(defaultValue = "10") int count) {
+
+        try {
+            Page<AlertResponse> alerts = alertService.getRecentAlerts(count);
+            return ResponseEntity.ok(alerts);
+        } catch (Exception e) {
+            log.error("获取最近告警失败", e);
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @PutMapping("/batch/handle")
+    public ResponseEntity<Map<String, Object>> batchHandleAlerts(
+            @RequestBody Map<String, Object> request) {
+
+        try {
+            @SuppressWarnings("unchecked")
+            List<Long> alertIds = (List<Long>) request.get("alertIds");
+            String handledBy = (String) request.getOrDefault("handledBy", "system");
+            String resolution = (String) request.getOrDefault("resolution", "批量处理");
+
+            if (alertIds == null || alertIds.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "error", "alertIds不能为空"
+                ));
+            }
+
+            // 批量处理逻辑
+            int handledCount = 0;
+            for (Long alertId : alertIds) {
+                boolean success = alertService.markAlertAsHandled(alertId, handledBy, resolution);
+                if (success) {
+                    handledCount++;
+                }
+            }
+
+            return ResponseEntity.ok(Map.of(
+                    "handledCount", handledCount,
+                    "totalCount", alertIds.size(),
+                    "success", true
+            ));
+
+        } catch (Exception e) {
+            log.error("批量处理告警失败", e);
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "error", "批量处理失败: " + e.getMessage(),
+                    "success", false
+            ));
+        }
+    }
+    @GetMapping("/statistics/dashboard")
+    public ResponseEntity<Map<String, Object>> getDashboardStatistics() {
+        try {
+            Map<String, Object> statistics = new HashMap<>();
+
+            // 1. 威胁等级分布
+            Map<String, Long> threatLevels = new HashMap<>();
+            threatLevels.put("LOW", alertRepository.countByAlertLevel("LOW"));
+            threatLevels.put("MEDIUM", alertRepository.countByAlertLevel("MEDIUM"));
+            threatLevels.put("HIGH", alertRepository.countByAlertLevel("HIGH"));
+            threatLevels.put("CRITICAL", alertRepository.countByAlertLevel("CRITICAL"));
+            statistics.put("threatLevels", threatLevels);
+
+            // 2. 总告警数
+            long totalAlerts = alertRepository.count();
+            statistics.put("totalLogs", totalAlerts);
+            statistics.put("securityEvents", totalAlerts);
+
+            // 3. 未处理告警
+            long unhandledAlerts = alertRepository.countByHandled(false);
+            statistics.put("unhandledAlerts", unhandledAlerts);
+
+            // 4. 高/严重风险数量
+            long highRiskCount = threatLevels.getOrDefault("HIGH", 0L) +
+                    threatLevels.getOrDefault("CRITICAL", 0L);
+            statistics.put("highRiskCount", highRiskCount);
+
+            // 5. 每日统计（最近7天）
+            List<Object[]> dailyStats = alertRepository.countByDateForLast7Days();
+            List<Object[]> dailyCounts = dailyStats.stream()
+                    .map(arr -> new Object[]{arr[0], arr[1]})
+                    .collect(Collectors.toList());
+            statistics.put("dailyCounts", dailyCounts);
+
+            // 6. 暴力破解尝试
+            List<Object[]> bruteForceAttempts = alertRepository.findBruteForceAttempts();
+            statistics.put("bruteForceAttempts", bruteForceAttempts);
+
+            // 7. 事件类型统计
+            List<Object[]> eventCounts = alertRepository.countByEventType();
+            statistics.put("eventCounts", eventCounts);
+
+            return ResponseEntity.ok(statistics);
+
+        } catch (Exception e) {
+            log.error("获取仪表盘统计失败", e);
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 }

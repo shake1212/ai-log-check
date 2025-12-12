@@ -1,6 +1,8 @@
 // service/impl/ThreatDetectionServiceImpl.java
 package com.security.ailogsystem.service.impl;
 
+import com.security.ailogsystem.dto.request.AlertRequest;
+import com.security.ailogsystem.dto.response.AlertResponse;
 import com.security.ailogsystem.entity.SecurityLog;
 import com.security.ailogsystem.entity.SecurityAlert;
 import com.security.ailogsystem.repository.SecurityAlertRepository;
@@ -13,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,10 +27,10 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
     private static final Logger logger = LoggerFactory.getLogger(ThreatDetectionServiceImpl.class);
 
     @Autowired
-    private SecurityAlertRepository alertRepository;
+    private SecurityAlertRepository securityAlertRepository; // 旧的仓库，可以暂时保留
 
     @Autowired
-    private AlertService alertService;
+    private AlertService alertService; // 新的告警服务
 
     @Autowired
     private WebSocketService webSocketService;
@@ -121,9 +124,10 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
             analyzeThreat(log);
         }
 
-        // 获取最近创建的警报
+        // 获取最近创建的警报（从旧的仓库中获取）
         try {
-            List<SecurityAlert> recentAlerts = alertRepository.findTop10ByOrderByCreatedTimeDesc();
+            // 这里我们暂时从旧的仓库获取，后续可以迁移到新的仓库
+            List<SecurityAlert> recentAlerts = securityAlertRepository.findTop10ByOrderByCreatedTimeDesc();
             alerts.addAll(recentAlerts);
         } catch (Exception e) {
             logger.error("获取最近警报失败", e);
@@ -186,7 +190,7 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
 
         // 添加最近24小时统计
         LocalDateTime last24Hours = LocalDateTime.now().minusHours(24);
-        Long recentAlerts = alertRepository.countByCreatedTimeAfter(last24Hours);
+        Long recentAlerts = securityAlertRepository.countByCreatedTimeAfter(last24Hours);
         stats.put("recentAlerts", recentAlerts);
 
         return stats;
@@ -241,19 +245,105 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
     }
 
     /**
-     * 创建安全警报
+     * 创建安全警报 - 修改这个方法
      */
     private void createSecurityAlerts(SecurityLog log, List<String> threatTypes, String threatLevel) {
         for (String threatType : threatTypes) {
             String description = generateAlertDescription(log, threatType);
-            SecurityAlert.AlertLevel level = determineAlertLevel(threatLevel);
+            String alertLevel = determineAlertLevel(threatLevel);
 
-            SecurityAlert alert = new SecurityAlert(level, threatType, description);
-            alert.setSecurityLog(log);
+            // 创建 AlertRequest 而不是 SecurityAlert
+            AlertRequest alertRequest = new AlertRequest();
+            alertRequest.setAlertId(generateAlertId(log));
+            alertRequest.setSource(log.getSource() != null ? log.getSource() : "SecurityLog");
+            alertRequest.setAlertType(threatType);
+            alertRequest.setAlertLevel(alertLevel);
+            alertRequest.setDescription(description);
 
-            alertService.createAlert(alert);
+            // 如果有相关的日志条目ID
+            if (log.getId() != null) {
+                alertRequest.setLogEntryId(log.getId());
+            }
 
-            logger.warn("创建安全警报: {} - {}", threatType, description);
+            // 设置 AI 置信度（这里可以根据威胁等级设置一个置信度）
+            BigDecimal confidence = calculateConfidence(threatLevel);
+            alertRequest.setAiConfidence(confidence);
+
+            try {
+                // 使用新的 alertService 创建告警
+                AlertResponse alertResponse = alertService.createAlert(alertRequest);
+
+                // 如果需要，也可以创建旧的 SecurityAlert 用于兼容性（可选）
+                createCompatibilityAlert(log, threatType, alertLevel, description);
+
+                logger.warn("创建安全警报: {} - {}", threatType, description);
+            } catch (Exception e) {
+                logger.error("创建告警失败: {}", e.getMessage(), e);
+            }
+        }
+    }
+
+    /**
+     * 生成唯一的告警ID
+     */
+    private String generateAlertId(SecurityLog log) {
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        String random = UUID.randomUUID().toString().substring(0, 4);
+        return "ALERT_" + timestamp + "_" + random;
+    }
+
+    /**
+     * 计算置信度
+     */
+    private BigDecimal calculateConfidence(String threatLevel) {
+        switch (threatLevel) {
+            case "CRITICAL":
+                return new BigDecimal("0.95");
+            case "HIGH":
+                return new BigDecimal("0.85");
+            case "MEDIUM":
+                return new BigDecimal("0.70");
+            case "LOW":
+                return new BigDecimal("0.50");
+            default:
+                return new BigDecimal("0.60");
+        }
+    }
+
+    /**
+     * 创建兼容性告警（可选，用于过渡期）
+     */
+    private void createCompatibilityAlert(SecurityLog log, String threatType, String alertLevel, String description) {
+        try {
+            // 这里可以创建旧的 SecurityAlert 实体用于兼容性
+            SecurityAlert.AlertLevel level = convertToOldAlertLevel(alertLevel);
+            SecurityAlert oldAlert = new SecurityAlert(level, threatType, description);
+            oldAlert.setSecurityLog(log);
+            oldAlert.setCreatedTime(LocalDateTime.now());
+            oldAlert.setHandled(false);
+
+            // 保存到旧的仓库
+            securityAlertRepository.save(oldAlert);
+        } catch (Exception e) {
+            logger.warn("创建兼容性告警失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 转换告警级别到旧枚举
+     */
+    private SecurityAlert.AlertLevel convertToOldAlertLevel(String alertLevel) {
+        switch (alertLevel) {
+            case "CRITICAL":
+                return SecurityAlert.AlertLevel.CRITICAL;
+            case "HIGH":
+                return SecurityAlert.AlertLevel.HIGH;
+            case "MEDIUM":
+                return SecurityAlert.AlertLevel.MEDIUM;
+            case "LOW":
+                return SecurityAlert.AlertLevel.LOW;
+            default:
+                return SecurityAlert.AlertLevel.LOW;
         }
     }
 
@@ -263,30 +353,31 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
     private String generateAlertDescription(SecurityLog log, String threatType) {
         switch (threatType) {
             case "BRUTE_FORCE_ATTACK":
-                return String.format("检测到暴力破解攻击来自IP: %s", log.getIpAddress());
+                return String.format("检测到暴力破解攻击来自IP: %s, 用户: %s, 时间: %s",
+                        log.getIpAddress(), log.getUserName(), log.getEventTime());
             case "UNUSUAL_TIME_LOGIN":
-                return String.format("检测到异常时间登录: %s", log.getUserName());
+                return String.format("检测到异常时间登录: 用户: %s, 时间: %s, IP: %s",
+                        log.getUserName(), log.getEventTime(), log.getIpAddress());
             case "PRIVILEGED_OPERATION":
-                return String.format("检测到特权账户操作: %s", log.getUserName());
+                return String.format("检测到特权账户操作: 用户: %s, 事件ID: %d, 时间: %s",
+                        log.getUserName(), log.getEventId(), log.getEventTime());
             case "CRITICAL_EVENT":
-                return String.format("检测到关键安全事件: %d", log.getEventId());
+                return String.format("检测到关键安全事件: 事件ID: %d, 用户: %s, IP: %s",
+                        log.getEventId(), log.getUserName(), log.getIpAddress());
             case "SUSPICIOUS_IP":
-                return String.format("检测到可疑IP访问: %s", log.getIpAddress());
+                return String.format("检测到可疑IP访问: IP: %s, 用户: %s, 时间: %s",
+                        log.getIpAddress(), log.getUserName(), log.getEventTime());
             default:
-                return String.format("检测到安全威胁: %s", threatType);
+                return String.format("检测到安全威胁: 类型: %s, 事件ID: %d, 用户: %s",
+                        threatType, log.getEventId(), log.getUserName());
         }
     }
 
     /**
      * 确定警报等级
      */
-    private SecurityAlert.AlertLevel determineAlertLevel(String threatLevel) {
-        return switch (threatLevel) {
-            case "CRITICAL" -> SecurityAlert.AlertLevel.CRITICAL;
-            case "HIGH" -> SecurityAlert.AlertLevel.HIGH;
-            case "MEDIUM" -> SecurityAlert.AlertLevel.MEDIUM;
-            default -> SecurityAlert.AlertLevel.LOW;
-        };
+    private String determineAlertLevel(String threatLevel) {
+        return threatLevel; // 直接返回威胁等级
     }
 
     /**
@@ -313,7 +404,7 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
         detectionRules.put("bruteForceThreshold", bruteForceThreshold);
         detectionRules.put("bruteForceWindowMinutes", bruteForceWindowMinutes);
         detectionRules.put("suspiciousIpPatterns", Arrays.asList(
-                "unknown", "test", "guest"
+                "unknown", "test", "guest", "malicious", "hacker"
         ));
         detectionRules.put("unusualTimeStart", 0);
         detectionRules.put("unusualTimeEnd", 6);
@@ -327,5 +418,26 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
         threatStatistics.put("MEDIUM", 0L);
         threatStatistics.put("HIGH", 0L);
         threatStatistics.put("CRITICAL", 0L);
+    }
+
+    // 添加一个新的方法用于获取威胁检测统计（使用新的服务）
+    public Map<String, Object> getEnhancedThreatStatistics() {
+        Map<String, Object> stats = new HashMap<>();
+
+        // 获取旧的统计数据
+        stats.put("threatLevels", new HashMap<>(threatStatistics));
+        stats.put("bruteForceDetections", failedLogins.size());
+        stats.put("activeRules", detectionRules.size());
+
+        try {
+            // 获取新的告警统计
+            Map<String, Object> alertStats = alertService.getAlertStatistics();
+            stats.put("alertStatistics", alertStats);
+        } catch (Exception e) {
+            logger.error("获取告警统计失败", e);
+            stats.put("alertStatistics", "获取失败");
+        }
+
+        return stats;
     }
 }

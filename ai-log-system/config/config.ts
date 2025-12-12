@@ -38,7 +38,7 @@ export default defineConfig({
         },
         { 
           path: '/dashboard', 
-          component: '@/components/EnhancedDashboard',
+          component: '@/components/EnhancedDashboard/',
           name: 'dashboard',
           icon: 'DashboardOutlined',
         },
@@ -60,12 +60,12 @@ export default defineConfig({
           name: 'whitelist',
           icon: 'CheckCircleOutlined',
         },
-        { 
-          path: '/logs', 
-          component: '@/pages/logs',
-          name: 'logs',
-          icon: 'FileTextOutlined',
-        },
+        // { 
+        //   path: '/logs', 
+        //   component: '@/pages/logs',
+        //   name: 'logs',
+        //   icon: 'FileTextOutlined',
+        // },
         { 
           path: '/models', 
           component: '@/pages/models/index',

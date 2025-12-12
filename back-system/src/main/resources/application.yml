@@ -159,9 +159,9 @@ log:
       window-minutes: 10
 
 scripts:
-  base-path: "D:/app/Git/ai-log -check/ai-log-check/back-system/src/scripts"
+  base-path: "D:/projects/ai-log-check/back-system/src/scripts"
   python:
-    executable: "D:/app/py/Python-3.8.10/python.exe"
+    executable: "D:/projects/ai-log-check/back-system/.venv/Scripts/python.exe"
   allowed:
     unified_log_collector:
       name: "安全日志采集脚本"
@@ -175,3 +175,44 @@ scripts:
       file: "system_info_collector.py"
       cooldown-seconds: 300
       allow-manual-trigger: true
+
+alert:
+  auto:
+    enabled: true
+    performance-check:
+      enabled: true
+      interval-minutes: 5
+    process-check:
+      enabled: true
+      interval-minutes: 10
+    network-check:
+      enabled: true
+      interval-minutes: 15
+    thresholds:
+      cpu-critical: 90.0
+      cpu-high: 80.0
+      memory-critical: 95.0
+      memory-high: 90.0
+
+python:
+  collector:
+    url: http://localhost:5000  # Python收集器的地址
+    enabled: true  # 是否启用Python收集器
+    timeout: 30000  # 超时时间(毫秒)
+    retry-count: 3  # 重试次数
+
+
+# 线程池配置
+async:
+  executor:
+    core-pool-size: 10
+    max-pool-size: 50
+    queue-capacity: 1000
+    thread-name-prefix: SecurityAsync-
+
+# 安全分析配置
+security:
+  analysis:
+    default-risk-threshold: 60
+    auto-cleanup-days: 30
+    max-running-tasks: 10

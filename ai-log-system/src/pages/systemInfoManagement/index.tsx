@@ -23,7 +23,10 @@ import {
   Descriptions,
   Badge,
   Popconfirm,
-  Empty
+  Empty,
+  Typography,
+  Divider,
+  Tooltip
 } from 'antd';
 import {
   PlusOutlined,
@@ -35,7 +38,32 @@ import {
   CloudServerOutlined,
   DatabaseOutlined,
   SettingOutlined,
-  WarningOutlined
+  WarningOutlined,
+  CheckCircleOutlined,
+  ExclamationCircleOutlined,
+  InfoCircleOutlined,
+  ThunderboltOutlined,
+  DashboardFilled,
+  SyncOutlined,
+  FullscreenOutlined,
+  FullscreenExitOutlined,
+  LineChartOutlined,
+  PieChartOutlined,
+  SafetyCertificateOutlined,
+  SecurityScanOutlined,
+  FireOutlined,
+  TeamOutlined,
+  ArrowUpOutlined,
+  ClockCircleOutlined,
+  UserOutlined,
+  QuestionCircleOutlined,
+  ExportOutlined,
+  BellOutlined,
+  PauseCircleOutlined,
+  PlayCircleFilled,
+  CodeOutlined,
+  FileExcelOutlined,
+  FilePdfOutlined
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
@@ -58,6 +86,27 @@ import {
 
 const { Option } = Select;
 const { TabPane } = Tabs;
+const { Text, Title, Paragraph } = Typography;
+
+// 颜色常量
+const LEVEL_COLORS = {
+  CRITICAL: '#ff4d4f',
+  HIGH: '#fa8c16',
+  MEDIUM: '#faad14',
+  LOW: '#52c41a',
+  INFO: '#1890ff'
+};
+
+const LEVEL_GRADIENTS = {
+  CRITICAL: 'linear-gradient(135deg, #ff4d4f 0%, #cf1322 100%)',
+  HIGH: 'linear-gradient(135deg, #fa8c16 0%, #d48806 100%)',
+  MEDIUM: 'linear-gradient(135deg, #faad14 0%, #d4a106 100%)',
+  LOW: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)',
+  INFO: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+  HEALTHY: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)',
+  WARNING: 'linear-gradient(135deg, #faad14 0%, #d4a106 100%)',
+  CRITICAL_GRADIENT: 'linear-gradient(135deg, #ff4d4f 0%, #cf1322 100%)'
+};
 
 // 错误边界组件
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean}> {
@@ -123,6 +172,8 @@ const SystemInfoManagement: React.FC = () => {
   });
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [initialLoading, setInitialLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [isPaused, setIsPaused] = useState(false);
 
   // 表单实例
   const [connectionForm] = Form.useForm();
@@ -235,7 +286,7 @@ const SystemInfoManagement: React.FC = () => {
     ]);
   };
 
-  // 加载实时信息 - 适配新的数据结构，添加超时处理
+  // 加载实时信息
   const loadRealTimeInfo = useCallback(async () => {
     setLoading(prev => ({ ...prev, realtime: true }));
     try {
@@ -248,7 +299,7 @@ const SystemInfoManagement: React.FC = () => {
         withTimeout(systemInfoApiService.getRealTimeProcessInfo(), 5000).catch(() => null)
       ]);
 
-      // 处理每个实时信息 - 适配新的数据结构
+      // 处理每个实时信息
       if (system.status === 'fulfilled') {
         console.log('System info loaded:', system.value);
         setSystemInfo(system.value);
@@ -291,29 +342,29 @@ const SystemInfoManagement: React.FC = () => {
     }
   }, []);
 
-  // 初始化加载数据 - 优化加载策略
+  // 初始化加载数据
   useEffect(() => {
     const initializeData = async () => {
       console.log('Initializing system info management...');
       try {
-        // 第一阶段：立即加载关键数据（快速响应）
+        // 第一阶段：立即加载关键数据
         await Promise.allSettled([
           loadConnections(),
           loadQueries(),
           loadQueryResults()
         ]);
         
-        // 设置初始加载完成，让用户先看到页面
+        // 设置初始加载完成
         setInitialLoading(false);
         console.log('Initial loading completed');
 
-        // 第二阶段：延迟加载较慢的数据（统计和实时信息）
+        // 第二阶段：延迟加载较慢的数据
         setTimeout(async () => {
           await Promise.allSettled([
             loadStatistics(),
             loadRealTimeInfo()
           ]);
-        }, 500); // 延迟500ms加载，避免阻塞初始渲染
+        }, 500);
       } catch (error) {
         console.error('Initialization failed:', error);
         setInitialLoading(false);
@@ -322,14 +373,16 @@ const SystemInfoManagement: React.FC = () => {
 
     initializeData();
 
-    // 设置定时刷新 - 只刷新统计和实时信息
+    // 设置定时刷新
     const interval = setInterval(() => {
-      loadStatistics();
-      loadRealTimeInfo();
-    }, 15000); // 每15秒刷新一次
+      if (!isPaused) {
+        loadStatistics();
+        loadRealTimeInfo();
+      }
+    }, 15000);
 
     return () => clearInterval(interval);
-  }, [loadConnections, loadQueries, loadQueryResults, loadStatistics, loadRealTimeInfo]);
+  }, [loadConnections, loadQueries, loadQueryResults, loadStatistics, loadRealTimeInfo, isPaused]);
 
   // 处理创建连接
   const handleCreateConnection = async (values: any) => {
@@ -426,6 +479,683 @@ const SystemInfoManagement: React.FC = () => {
     setResultModalVisible(true);
   };
 
+  // 渲染顶部仪表盘标题
+  const renderDashboardHeader = () => (
+    <div style={{
+      marginBottom: '32px',
+      padding: '32px',
+      background: 'linear-gradient(135deg, #1a2980 0%, #26d0ce 100%)',
+      borderRadius: '20px',
+      color: 'white',
+      position: 'relative',
+      overflow: 'hidden',
+      boxShadow: '0 10px 30px rgba(26, 41, 128, 0.2)'
+    }}>
+      <div style={{
+        position: 'absolute',
+        top: '-50px',
+        right: '-50px',
+        width: '300px',
+        height: '300px',
+        background: 'rgba(255,255,255,0.1)',
+        borderRadius: '50%'
+      }} />
+      <div style={{
+        position: 'absolute',
+        bottom: '-100px',
+        left: '-100px',
+        width: '400px',
+        height: '400px',
+        background: 'rgba(255,255,255,0.05)',
+        borderRadius: '50%'
+      }} />
+      
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{
+            width: '80px',
+            height: '80px',
+            background: 'rgba(255,255,255,0.2)',
+            borderRadius: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backdropFilter: 'blur(10px)'
+          }}>
+            <CloudServerOutlined style={{ fontSize: '36px', color: 'white' }} />
+          </div>
+          <div>
+            <Title level={2} style={{ margin: 0, color: 'white' }}>
+              智能系统资源监控
+            </Title>
+            <Paragraph style={{ 
+              margin: '8px 0 0 0', 
+              color: 'rgba(255,255,255,0.9)',
+              fontSize: '16px',
+              maxWidth: '600px'
+            }}>
+              实时监控系统资源使用情况，智能分析性能指标，提供全方位系统健康管理
+            </Paragraph>
+          </div>
+        </div>
+        <div style={{
+          background: 'rgba(255,255,255,0.1)',
+          backdropFilter: 'blur(10px)',
+          padding: '16px 24px',
+          borderRadius: '16px',
+          border: '1px solid rgba(255,255,255,0.2)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: '12px',
+              height: '12px',
+              borderRadius: '50%',
+              background: healthStatus?.status === 'healthy' ? '#52c41a' : '#ff4d4f',
+              boxShadow: `0 0 10px ${healthStatus?.status === 'healthy' ? '#52c41a' : '#ff4d4f'}`
+            }} />
+            <Text style={{ color: 'white', fontSize: '14px', fontWeight: 500 }}>
+              {healthStatus?.status === 'healthy' ? '系统运行正常' : '系统异常'}
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px' }}>
+              • 最后更新: {new Date().toLocaleTimeString()}
+            </Text>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 渲染顶部操作栏
+  const renderControlBar = () => (
+    <Card 
+      style={{ 
+        marginBottom: '32px',
+        borderRadius: '16px',
+        background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+        border: '1px solid rgba(0,0,0,0.06)'
+      }}
+      bodyStyle={{ padding: '20px' }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
+        <div>
+          <Tabs 
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            size="large"
+            style={{ minWidth: '300px' }}
+          >
+            <TabPane 
+              tab={
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <DashboardFilled />
+                  系统概览
+                </span>
+              } 
+              key="overview" 
+            />
+            <TabPane 
+              tab={
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CloudServerOutlined />
+                  连接管理
+                </span>
+              } 
+              key="connections" 
+            />
+            <TabPane 
+              tab={
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <DatabaseOutlined />
+                  查询管理
+                </span>
+              } 
+              key="queries" 
+            />
+            <TabPane 
+              tab={
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <BarChartOutlined />
+                  实时监控
+                </span>
+              } 
+              key="monitoring" 
+            />
+          </Tabs>
+        </div>
+        <div>
+          <Space size="large" wrap>
+            <Button
+              type="primary"
+              icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+              onClick={() => setIsPaused(!isPaused)}
+              shape="round"
+              size="large"
+              style={{
+                background: isPaused ? '#1890ff' : 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+                border: 'none',
+                padding: '0 24px',
+                height: '44px'
+              }}
+            >
+              {isPaused ? '恢复监控' : '暂停监控'}
+            </Button>
+
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                if (activeTab === 'connections') setConnectionModalVisible(true);
+                else if (activeTab === 'queries') setQueryModalVisible(true);
+              }}
+              shape="round"
+              size="large"
+              style={{
+                background: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)',
+                border: 'none',
+                padding: '0 24px',
+                height: '44px'
+              }}
+            >
+              {activeTab === 'connections' ? '新建连接' : activeTab === 'queries' ? '新建查询' : '新建'}
+            </Button>
+
+            <Button
+              icon={<SyncOutlined />}
+              onClick={() => {
+                loadConnections();
+                loadQueries();
+                loadQueryResults();
+                loadStatistics();
+                loadRealTimeInfo();
+              }}
+              shape="round"
+              size="large"
+              style={{ height: '44px', padding: '0 20px' }}
+            >
+              刷新数据
+            </Button>
+          </Space>
+        </div>
+      </div>
+    </Card>
+  );
+
+  // 渲染核心指标卡片
+  const renderCoreMetrics = () => {
+    const cpuUsage = cpuInfo?.usage || 0;
+    const memoryUsage = memoryInfo?.usage || 0;
+    const diskUsage = diskInfo?.usage || 0;
+    
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '32px' }}>
+        {/* CPU使用率卡片 */}
+        <Card 
+          hoverable
+          style={{ 
+            borderRadius: '16px',
+            overflow: 'hidden',
+            border: 'none',
+            background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
+            boxShadow: '0 6px 16px rgba(0,0,0,0.08)'
+          }}
+          bodyStyle={{ 
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            marginBottom: '20px'
+          }}>
+            <div>
+              <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
+                CPU使用率
+              </Text>
+              <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: cpuUsage > 80 ? '#ff4d4f' : cpuUsage > 60 ? '#fa8c16' : '#52c41a' }}>
+                {cpuUsage.toFixed(1)}%
+              </Title>
+            </div>
+            <div style={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '12px',
+              background: cpuUsage > 80 ? LEVEL_GRADIENTS.CRITICAL_GRADIENT :
+                        cpuUsage > 60 ? LEVEL_GRADIENTS.WARNING : LEVEL_GRADIENTS.HEALTHY,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <ThunderboltOutlined style={{ fontSize: '28px', color: 'white' }} />
+            </div>
+          </div>
+          
+          <Progress 
+            percent={cpuUsage}
+            strokeColor={cpuUsage > 80 ? '#ff4d4f' : cpuUsage > 60 ? '#fa8c16' : '#52c41a'}
+            strokeWidth={6}
+            style={{ margin: '12px 0' }}
+          />
+          
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between',
+            marginTop: 'auto'
+          }}>
+            <div>
+              <Text style={{ fontSize: '12px', color: '#666' }}>核心数</Text>
+              <Text strong style={{ fontSize: '16px', display: 'block' }}>{cpuInfo?.cores || 'N/A'}</Text>
+            </div>
+            <div>
+              <Text style={{ fontSize: '12px', color: '#666' }}>频率</Text>
+              <Text strong style={{ fontSize: '16px', display: 'block' }}>{cpuInfo?.frequency ? `${(cpuInfo.frequency / 1000).toFixed(1)}GHz` : 'N/A'}</Text>
+            </div>
+          </div>
+        </Card>
+
+        {/* 内存使用率卡片 */}
+        <Card 
+          hoverable
+          style={{ 
+            borderRadius: '16px',
+            overflow: 'hidden',
+            border: 'none',
+            background: 'linear-gradient(135deg, #f0f5ff 0%, #d6e4ff 100%)',
+            boxShadow: '0 6px 16px rgba(24, 144, 255, 0.12)'
+          }}
+          bodyStyle={{ 
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            marginBottom: '20px'
+          }}>
+            <div>
+              <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
+                内存使用率
+              </Text>
+              <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: memoryUsage > 90 ? '#ff4d4f' : memoryUsage > 80 ? '#fa8c16' : '#096dd9' }}>
+                {memoryUsage.toFixed(1)}%
+              </Title>
+            </div>
+            <div style={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '12px',
+              background: memoryUsage > 90 ? LEVEL_GRADIENTS.CRITICAL_GRADIENT :
+                        memoryUsage > 80 ? LEVEL_GRADIENTS.WARNING : 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <DatabaseOutlined style={{ fontSize: '28px', color: 'white' }} />
+            </div>
+          </div>
+          
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px',
+            margin: '12px 0'
+          }}>
+            <ArrowUpOutlined style={{ color: memoryUsage > 80 ? '#ff4d4f' : '#52c41a' }} />
+            <Text strong style={{ fontSize: '14px', color: memoryUsage > 80 ? '#ff4d4f' : '#389e0d' }}>
+              已用 {(memoryInfo?.used || 0 / 1024 / 1024 / 1024).toFixed(1)}GB
+            </Text>
+            <Tag color={memoryUsage > 90 ? 'error' : memoryUsage > 80 ? 'warning' : 'success'} style={{ marginLeft: 'auto' }}>
+              {memoryUsage > 80 ? '告警' : '正常'}
+            </Tag>
+          </div>
+          
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between',
+            marginTop: 'auto'
+          }}>
+            <div>
+              <Text style={{ fontSize: '12px', color: '#666' }}>总内存</Text>
+              <Text strong style={{ fontSize: '16px', display: 'block' }}>{memoryInfo?.total ? `${(memoryInfo.total / 1024 / 1024 / 1024).toFixed(1)}GB` : 'N/A'}</Text>
+            </div>
+            <div>
+              <Text style={{ fontSize: '12px', color: '#666' }}>可用</Text>
+              <Text strong style={{ fontSize: '16px', display: 'block' }}>{memoryInfo?.available ? `${(memoryInfo.available / 1024 / 1024 / 1024).toFixed(1)}GB` : 'N/A'}</Text>
+            </div>
+          </div>
+        </Card>
+
+        {/* 磁盘使用率卡片 */}
+        <Card 
+          hoverable
+          style={{ 
+            borderRadius: '16px',
+            overflow: 'hidden',
+            border: 'none',
+            background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
+            boxShadow: '0 6px 16px rgba(82, 196, 26, 0.12)'
+          }}
+          bodyStyle={{ 
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            marginBottom: '20px'
+          }}>
+            <div>
+              <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
+                磁盘使用率
+              </Text>
+              <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: diskUsage > 90 ? '#ff4d4f' : diskUsage > 80 ? '#fa8c16' : '#389e0d' }}>
+                {diskUsage.toFixed(1)}%
+              </Title>
+            </div>
+            <div style={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '12px',
+              background: diskUsage > 90 ? LEVEL_GRADIENTS.CRITICAL_GRADIENT :
+                        diskUsage > 80 ? LEVEL_GRADIENTS.WARNING : LEVEL_GRADIENTS.HEALTHY,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <SafetyCertificateOutlined style={{ fontSize: '28px', color: 'white' }} />
+            </div>
+          </div>
+          
+          <div style={{ margin: '12px 0' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div style={{ 
+                background: 'rgba(82, 196, 26, 0.1)',
+                padding: '8px',
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
+                <Text strong style={{ color: '#52c41a', fontSize: '18px' }}>
+                  {diskInfo?.available ? `${(diskInfo.available / 1024 / 1024 / 1024).toFixed(1)}` : '0'}GB
+                </Text>
+                <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+                  可用空间
+                </div>
+              </div>
+              <div style={{ 
+                background: 'rgba(255, 77, 79, 0.1)',
+                padding: '8px',
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
+                <Text strong style={{ color: '#ff4d4f', fontSize: '18px' }}>
+                  {diskInfo?.used ? `${(diskInfo.used / 1024 / 1024 / 1024).toFixed(1)}` : '0'}GB
+                </Text>
+                <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+                  已用空间
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between',
+            marginTop: 'auto'
+          }}>
+            <div>
+              <Text style={{ fontSize: '12px', color: '#666' }}>总空间</Text>
+              <Text strong style={{ fontSize: '16px', display: 'block' }}>{diskInfo?.total ? `${(diskInfo.total / 1024 / 1024 / 1024).toFixed(1)}GB` : 'N/A'}</Text>
+            </div>
+            <div>
+              <Text style={{ fontSize: '12px', color: '#666' }}>使用率</Text>
+              <Text strong style={{ fontSize: '16px', display: 'block' }}>{diskUsage.toFixed(1)}%</Text>
+            </div>
+          </div>
+        </Card>
+
+        {/* 连接数卡片 */}
+        <Card 
+          hoverable
+          style={{ 
+            borderRadius: '16px',
+            overflow: 'hidden',
+            border: 'none',
+            background: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)',
+            boxShadow: '0 6px 16px rgba(250, 140, 22, 0.12)'
+          }}
+          bodyStyle={{ 
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            marginBottom: '20px'
+          }}>
+            <div>
+              <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
+                系统连接数
+              </Text>
+              <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#d46b08' }}>
+                {statistics?.totalConnections || 0}
+              </Title>
+            </div>
+            <div style={{
+              width: '60px',
+              height: '60px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, #fa8c16 0%, #d46b08 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <TeamOutlined style={{ fontSize: '28px', color: 'white' }} />
+            </div>
+          </div>
+          
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px',
+            margin: '12px 0'
+          }}>
+            <div style={{ flex: 1 }}>
+              <Text style={{ fontSize: '12px', color: '#666' }}>查询活跃度</Text>
+              <Progress 
+                percent={Math.min((statistics?.activeQueries || 0) * 10, 100)} 
+                size="small"
+                strokeColor="#fa8c16"
+              />
+            </div>
+            <Text strong style={{ fontSize: '16px', color: '#d46b08' }}>
+              {statistics?.activeQueries || 0}
+            </Text>
+          </div>
+          
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between',
+            marginTop: 'auto'
+          }}>
+            <div>
+              <Text style={{ fontSize: '12px', color: '#666' }}>活跃查询</Text>
+              <Text strong style={{ fontSize: '16px', display: 'block' }}>{statistics?.activeQueries || 0}</Text>
+            </div>
+            <div>
+              <Text style={{ fontSize: '12px', color: '#666' }}>总数据点</Text>
+              <Text strong style={{ fontSize: '16px', display: 'block' }}>{statistics?.totalDataPoints || 0}</Text>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  };
+
+  // 渲染性能监控
+  const renderPerformanceMonitoring = () => {
+    const cpuUsage = cpuInfo?.usage || 0;
+    const memoryUsage = memoryInfo?.usage || 0;
+    const diskUsage = diskInfo?.usage || 0;
+
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '24px', marginBottom: '32px' }}>
+        <Card
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <LineChartOutlined />
+              <Text strong style={{ fontSize: '16px' }}>系统性能监控</Text>
+            </div>
+          }
+          extra={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Tag color="processing" icon={<ClockCircleOutlined />}>
+                实时更新中
+              </Tag>
+              <Button 
+                type="text" 
+                icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+                onClick={() => setIsPaused(!isPaused)}
+                size="small"
+              />
+            </div>
+          }
+          style={{ 
+            borderRadius: '16px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
+          }}
+          bodyStyle={{ padding: 0 }}
+        >
+          <div style={{ padding: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px' }}>
+              <div style={{ textAlign: 'center' }}>
+                <Progress
+                  type="dashboard"
+                  percent={Math.round(cpuUsage)}
+                  format={percent => `${percent}%`}
+                  strokeColor={cpuUsage > 80 ? '#ff4d4f' : cpuUsage > 60 ? '#fa8c16' : '#52c41a'}
+                  strokeWidth={10}
+                  size={180}
+                />
+                <div style={{ fontSize: '16px', fontWeight: 'bold', marginTop: '16px' }}>CPU使用率</div>
+                {cpuInfo && (
+                  <div style={{ fontSize: '12px', color: '#00000073', marginTop: '8px' }}>
+                    {cpuInfo.cores} 核心
+                    {cpuInfo.frequency && ` | ${(cpuInfo.frequency / 1000).toFixed(1)} GHz`}
+                  </div>
+                )}
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <Progress
+                  type="dashboard"
+                  percent={Math.round(memoryUsage)}
+                  format={percent => `${percent}%`}
+                  strokeColor={memoryUsage > 90 ? '#ff4d4f' : memoryUsage > 80 ? '#fa8c16' : '#1890ff'}
+                  strokeWidth={10}
+                  size={180}
+                />
+                <div style={{ fontSize: '16px', fontWeight: 'bold', marginTop: '16px' }}>内存使用率</div>
+                {memoryInfo && (
+                  <div style={{ fontSize: '12px', color: '#00000073', marginTop: '8px' }}>
+                    已用: {(memoryInfo.used / 1024 / 1024 / 1024).toFixed(1)} GB / 总量: {(memoryInfo.total / 1024 / 1024 / 1024).toFixed(1)} GB
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div style={{ 
+            padding: '16px 24px', 
+            background: '#fafafa',
+            borderTop: '1px solid #f0f0f0',
+            borderBottomLeftRadius: '16px',
+            borderBottomRightRadius: '16px'
+          }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>磁盘使用率</Text>
+                <Text strong style={{ display: 'block', fontSize: '14px', color: diskUsage > 90 ? '#ff4d4f' : diskUsage > 80 ? '#fa8c16' : '#52c41a' }}>
+                  {diskUsage.toFixed(1)}%
+                </Text>
+              </div>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>活跃进程</Text>
+                <Text strong style={{ display: 'block', fontSize: '14px' }}>{processInfo?.running || 0}</Text>
+              </div>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>在线用户</Text>
+                <Text strong style={{ display: 'block', fontSize: '14px' }}>{systemInfo?.users || 0}</Text>
+              </div>
+              <div>
+                <Text type="secondary" style={{ fontSize: '12px' }}>系统负载</Text>
+                <Text strong style={{ display: 'block', fontSize: '14px' }}>
+                  {cpuInfo?.load1 ? cpuInfo.load1.toFixed(2) : 'N/A'}
+                </Text>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          title={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <PieChartOutlined />
+              <Text strong style={{ fontSize: '16px' }}>系统信息概览</Text>
+            </div>
+          }
+          style={{ 
+            borderRadius: '16px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
+          }}
+          bodyStyle={{ padding: '24px' }}
+        >
+          {systemInfo ? (
+            <Descriptions column={2} size="middle" bordered>
+              <Descriptions.Item label="主机名" span={2}>
+                {systemInfo.hostname}
+              </Descriptions.Item>
+              <Descriptions.Item label="平台">
+                {systemInfo.platform} 
+                {systemInfo.platform_version && ` (${systemInfo.platform_version})`}
+              </Descriptions.Item>
+              <Descriptions.Item label="架构">
+                {systemInfo.architecture}
+              </Descriptions.Item>
+              <Descriptions.Item label="处理器">
+                {systemInfo.processor}
+              </Descriptions.Item>
+              <Descriptions.Item label="在线用户">
+                {systemInfo.users}
+              </Descriptions.Item>
+              {systemInfo.current_user && (
+                <Descriptions.Item label="当前用户">
+                  {systemInfo.current_user}
+                </Descriptions.Item>
+              )}
+              {systemInfo.boot_time_str && (
+                <Descriptions.Item label="启动时间" span={2}>
+                  {systemInfo.boot_time_str}
+                </Descriptions.Item>
+              )}
+            </Descriptions>
+          ) : (
+            <Empty description="系统信息加载中..." />
+          )}
+        </Card>
+      </div>
+    );
+  };
+
   // 连接表格列定义
   const connectionColumns: ColumnsType<SystemInfoConnection> = [
     {
@@ -434,15 +1164,23 @@ const SystemInfoManagement: React.FC = () => {
       key: 'name',
       render: (text, record) => (
         <Space>
-          <CloudServerOutlined />
-          {text}
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <CloudServerOutlined style={{ color: 'white', fontSize: '16px' }} />
+          </div>
+          <div>
+            <Text strong>{text}</Text>
+            <div style={{ fontSize: '12px', color: '#666' }}>{record.host}</div>
+          </div>
         </Space>
       )
-    },
-    {
-      title: '主机',
-      dataIndex: 'host',
-      key: 'host'
     },
     {
       title: '类型',
@@ -450,39 +1188,70 @@ const SystemInfoManagement: React.FC = () => {
       key: 'type',
       render: (type) => {
         const typeMap = {
-          local: { color: 'green', text: '本地' },
-          remote_ssh: { color: 'blue', text: 'SSH远程' },
-          remote_agent: { color: 'orange', text: '代理远程' }
+          local: { color: 'green', text: '本地', gradient: LEVEL_GRADIENTS.LOW },
+          remote_ssh: { color: 'blue', text: 'SSH远程', gradient: LEVEL_GRADIENTS.INFO },
+          remote_agent: { color: 'orange', text: '代理远程', gradient: LEVEL_GRADIENTS.MEDIUM }
         };
-        const config = typeMap[type as keyof typeof typeMap] || { color: 'default', text: type };
-        return <Tag color={config.color}>{config.text}</Tag>;
+        const config = typeMap[type as keyof typeof typeMap] || { color: 'default', text: type, gradient: LEVEL_GRADIENTS.INFO };
+        return (
+          <div style={{
+            padding: '4px 12px',
+            background: config.gradient,
+            borderRadius: '20px',
+            color: 'white',
+            fontSize: '12px',
+            fontWeight: '500',
+            textAlign: 'center',
+            display: 'inline-block'
+          }}>
+            {config.text}
+          </div>
+        );
       }
     },
     {
       title: '平台',
       dataIndex: 'platform',
-      key: 'platform'
+      key: 'platform',
+      render: (platform) => (
+        <Tag color="processing">{platform}</Tag>
+      )
     },
     {
       title: '创建时间',
       dataIndex: 'createdTime',
       key: 'createdTime',
-      render: (time) => time ? dayjs(time).format('YYYY-MM-DD HH:mm') : '-'
+      render: (time) => time ? (
+        <div>
+          <div style={{ fontSize: '14px', fontWeight: '500' }}>
+            {dayjs(time).format('MM-DD HH:mm')}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            {dayjs(time).format('YYYY')}
+          </div>
+        </div>
+      ) : '-'
     },
     {
       title: '操作',
       key: 'action',
       render: (_, record) => (
-        <Space size="middle">
+        <Space size="small">
           <Button 
             size="small" 
+            type="primary"
             icon={<PlayCircleOutlined />}
             onClick={() => handleTestConnection(record.id)}
+            style={{
+              background: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)',
+              border: 'none'
+            }}
           >
             测试
           </Button>
           <Popconfirm
             title="确定删除这个连接吗？"
+            description="删除后无法恢复，请谨慎操作"
             onConfirm={() => handleDeleteConnection(record.id)}
             okText="确定"
             cancelText="取消"
@@ -502,17 +1271,45 @@ const SystemInfoManagement: React.FC = () => {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
-      render: (text) => (
+      render: (text, record) => (
         <Space>
-          <DatabaseOutlined />
-          {text}
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, #722ed1 0%, #531dab 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <DatabaseOutlined style={{ color: 'white', fontSize: '16px' }} />
+          </div>
+          <div>
+            <Text strong>{text}</Text>
+            <div style={{ fontSize: '12px', color: '#666' }}>{record.description || '无描述'}</div>
+          </div>
         </Space>
       )
     },
     {
       title: '信息类型',
       dataIndex: 'infoType',
-      key: 'infoType'
+      key: 'infoType',
+      render: (type) => {
+        const typeColors = {
+          cpu: 'magenta',
+          memory: 'blue',
+          disk: 'green',
+          network: 'purple',
+          process: 'orange',
+          system: 'cyan'
+        };
+        return (
+          <Tag color={typeColors[type as keyof typeof typeColors] || 'default'}>
+            {type}
+          </Tag>
+        );
+      }
     },
     {
       title: '状态',
@@ -521,42 +1318,55 @@ const SystemInfoManagement: React.FC = () => {
       render: (enabled) => (
         <Badge 
           status={enabled ? 'success' : 'default'} 
-          text={enabled ? '启用' : '禁用'} 
+          text={
+            <div style={{
+              padding: '2px 8px',
+              background: enabled ? 'rgba(82, 196, 26, 0.1)' : 'rgba(0,0,0,0.06)',
+              borderRadius: '12px',
+              fontSize: '12px',
+              color: enabled ? '#52c41a' : '#666'
+            }}>
+              {enabled ? '启用' : '禁用'}
+            </div>
+          }
         />
       )
-    },
-    {
-      title: '间隔(秒)',
-      dataIndex: 'interval',
-      key: 'interval'
     },
     {
       title: '最后执行',
       dataIndex: 'lastRun',
       key: 'lastRun',
-      render: (time) => time ? dayjs(time).format('YYYY-MM-DD HH:mm') : '-'
-    },
-    {
-      title: '结果数量',
-      dataIndex: 'resultCount',
-      key: 'resultCount',
-      render: (count) => count || 0
+      render: (time) => time ? (
+        <div>
+          <div style={{ fontSize: '14px', fontWeight: '500' }}>
+            {dayjs(time).format('MM-DD HH:mm')}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            {dayjs().diff(dayjs(time), 'hour') < 24 ? `${dayjs().diff(dayjs(time), 'hour')}小时前` : '更早'}
+          </div>
+        </div>
+      ) : '从未执行'
     },
     {
       title: '操作',
       key: 'action',
       render: (_, record) => (
-        <Space size="middle">
+        <Space size="small">
           <Button 
             size="small" 
             type="primary"
             icon={<PlayCircleOutlined />}
             onClick={() => handleExecuteQuery(record.id)}
+            style={{
+              background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+              border: 'none'
+            }}
           >
             执行
           </Button>
           <Popconfirm
             title="确定删除这个查询吗？"
+            description="删除后无法恢复，请谨慎操作"
             onConfirm={() => handleDeleteQuery(record.id)}
             okText="确定"
             cancelText="取消"
@@ -573,33 +1383,59 @@ const SystemInfoManagement: React.FC = () => {
   // 查询结果表格列定义
   const resultColumns: ColumnsType<SystemInfoQueryResult> = [
     {
-      title: '查询ID',
+      title: '查询名称',
       dataIndex: 'queryId',
-      key: 'queryId'
+      key: 'queryId',
+      render: (queryId) => {
+        const query = queries.find(q => q.id === queryId);
+        return query?.name || queryId;
+      }
     },
     {
       title: '执行时间',
       dataIndex: 'timestamp',
       key: 'timestamp',
-      render: (time) => time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '-'
+      render: (time) => (
+        <div>
+          <div style={{ fontSize: '14px', fontWeight: '500' }}>
+            {dayjs(time).format('MM-DD HH:mm:ss')}
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            {dayjs(time).format('YYYY')}
+          </div>
+        </div>
+      )
     },
     {
       title: '记录数',
       dataIndex: 'recordCount',
-      key: 'recordCount'
-    },
-    {
-      title: '执行耗时(ms)',
-      dataIndex: 'executionTime',
-      key: 'executionTime'
+      key: 'recordCount',
+      render: (count) => (
+        <Badge 
+          count={count} 
+          style={{ 
+            backgroundColor: count > 1000 ? '#ff4d4f' : count > 100 ? '#fa8c16' : '#52c41a',
+            fontSize: '12px'
+          }} 
+        />
+      )
     },
     {
       title: '状态',
       key: 'status',
       render: (_, record) => (
-        <Tag color={record.error ? 'red' : 'green'}>
+        <div style={{
+          padding: '4px 12px',
+          background: record.error ? LEVEL_GRADIENTS.CRITICAL_GRADIENT : LEVEL_GRADIENTS.HEALTHY,
+          borderRadius: '20px',
+          color: 'white',
+          fontSize: '12px',
+          fontWeight: '500',
+          textAlign: 'center',
+          display: 'inline-block'
+        }}>
           {record.error ? '失败' : '成功'}
-        </Tag>
+        </div>
       )
     },
     {
@@ -610,155 +1446,205 @@ const SystemInfoManagement: React.FC = () => {
           size="small" 
           icon={<EyeOutlined />}
           onClick={() => handleViewResult(record)}
+          style={{
+            background: 'linear-gradient(135deg, #fa8c16 0%, #d46b08 100%)',
+            border: 'none',
+            color: 'white'
+          }}
         >
-          查看
+          查看详情
         </Button>
       )
     }
   ];
 
-  // 渲染统计卡片
-  const renderStatisticsCards = () => (
-    <Row gutter={16}>
-      <Col span={6}>
-        <Card>
-          <Statistic
-            title="总连接数"
-            value={statistics?.totalConnections || 0}
-            prefix={<CloudServerOutlined />}
-          />
-        </Card>
-      </Col>
-      <Col span={6}>
-        <Card>
-          <Statistic
-            title="数据源数量"
-            value={statistics?.totalDataSources || 0}
-            prefix={<DatabaseOutlined />}
-          />
-        </Card>
-      </Col>
-      <Col span={6}>
-        <Card>
-          <Statistic
-            title="活跃查询"
-            value={statistics?.activeQueries || 0}
-            prefix={<BarChartOutlined />}
-          />
-        </Card>
-      </Col>
-      <Col span={6}>
-        <Card>
-          <Statistic
-            title="数据点总数"
-            value={statistics?.totalDataPoints || 0}
-            prefix={<SettingOutlined />}
-          />
-        </Card>
-      </Col>
-    </Row>
-  );
+  // 渲染进程信息
+  const renderProcessInfo = () => (
+    <Card
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <SecurityScanOutlined />
+          <Text strong style={{ fontSize: '16px' }}>进程监控</Text>
+          <Badge count={processInfo?.running || 0} style={{ backgroundColor: '#ff4d4f' }} />
+        </div>
+      }
+      style={{ 
+        borderRadius: '16px',
+        marginBottom: '32px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
+      }}
+      bodyStyle={{ padding: 0 }}
+    >
+      <div style={{ padding: '24px' }}>
+        {processInfo ? (
+          <>
+            <div style={{ 
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: '16px',
+              marginBottom: '24px'
+            }}>
+              <Card size="small" hoverable style={{ textAlign: 'center', borderRadius: '12px' }}>
+                <Text strong style={{ fontSize: '24px', color: '#1890ff' }}>{processInfo.total || 0}</Text>
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>总进程数</div>
+              </Card>
+              <Card size="small" hoverable style={{ 
+                textAlign: 'center', 
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, rgba(82,196,26,0.1) 0%, rgba(56,158,13,0.05) 100%)'
+              }}>
+                <Text strong style={{ fontSize: '24px', color: '#52c41a' }}>{processInfo.running || 0}</Text>
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>运行中</div>
+              </Card>
+              <Card size="small" hoverable style={{ 
+                textAlign: 'center', 
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, rgba(250,140,22,0.1) 0%, rgba(212,107,8,0.05) 100%)'
+              }}>
+                <Text strong style={{ fontSize: '24px', color: '#fa8c16' }}>{processInfo.sleeping || 0}</Text>
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>休眠中</div>
+              </Card>
+              <Card size="small" hoverable style={{ 
+                textAlign: 'center', 
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, rgba(255,77,79,0.1) 0%, rgba(207,19,34,0.05) 100%)'
+              }}>
+                <Text strong style={{ fontSize: '24px', color: '#ff4d4f' }}>{processInfo.zombie || 0}</Text>
+                <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>僵尸进程</div>
+              </Card>
+            </div>
 
-  // 渲染性能监控 - 适配新的数据结构
-
-const renderPerformanceMonitoring = () => {
-  // 使用转换后的数据
-  const cpuUsage = cpuInfo?.usage || 0;
-  const memoryUsage = memoryInfo?.usage || 0;
-  const diskUsage = diskInfo?.usage || 0;
-
-  return (
-    <Card title="性能监控" style={{ marginTop: 16 }}>
-      <Row gutter={16}>
-        <Col span={6}>
-          <div style={{ textAlign: 'center' }}>
-            <Progress
-              type="circle"
-              percent={Math.round(cpuUsage)}
-              format={percent => `${percent}%`}
-              status={cpuUsage > 80 ? 'exception' : cpuUsage > 60 ? 'normal' : 'success'}
-            />
-            <div style={{ marginTop: 8, fontWeight: 'bold' }}>CPU使用率</div>
-            {cpuInfo && (
-              <div style={{ fontSize: 12, color: '#666' }}>
-                {cpuInfo.cores} 核心
-                {cpuInfo.frequency && ` | ${(cpuInfo.frequency / 1000).toFixed(1)} GHz`}
-              </div>
-            )}
-          </div>
-        </Col>
-        <Col span={6}>
-          <div style={{ textAlign: 'center' }}>
-            <Progress
-              type="circle"
-              percent={Math.round(memoryUsage)}
-              format={percent => `${percent}%`}
-              status={memoryUsage > 90 ? 'exception' : memoryUsage > 80 ? 'normal' : 'success'}
-            />
-            <div style={{ marginTop: 8, fontWeight: 'bold' }}>内存使用率</div>
-            {memoryInfo && (
-              <div style={{ fontSize: 12, color: '#666' }}>
-                已用: {(memoryInfo.used / 1024 / 1024 / 1024).toFixed(1)}GB / 
-                总计: {(memoryInfo.total / 1024 / 1024 / 1024).toFixed(1)}GB
-              </div>
-            )}
-          </div>
-        </Col>
-        <Col span={6}>
-          <div style={{ textAlign: 'center' }}>
-            <Progress
-              type="circle"
-              percent={Math.round(diskUsage)}
-              format={percent => `${percent}%`}
-              status={diskUsage > 90 ? 'exception' : diskUsage > 80 ? 'normal' : 'success'}
-            />
-            <div style={{ marginTop: 8, fontWeight: 'bold' }}>磁盘使用率</div>
-            {diskInfo && (
-              <div style={{ fontSize: 12, color: '#666' }}>
-                可用: {(diskInfo.available / 1024 / 1024 / 1024).toFixed(1)}GB
-              </div>
-            )}
-          </div>
-        </Col>
-        <Col span={6}>
-          <div style={{ textAlign: 'center' }}>
-            <Statistic
-              title="活跃进程"
-              value={processInfo?.running || 0}
-              valueStyle={{ color: '#3f8600' }}
-            />
-            <div style={{ marginTop: 8 }}>
-              <Statistic
-                title="总进程数"
-                value={processInfo?.total || 0}
-                prefix={<DatabaseOutlined />}
+            <div style={{ maxHeight: '300px', overflow: 'auto' }}>
+              <List
+                size="small"
+                dataSource={processInfo.processes?.slice(0, 10) || []}
+                renderItem={process => (
+                  <List.Item
+                    style={{ 
+                      padding: '12px 16px',
+                      background: '#fafafa',
+                      borderRadius: '8px',
+                      marginBottom: '8px',
+                      border: '1px solid #f0f0f0'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', width: '100%' }}>
+                      <div style={{
+                        width: '40px',
+                        height: '40px',
+                        borderRadius: '10px',
+                        background: process.cpu > 10 ? LEVEL_GRADIENTS.CRITICAL_GRADIENT :
+                                  process.cpu > 5 ? LEVEL_GRADIENTS.HIGH : LEVEL_GRADIENTS.LOW,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <UserOutlined style={{ color: 'white', fontSize: '18px' }} />
+                      </div>
+                      
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <Text strong style={{ fontSize: '14px' }}>{process.name}</Text>
+                            <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                              PID: {process.pid} • 用户: {process.user || 'N/A'} • 状态: {process.status}
+                            </div>
+                          </div>
+                          <div>
+                            <div style={{ 
+                              padding: '2px 8px',
+                              background: 'rgba(24, 144, 255, 0.1)',
+                              borderRadius: '10px',
+                              fontSize: '11px',
+                              textAlign: 'center'
+                            }}>
+                              CPU: {process.cpu.toFixed(1)}%
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div style={{ marginTop: '8px', display: 'flex', gap: '16px' }}>
+                          <div style={{ flex: 1 }}>
+                            <Progress 
+                              percent={Math.min(process.cpu, 100)} 
+                              size="small" 
+                              strokeColor={process.cpu > 10 ? '#ff4d4f' : process.cpu > 5 ? '#fa8c16' : '#52c41a'}
+                            />
+                          </div>
+                          <div style={{ 
+                            padding: '2px 8px',
+                            background: 'rgba(82, 196, 26, 0.1)',
+                            borderRadius: '10px',
+                            fontSize: '11px',
+                            textAlign: 'center'
+                          }}>
+                            内存: {process.memory.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </List.Item>
+                )}
               />
             </div>
-          </div>
-        </Col>
-      </Row>
+          </>
+        ) : (
+          <Empty description="进程信息加载中..." />
+        )}
+      </div>
     </Card>
   );
-};
 
   // 渲染健康状态
   const renderHealthStatus = () => {
     if (!healthStatus) return null;
 
     const statusConfig = {
-      healthy: { type: 'success', text: '健康' },
-      unhealthy: { type: 'error', text: '不健康' }
+      healthy: { type: 'success', text: '健康', gradient: LEVEL_GRADIENTS.HEALTHY, icon: <CheckCircleOutlined /> },
+      unhealthy: { type: 'error', text: '异常', gradient: LEVEL_GRADIENTS.CRITICAL_GRADIENT, icon: <ExclamationCircleOutlined /> }
     };
     
-    const config = statusConfig[healthStatus.status] || { type: 'warning', text: '未知' };
+    const config = statusConfig[healthStatus.status] || { 
+      type: 'warning', 
+      text: '未知', 
+      gradient: LEVEL_GRADIENTS.WARNING,
+      icon: <WarningOutlined />
+    };
 
     return (
       <Alert
-        message={`系统状态: ${config.text}`}
-        description={healthStatus.message || '系统运行正常'}
+        message={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: '40px',
+              height: '40px',
+              borderRadius: '12px',
+              background: config.gradient,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              {React.cloneElement(config.icon, { style: { fontSize: '20px', color: 'white' } })}
+            </div>
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                系统健康状态: {config.text}
+              </div>
+              <div style={{ fontSize: '14px', color: 'rgba(0,0,0,0.65)' }}>
+                {healthStatus.message || '系统运行正常'}
+              </div>
+            </div>
+          </div>
+        }
         type={config.type as any}
-        showIcon
-        style={{ marginTop: 16 }}
+        showIcon={false}
+        style={{ 
+          marginBottom: 16,
+          borderRadius: '12px',
+          border: 'none',
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(248,249,250,0.9) 100%)',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
+        }}
       />
     );
   };
@@ -770,7 +1656,7 @@ const renderPerformanceMonitoring = () => {
 
     return (
       <Alert
-        message="后端服务异常"
+        message="系统服务异常"
         description={
           <div>
             <p>检测到以下问题：</p>
@@ -779,407 +1665,113 @@ const renderPerformanceMonitoring = () => {
                 <li key={key}>{value}</li>
               ))}
             </ul>
-            <p>请检查Python脚本路径和数据库连接配置</p>
+            <p>请检查系统连接和配置</p>
           </div>
         }
         type="warning"
         showIcon
         icon={<WarningOutlined />}
-        style={{ marginBottom: 16 }}
+        style={{ 
+          marginBottom: 16,
+          borderRadius: '12px',
+          border: 'none',
+          background: 'linear-gradient(135deg, rgba(250,173,20,0.1) 0%, rgba(250,140,22,0.05) 100%)',
+          boxShadow: '0 4px 20px rgba(250, 173, 20, 0.15)'
+        }}
       />
     );
   };
 
-  // 安全的获取进程列表
-  const getSafeProcessList = () => {
-    if (!processInfo || !processInfo.processes || !Array.isArray(processInfo.processes)) {
-      return [];
-    }
-    return processInfo.processes.slice(0, 5);
-  };
-
-  // 安全的获取进程统计信息
-  const getProcessStats = () => {
-    if (!processInfo) {
-      return { total: '-', running: '-', sleeping: '-' };
-    }
-    return {
-      total: processInfo.total ?? '-',
-      running: processInfo.running ?? '-',
-      sleeping: processInfo.sleeping ?? '-'
-    };
-  };
-
-  // 渲染系统信息
-  const renderSystemInfo = () => (
-    <Card title="系统信息" size="small">
-      {systemInfo ? (
-        <Descriptions column={1} size="small">
-          <Descriptions.Item label="主机名">{systemInfo.hostname}</Descriptions.Item>
-          <Descriptions.Item label="平台">
-            {systemInfo.platform} 
-            {systemInfo.platform_version && ` (${systemInfo.platform_version})`}
-          </Descriptions.Item>
-          <Descriptions.Item label="架构">{systemInfo.architecture}</Descriptions.Item>
-          <Descriptions.Item label="处理器">{systemInfo.processor}</Descriptions.Item>
-         
-          <Descriptions.Item label="在线用户">{systemInfo.users}</Descriptions.Item>
-          {systemInfo.current_user && (
-            <Descriptions.Item label="当前用户">{systemInfo.current_user}</Descriptions.Item>
-          )}
-          {systemInfo.boot_time_str && (
-            <Descriptions.Item label="启动时间">
-              {systemInfo.boot_time_str}
-            </Descriptions.Item>
-          )}
-        </Descriptions>
-      ) : (
-        <Empty description="系统信息加载中..." />
-      )}
-    </Card>
-  );
-
-  // 渲染进程信息
-  const renderProcessInfo = () => (
-    <Card title="进程信息" size="small">
-      {processInfo ? (
-        <>
-          <Descriptions column={1} size="small">
-            <Descriptions.Item label="总进程数">{processInfo.total}</Descriptions.Item>
-            <Descriptions.Item label="运行中">{processInfo.running}</Descriptions.Item>
-            <Descriptions.Item label="休眠中">{processInfo.sleeping}</Descriptions.Item>
-          </Descriptions>
-          <div style={{ marginTop: 16 }}>
-            <h4>Top进程 (按CPU使用率)</h4>
-            <List
-              size="small"
-              dataSource={getSafeProcessList()}
-              renderItem={process => (
-                <List.Item
-                  actions={[
-                    <Tag color="blue" key="cpu">CPU: {process.cpu.toFixed(1)}%</Tag>,
-                    <Tag color="green" key="memory">内存: {process.memory.toFixed(1)}%</Tag>
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={process.name}
-                    description={`PID: ${process.pid} | 状态: ${process.status} ${process.user ? `| 用户: ${process.user}` : ''}`}
-                  />
-                </List.Item>
-              )}
-            />
+  const renderContent = () => {
+    if (initialLoading) {
+      return (
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '70vh',
+          flexDirection: 'column',
+          gap: '24px'
+        }}>
+          <div style={{
+            width: '80px',
+            height: '80px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            <CloudServerOutlined style={{ fontSize: '36px', color: 'white' }} />
           </div>
-        </>
-      ) : (
-        <Empty description="进程信息加载中..." />
-      )}
-    </Card>
-  );
+          <Title level={4} style={{ margin: 0 }}>加载系统信息管理界面...</Title>
+          <Paragraph type="secondary">正在获取系统资源和性能数据</Paragraph>
+        </div>
+      );
+    }
 
-  if (initialLoading) {
     return (
-      <div style={{ padding: 24, textAlign: 'center' }}>
-        <div>正在加载系统信息管理界面...</div>
-        <Progress percent={30} status="active" style={{ marginTop: 16 }} />
+      <div style={{ 
+        padding: '32px',
+        maxWidth: '1600px',
+        margin: '0 auto',
+        position: 'relative'
+      }}>
+        {renderDashboardHeader()}
+        {renderControlBar()}
+        
+        {renderErrorAlerts()}
+        {renderHealthStatus()}
+
+        {renderCoreMetrics()}
+        {renderPerformanceMonitoring()}
+        {renderProcessInfo()}
+
+
+        {/* 底部信息栏 */}
+        <div style={{ 
+          marginTop: '40px', 
+          padding: '20px',
+          textAlign: 'center', 
+          color: '#666',
+          fontSize: '12px',
+          borderTop: '1px solid #f0f0f0',
+          background: '#fafafa',
+          borderRadius: '12px'
+        }}>
+          <div style={{ 
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '16px'
+          }}>
+            <div>
+              <Text strong>系统版本</Text>
+              <div>v2.1.0 Enterprise</div>
+            </div>
+            <div>
+              <Text strong>数据延迟</Text>
+              <div>&lt; {!isPaused ? '100ms' : '已暂停' }</div>
+            </div>
+            <div>
+              <Text strong>最后检查</Text>
+              <div>{new Date().toLocaleString()}</div>
+            </div>
+            <div>
+              <Text strong>系统状态</Text>
+              <div>
+                <Badge 
+                  status={healthStatus?.status === 'healthy' ? "success" : "error"} 
+                  text={healthStatus?.status === 'healthy' ? '运行正常' : '连接异常'} 
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
-  }
+  };
 
-  return (
-    <div style={{ padding: 24 }}>
-      {/* 错误提示 */}
-      {renderErrorAlerts()}
-
-      {/* 统计信息 */}
-      {renderStatisticsCards()}
-      
-      {/* 性能监控 */}
-      {renderPerformanceMonitoring()}
-      
-      {/* 健康状态 */}
-      {renderHealthStatus()}
-
-      {/* 主内容区域 */}
-      <Card style={{ marginTop: 16 }}>
-        <Tabs defaultActiveKey="connections">
-          {/* 连接管理 */}
-          <TabPane tab="连接管理" key="connections">
-            <div style={{ marginBottom: 16 }}>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => setConnectionModalVisible(true)}
-              >
-                新建连接
-              </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={loadConnections}
-                style={{ marginLeft: 8 }}
-              >
-                刷新
-              </Button>
-            </div>
-            {connections.length > 0 ? (
-              <Table
-                columns={connectionColumns}
-                dataSource={connections}
-                rowKey="id"
-                loading={loading.connections}
-                pagination={{ pageSize: 10 }}
-              />
-            ) : (
-              <Empty description="暂无连接数据" />
-            )}
-          </TabPane>
-
-          {/* 查询管理 */}
-          <TabPane tab="查询管理" key="queries">
-            <div style={{ marginBottom: 16 }}>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => setQueryModalVisible(true)}
-              >
-                新建查询
-              </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={loadQueries}
-                style={{ marginLeft: 8 }}
-              >
-                刷新
-              </Button>
-            </div>
-            {queries.length > 0 ? (
-              <Table
-                columns={queryColumns}
-                dataSource={queries}
-                rowKey="id"
-                loading={loading.queries}
-                pagination={{ pageSize: 10 }}
-              />
-            ) : (
-              <Empty description="暂无查询数据" />
-            )}
-          </TabPane>
-
-          {/* 查询结果 */}
-          <TabPane tab="查询结果" key="results">
-            {queryResults.length > 0 ? (
-              <Table
-                columns={resultColumns}
-                dataSource={queryResults}
-                rowKey="id"
-                pagination={{ pageSize: 10 }}
-              />
-            ) : (
-              <Empty description="暂无查询结果" />
-            )}
-          </TabPane>
-
-          {/* 实时信息 */}
-          <TabPane tab={
-            <span>
-              实时信息
-              {loading.realtime && <Badge dot style={{ marginLeft: 8 }} />}
-            </span>
-          } key="realtime">
-            {loading.realtime && (
-              <Alert
-                message="正在加载实时数据..."
-                type="info"
-                showIcon
-                style={{ marginBottom: 16 }}
-              />
-            )}
-            <Row gutter={16}>
-              <Col span={12}>
-                {renderSystemInfo()}
-              </Col>
-              <Col span={12}>
-                {renderProcessInfo()}
-              </Col>
-            </Row>
-          </TabPane>
-        </Tabs>
-      </Card>
-
-      {/* 模态框 */}
-      <Modal
-        title="新建连接"
-        open={connectionModalVisible}
-        onCancel={() => setConnectionModalVisible(false)}
-        footer={null}
-      >
-        <Form
-          form={connectionForm}
-          layout="vertical"
-          onFinish={handleCreateConnection}
-        >
-          <Form.Item
-            name="name"
-            label="连接名称"
-            rules={[{ required: true, message: '请输入连接名称' }]}
-          >
-            <Input placeholder="输入连接名称" />
-          </Form.Item>
-          <Form.Item
-            name="host"
-            label="主机地址"
-            rules={[{ required: true, message: '请输入主机地址' }]}
-          >
-            <Input placeholder="输入主机地址或IP" />
-          </Form.Item>
-          <Form.Item
-            name="type"
-            label="连接类型"
-            rules={[{ required: true, message: '请选择连接类型' }]}
-          >
-            <Select placeholder="选择连接类型">
-              <Option value="local">本地</Option>
-              <Option value="remote_ssh">SSH远程</Option>
-              <Option value="remote_agent">代理远程</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item
-            name="platform"
-            label="平台类型"
-            rules={[{ required: true, message: '请选择平台类型' }]}
-          >
-            <Select placeholder="选择平台类型">
-              <Option value="windows">Windows</Option>
-              <Option value="linux">Linux</Option>
-              <Option value="macos">macOS</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea placeholder="输入连接描述（可选）" />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                创建
-              </Button>
-              <Button onClick={() => setConnectionModalVisible(false)}>
-                取消
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title="新建查询"
-        open={queryModalVisible}
-        onCancel={() => setQueryModalVisible(false)}
-        footer={null}
-      >
-        <Form
-          form={queryForm}
-          layout="vertical"
-          onFinish={handleCreateQuery}
-        >
-          <Form.Item
-            name="name"
-            label="查询名称"
-            rules={[{ required: true, message: '请输入查询名称' }]}
-          >
-            <Input placeholder="输入查询名称" />
-          </Form.Item>
-          <Form.Item
-            name="infoType"
-            label="信息类型"
-            rules={[{ required: true, message: '请选择信息类型' }]}
-          >
-            <Select placeholder="选择信息类型">
-              <Option value="cpu">CPU信息</Option>
-              <Option value="memory">内存信息</Option>
-              <Option value="disk">磁盘信息</Option>
-              <Option value="network">网络信息</Option>
-              <Option value="process">进程信息</Option>
-              <Option value="system">系统信息</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea placeholder="输入查询描述（可选）" />
-          </Form.Item>
-          <Form.Item
-            name="interval"
-            label="采集间隔(秒)"
-            rules={[{ required: true, message: '请输入采集间隔' }]}
-          >
-            <InputNumber
-              min={5}
-              max={3600}
-              placeholder="采集间隔秒数"
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
-          <Form.Item name="enabled" label="启用状态" valuePropName="checked">
-            <Switch checkedChildren="启用" unCheckedChildren="禁用" defaultChecked />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                创建
-              </Button>
-              <Button onClick={() => setQueryModalVisible(false)}>
-                取消
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title="查询结果详情"
-        open={resultModalVisible}
-        onCancel={() => setResultModalVisible(false)}
-        footer={[
-          <Button key="close" onClick={() => setResultModalVisible(false)}>
-            关闭
-          </Button>
-        ]}
-        width={800}
-      >
-        {selectedResult && (
-          <div>
-            <Descriptions column={2} bordered size="small">
-              <Descriptions.Item label="查询ID">{selectedResult.queryId}</Descriptions.Item>
-              <Descriptions.Item label="执行时间">
-                {dayjs(selectedResult.timestamp).format('YYYY-MM-DD HH:mm:ss')}
-              </Descriptions.Item>
-              <Descriptions.Item label="记录数">{selectedResult.recordCount}</Descriptions.Item>
-              <Descriptions.Item label="执行耗时">{selectedResult.executionTime}ms</Descriptions.Item>
-            </Descriptions>
-            
-            <div style={{ marginTop: 16 }}>
-              <h4>数据预览</h4>
-              <pre style={{ 
-                background: '#f5f5f5', 
-                padding: 12, 
-                borderRadius: 4,
-                maxHeight: 400,
-                overflow: 'auto'
-              }}>
-                {JSON.stringify(selectedResult.data, null, 2)}
-              </pre>
-            </div>
-
-            {selectedResult.error && (
-              <Alert
-                message="执行错误"
-                description={selectedResult.error}
-                type="error"
-                style={{ marginTop: 16 }}
-              />
-            )}
-          </div>
-        )}
-      </Modal>
-    </div>
-  );
+  return renderContent();
 };
 
 // 用错误边界包裹导出

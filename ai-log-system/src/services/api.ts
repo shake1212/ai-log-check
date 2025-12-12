@@ -21,6 +21,57 @@ import type {
 const API_BASE_URL = '/api';
 const EVENT_API_BASE_URL = '/api/events';
 
+// 脚本相关接口类型定义
+export interface ScriptDescriptor {
+  key: string;
+  name: string;
+  description: string;
+  cooldownSeconds: number;
+  allowManualTrigger: boolean;
+}
+
+export interface ScriptExecutionRecord {
+ executionId: string;
+  scriptKey: string;
+  scriptName?: string;
+  status: string; // RUNNING, SUCCESS, FAILED, BUSY, COOLDOWN
+  startedAt?: string;
+  finishedAt?: string;
+  exitCode?: number;
+  outputSnippet?: string; // 添加缺失的字段
+  triggerType?: string;   // 添加缺失的字段
+  message?: string;
+  args?: string[];
+}
+
+export interface ScriptRunRequest {
+  scriptKey: string;
+  args?: string[];
+}
+
+export interface ScriptRunResponse {
+ executionId: string;
+  scriptKey: string;
+  scriptName?: string;
+  status: string; // RUNNING, SUCCESS, FAILED, BUSY, COOLDOWN
+  message: string;
+  startedAt?: string;
+  finishedAt?: string;
+  exitCode?: number;
+  args?: string[];}
+
+export interface ScheduledTaskStatus {
+   taskName: string;
+  exists: boolean;
+  status?: string;
+  nextRunTime?: string;
+  lastRunTime?: string;
+  lastRunResult?: string;
+  trigger?: string;
+  taskPath?: string;
+  error?: string;
+}
+
 // 认证相关API
 export const authApi = {
   // 用户登录
@@ -136,21 +187,28 @@ export const logApi = {
 
 // 预警相关API - 保持原有功能，添加安全警报功能
 export const alertApi = {
-  // 获取预警列表
+  // 获取预警列表（对应 AlertController 的 /alerts）
   getAlerts: (params?: AlertQuery): Promise<ApiResponse<PageResponse<Alert>>> =>
     request(`${API_BASE_URL}/alerts`, {
       params,
     }),
 
-  // 获取预警详情
-  getAlertById: (id: string): Promise<ApiResponse<Alert>> =>
+  // 获取预警详情（对应 AlertController 的 /alerts/{id}）
+  getAlertById: (id: string): Promise<ApiResponse<SecurityAlert>> =>
     request(`${API_BASE_URL}/alerts/${id}`),
 
-  // 更新预警状态
-  updateAlertStatus: (id: string, status: string): Promise<ApiResponse<Alert>> =>
+  // 更新预警状态（对应 AlertController 的 /alerts/{id}/status）
+  updateAlertStatus: (id: string, status: string, assignee?: string, resolution?: string): Promise<ApiResponse<void>> =>
     request(`${API_BASE_URL}/alerts/${id}/status`, {
       method: 'PUT',
-      data: { status },
+      params: { status, assignee, resolution },
+    }),
+
+  // 标记为已处理（对应 AlertController 的 /alerts/{id}/handle）
+  handleAlert: (id: string, handledBy?: string, resolution?: string): Promise<ApiResponse<void>> =>
+    request(`${API_BASE_URL}/alerts/${id}/handle`, {
+      method: 'PUT',
+      params: { handledBy, resolution },
     }),
 
   // 批量处理预警
@@ -166,10 +224,29 @@ export const alertApi = {
       method: 'PUT',
     }),
 
-  // 获取预警统计
+  // 获取预警统计（对应 AlertController 的 /alerts/statistics）
   getAlertStatistics: (params?: { startTime?: string; endTime?: string }): Promise<ApiResponse<any>> =>
     request(`${API_BASE_URL}/alerts/statistics`, {
       params,
+    }),
+
+  // 搜索告警（对应 AlertController 的 /alerts/search） - 这个必须存在！
+  searchSecurityAlerts: (params: {
+    keyword?: string;
+    alertLevel?: string;
+    handled?: boolean;
+    status?: string;
+    page?: number;
+    size?: number;
+  }): Promise<ApiResponse<PageResponse<SecurityAlert>>> =>
+    request(`${API_BASE_URL}/alerts/search`, {
+      params,
+    }),
+
+  // 删除告警（对应 AlertController 的 /alerts/{id}） - 这个必须存在！
+  deleteAlert: (id: string): Promise<ApiResponse<void>> =>
+    request(`${API_BASE_URL}/alerts/${id}`, {
+      method: 'DELETE',
     }),
 
   // ========== 安全警报新增API ==========
@@ -178,37 +255,22 @@ export const alertApi = {
   getUnhandledAlerts: (): Promise<ApiResponse<SecurityAlert[]>> =>
     request(`${API_BASE_URL}/logs/alerts/unhandled`),
 
-  // 标记警报为已处理
-  handleAlert: (id: number): Promise<ApiResponse<void>> =>
+  // 标记安全警报为已处理（重命名，避免与上面的 handleAlert 冲突）
+  handleSecurityAlert: (id: number): Promise<ApiResponse<void>> =>
     request(`${API_BASE_URL}/logs/alerts/${id}/handle`, {
       method: 'PUT',
     }),
 
-  // 批量标记警报为已处理
+  // 批量标记安全警报为已处理
   batchHandleAlerts: (alertIds: number[]): Promise<ApiResponse<{ handledCount: number }>> =>
     request(`${API_BASE_URL}/logs/alerts/batch/handle`, {
       method: 'PUT',
       data: { alertIds },
     }),
 
-  // 获取警报详情
+  // 获取安全警报详情
   getSecurityAlertById: (id: number): Promise<ApiResponse<SecurityAlert>> =>
     request(`${API_BASE_URL}/logs/alerts/${id}`),
-
-  // 搜索安全警报
-  searchSecurityAlerts: (params: {
-    keyword?: string;
-    level?: string;
-    alertType?: string;
-    handled?: boolean;
-    startTime?: string;
-    endTime?: string;
-    page?: number;
-    size?: number;
-  }): Promise<ApiResponse<PageResponse<SecurityAlert>>> =>
-    request(`${API_BASE_URL}/logs/alerts/search`, {
-      params,
-    }),
 };
 
 // WebSocket相关API - 新增
@@ -486,13 +548,28 @@ export const eventApi = {
 
   // 获取实时统计
   getRealTimeStats: (): Promise<ApiResponse<Record<string, number>>> =>
-    request(`${API_BASE_URL}/events/statistics/realtime`),
+    request(`${API_BASE_URL}/analysis/real-time-stats`),
 
   // 获取事件分布统计
   getDistributionStats: (dimension: string, startTime?: string, endTime?: string): Promise<ApiResponse<Record<string, number>>> =>
     request(`${API_BASE_URL}/events/statistics/distribution`, {
       params: { dimension, startTime, endTime }
     }),
+      // 新增：获取仪表板统计数据
+  getDashboardStats: (): Promise<ApiResponse<{
+    todayEvents: number;
+    totalEvents: number;
+    totalLogs: number;
+    todayLogs: number;
+    dailyCounts: [string, number][];
+    levelCounts: Record<string, number>;
+    severityCounts: Record<string, number>;
+    threatLevelCounts: Record<string, number>;
+    anomalyCount: number;
+    avgDailyEvents: number;
+    lastUpdate: string;
+  }>> => request(`${EVENT_API_BASE_URL}/dashboard-stats`),
+
 };
 
 // 批量操作API - 保持原有功能
@@ -571,23 +648,161 @@ export const batchApi = {
       }
     }),
 };
+// 安全分析和威胁情报相关API - 新增
+export const analysisApi = {
+  // 获取安全分析数据
+  getSecurityAnalyses: (): Promise<ApiResponse<SecurityAnalysisItem[]>> =>
+    request(`${API_BASE_URL}/analysis/security-analyses`),
 
-// 脚本执行 API
+  // 获取威胁情报数据
+  getThreatIntelligence: (): Promise<ApiResponse<ThreatIntelItem[]>> =>
+    request(`${API_BASE_URL}/analysis/threat-intelligence`),
+
+  // 运行威胁分析
+  runThreatAnalysis: (): Promise<ApiResponse<{ taskId: string; status: string }>> =>
+    request(`${API_BASE_URL}/analysis/run-threat-analysis`, {
+      method: 'POST',
+    }),
+
+  // 运行合规扫描
+  runComplianceScan: (): Promise<ApiResponse<{ taskId: string; status: string }>> =>
+    request(`${API_BASE_URL}/analysis/run-compliance-scan`, {
+      method: 'POST',
+    }),
+
+  // 运行异常检测
+  runAnomalyDetection: (): Promise<ApiResponse<{ taskId: string; status: string }>> =>
+    request(`${API_BASE_URL}/analysis/run-anomaly-detection`, {
+      method: 'POST',
+    }),
+
+  // 同步云端威胁情报
+  syncCloudThreatIntel: (): Promise<ApiResponse<{ status: string; syncedCount: number }>> =>
+    request(`${API_BASE_URL}/analysis/sync-cloud-threat-intel`, {
+      method: 'POST',
+    }),
+
+  // 获取分析结果统计
+  getAnalysisStats: (): Promise<ApiResponse<{
+    totalAnalyses: number;
+    completed: number;
+    running: number;
+    highRiskCount: number;
+    avgRiskScore: number;
+    lastRun: string;
+  }>> => request(`${API_BASE_URL}/analysis/stats`),
+
+  // 获取威胁情报统计
+  getThreatIntelStats: (): Promise<ApiResponse<{
+    totalThreats: number;
+    activeThreats: number;
+    malwareCount: number;
+    phishingCount: number;
+    criticalCount: number;
+    lastUpdate: string;
+  }>> => request(`${API_BASE_URL}/analysis/threat-stats`),
+   // 新增：获取系统监控指标
+  getSystemMetrics: (): Promise<ApiResponse<{
+    eventsPerSecond: {
+      normal: number; // 正常流量（条/秒）
+      // 正常流量（条/秒）
+      abnormal: number; // 异常流量（条/秒）
+      // 异常流量（条/秒）
+      peak: number; // 峰值流量（条/秒）
+    };
+    systemHealth: number;           // 系统健康度百分比
+    uptime: number;                 // 正常运行时间百分比
+    storageUsed: number;            // 存储使用量（TB）
+    storageTotal: number;           // 总存储量（TB）
+    throughput: {
+      normal: number;               // 正常流量（条/秒）
+      abnormal: number;             // 异常流量（条/秒）
+      peak: number;                 // 峰值流量（条/秒）
+    };
+    latency: number;                // 数据延迟（ms）
+    systemVersion: string;          // 系统版本
+    lastUpdate: string;             // 最后更新时间
+  }>> => request(`${API_BASE_URL}/analysis/system-metrics`),
+  
+  // 新增：获取流量统计数据
+  getTrafficStats: (): Promise<ApiResponse<{
+    normalTraffic: number;          // 正常流量
+    anomalyTraffic: number;         // 异常流量
+    peakTraffic: number;           // 峰值流量
+    avgLatency: number;            // 平均延迟
+    currentTraffic: number;        // 当前流量
+  }>> => request(`${API_BASE_URL}/analysis/traffic-stats`),
+};
+
+
+// 还需要在types.ts中定义SecurityAnalysisItem和ThreatIntelItem接口
+// 如果types.ts中没有，也可以在这里定义
+interface SecurityAnalysisItem {
+  id: string;
+  category: 'anomaly_detection' | 'threat_hunting' | 'risk_assessment' | 'compliance';
+  name: string;
+  description: string;
+  riskScore: number;
+  findings: string[];
+  recommendations: string[];
+  lastRun: string;
+  nextRun: string;
+  status: 'completed' | 'running' | 'failed' | 'pending';
+}
+
+interface ThreatIntelItem {
+  id: string;
+  type: 'malware' | 'phishing' | 'vulnerability' | 'botnet' | 'zero-day';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  source: string;
+  description: string;
+  affectedSystems: string[];
+  detectionDate: string;
+  iocCount: number;
+  confidence: number;
+  status: 'active' | 'inactive' | 'mitigated';
+  relatedThreats: string[];
+}
+
+
+// 脚本执行 API - 完善接口
 export const scriptApi = {
-  // 触发脚本执行
-  runScript: (data: { scriptKey: string; args?: string[] }) =>
+   // 触发脚本执行
+  runScript: (data: ScriptRunRequest): Promise<ApiResponse<ScriptRunResponse>> =>
     request(`${API_BASE_URL}/scripts/run`, {
       method: 'POST',
       data,
     }),
 
   // 获取可用脚本
-  getAvailableScripts: () =>
+  getAvailableScripts: (): Promise<ApiResponse<ScriptDescriptor[]>> =>
     request(`${API_BASE_URL}/scripts/available`),
 
   // 获取执行历史
-  getHistory: () =>
+  getHistory: (): Promise<ApiResponse<ScriptExecutionRecord[]>> =>
     request(`${API_BASE_URL}/scripts/history`),
+
+  // 获取所有计划任务状态
+  getScheduledTasks: (): Promise<ApiResponse<ScheduledTaskStatus[]>> =>
+    request(`${API_BASE_URL}/scripts/scheduled-tasks`),
+
+  // 获取单个计划任务状态
+  getScheduledTask: (taskName: string): Promise<ApiResponse<ScheduledTaskStatus>> =>
+    request(`${API_BASE_URL}/scripts/scheduled-tasks/${taskName}`),
+
+  // 获取脚本执行状态（可选，如果后端支持）
+  getScriptStatus: (executionId: string): Promise<ApiResponse<ScriptExecutionRecord>> =>
+    request(`${API_BASE_URL}/scripts/status/${executionId}`),
+
+  // 取消脚本执行（可选，如果后端支持）
+  cancelScript: (executionId: string): Promise<ApiResponse<void>> =>
+    request(`${API_BASE_URL}/scripts/cancel/${executionId}`, {
+      method: 'POST',
+    }),
+
+  // 获取脚本日志（可选，如果后端支持）
+  getScriptLogs: (executionId: string): Promise<ApiResponse<string>> =>
+    request(`${API_BASE_URL}/scripts/logs/${executionId}`),
 };
 
 // 统一导出
@@ -602,4 +817,6 @@ export const api = {
   event: eventApi,
   batch: batchApi,
   script: scriptApi,
+   analysis: analysisApi, 
 };
+
