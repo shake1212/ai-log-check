@@ -34,6 +34,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger("SecurityAlertCollector")
 
+# 规则引擎集成
+try:
+    from rule_engine_integration import RuleEngineClient
+    RULE_ENGINE_AVAILABLE = True
+    logger.info("规则引擎集成模块已加载")
+except ImportError:
+    RULE_ENGINE_AVAILABLE = False
+    logger.warning("规则引擎集成模块未找到，规则引擎功能将被禁用")
+
 # 配置类
 @dataclass
 class CollectorConfig:
@@ -64,6 +73,10 @@ class CollectorConfig:
     # 进程监控
     max_processes_to_check: int = 100
     suspicious_process_keywords: List[str] = None
+    
+    # 规则引擎配置
+    enable_rule_engine: bool = True      # 是否启用规则引擎分析
+    rule_engine_timeout: int = 10        # 规则引擎分析超时时间（秒）
 
     def __post_init__(self):
         if self.suspicious_process_keywords is None:
@@ -288,11 +301,110 @@ class IntegratedSecurityAlertCollector:
             'total_alerts_created': 0,
             'total_performance_checks': 0,
             'last_collection_time': None,
-            'errors': []
+            'errors': [],
+            # 规则引擎统计
+            'rule_engine_analyzed': 0,
+            'rule_engine_matched': 0,
+            'rule_engine_failures': 0
         }
+        
+        # 初始化规则引擎客户端
+        self.rule_engine_client = None
+        if RULE_ENGINE_AVAILABLE and self.config.enable_rule_engine:
+            try:
+                self.rule_engine_client = RuleEngineClient(
+                    backend_url=self.config.java_backend_url,
+                    timeout=self.config.rule_engine_timeout,
+                    enabled=True
+                )
+                logger.info("规则引擎客户端已初始化")
+            except Exception as e:
+                logger.warning(f"规则引擎客户端初始化失败: {e}")
+                self.rule_engine_client = None
+        else:
+            if not RULE_ENGINE_AVAILABLE:
+                logger.info("规则引擎模块不可用")
+            elif not self.config.enable_rule_engine:
+                logger.info("规则引擎已禁用（配置）")
 
         logger.info(f"初始化安全告警收集器: {self.collector_host} (ID: {self.collector_id})")
         logger.info(f"Java后端地址: {self.config.java_backend_url}")
+        logger.info(f"规则引擎状态: {'启用' if self.rule_engine_client else '禁用'}")
+    
+    # ==================== 配置管理 ====================
+    
+    def load_config_from_backend(self) -> bool:
+        """
+        从Java后端加载配置
+        
+        Returns:
+            bool: 是否成功加载配置
+        """
+        try:
+            logger.info("从Java后端加载配置...")
+            
+            # 调用Java后端API获取配置
+            response = self.session.get(
+                f"{self.config.java_backend_url}/log-collector/configs/default",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                config_data = response.json()
+                logger.info(f"成功加载配置: {config_data.get('name', 'unknown')}")
+                
+                # 更新采集间隔
+                if 'interval' in config_data:
+                    self.config.security_collection_interval = config_data['interval'] // 60
+                    logger.info(f"采集间隔更新为: {self.config.security_collection_interval}分钟")
+                
+                # 更新告警阈值
+                if 'cpuThreshold' in config_data:
+                    self.config.cpu_high_threshold = float(config_data['cpuThreshold'])
+                if 'memoryThreshold' in config_data:
+                    self.config.memory_high_threshold = float(config_data['memoryThreshold'])
+                if 'diskThreshold' in config_data:
+                    self.config.disk_high_threshold = float(config_data['diskThreshold'])
+                
+                # 更新规则引擎配置
+                enable_rule_engine = config_data.get('enableRuleEngine', True)
+                rule_engine_timeout = config_data.get('ruleEngineTimeout', 10)
+                
+                # 如果规则引擎配置发生变化，重新初始化
+                if enable_rule_engine != self.config.enable_rule_engine or \
+                   rule_engine_timeout != self.config.rule_engine_timeout:
+                    
+                    self.config.enable_rule_engine = enable_rule_engine
+                    self.config.rule_engine_timeout = rule_engine_timeout
+                    
+                    # 重新初始化规则引擎客户端
+                    if enable_rule_engine and RULE_ENGINE_AVAILABLE:
+                        try:
+                            self.rule_engine_client = RuleEngineClient(
+                                backend_url=self.config.java_backend_url,
+                                timeout=rule_engine_timeout,
+                                enabled=True
+                            )
+                            logger.info(f"规则引擎已启用（超时: {rule_engine_timeout}秒）")
+                        except Exception as e:
+                            logger.error(f"规则引擎客户端初始化失败: {e}")
+                            self.rule_engine_client = None
+                    else:
+                        self.rule_engine_client = None
+                        if not RULE_ENGINE_AVAILABLE:
+                            logger.warning("规则引擎模块不可用")
+                        else:
+                            logger.info("规则引擎已禁用（配置）")
+                
+                return True
+            else:
+                logger.warning(f"加载配置失败，状态码: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"从后端加载配置失败: {e}")
+            return False
+    
     # ==================== 公共方法 ====================
 
     def start_all_collectors(self):
@@ -306,6 +418,9 @@ class IntegratedSecurityAlertCollector:
             if not self.test_java_backend():
                 logger.error("Java后端连接测试失败，请检查后端服务是否启动")
                 return False
+            
+            # 从后端加载配置
+            self.load_config_from_backend()
 
             # 启动定时收集器
             self._start_timed_collectors()
@@ -429,6 +544,39 @@ class IntegratedSecurityAlertCollector:
             # 添加收集器状态事件
             status_event = self._create_collector_status_event(len(security_events))
             security_events.append(status_event)
+
+            # ========== 规则引擎分析 ==========
+            if self.rule_engine_client:
+                logger.info(f"开始规则引擎分析 {len(security_events)} 个事件...")
+                analyzed_events = []
+                
+                for event in security_events:
+                    try:
+                        # 调用规则引擎分析事件
+                        analyzed_event = self.rule_engine_client.analyze_event(event)
+                        analyzed_events.append(analyzed_event)
+                        
+                        # 更新统计信息
+                        self.stats['rule_engine_analyzed'] += 1
+                        if analyzed_event.get('rule_matched'):
+                            self.stats['rule_engine_matched'] += 1
+                            logger.debug(
+                                f"事件匹配规则: 威胁等级={analyzed_event.get('threat_level')}, "
+                                f"分数={analyzed_event.get('threat_score')}"
+                            )
+                            
+                    except Exception as e:
+                        logger.warning(f"规则引擎分析失败: {e}")
+                        analyzed_events.append(event)  # 使用原始事件
+                        self.stats['rule_engine_failures'] += 1
+                
+                security_events = analyzed_events
+                logger.info(
+                    f"规则引擎分析完成: 分析={self.stats['rule_engine_analyzed']}, "
+                    f"匹配={self.stats['rule_engine_matched']}, "
+                    f"失败={self.stats['rule_engine_failures']}"
+                )
+            # ==================================
 
             logger.info(f"安全日志收集完成，共收集 {len(security_events)} 个安全事件")
 

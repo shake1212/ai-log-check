@@ -231,7 +231,7 @@ public class ScriptExecutionServiceImpl implements ScriptExecutionService {
     }
 
     private Path resolveScriptDirectory() {
-        return Paths.get(scriptProperties.getBasePath()).toAbsolutePath().normalize();
+        return Paths.get(scriptProperties.getResolvedBasePath()).toAbsolutePath().normalize();
     }
 
     private Path resolveScriptPath(String fileName) {
@@ -239,9 +239,7 @@ public class ScriptExecutionServiceImpl implements ScriptExecutionService {
     }
 
     private String resolvePythonExecutable() {
-        return scriptProperties.getPython().getExecutable() == null
-                ? "python"
-                : scriptProperties.getPython().getExecutable();
+        return scriptProperties.getResolvedPythonExecutable();
     }
 
     private String readProcessOutput(Process process) {

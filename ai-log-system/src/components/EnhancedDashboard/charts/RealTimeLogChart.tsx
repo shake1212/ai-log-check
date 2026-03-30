@@ -17,6 +17,7 @@ interface RealTimeLogChartProps {
   refreshInterval?: number;
 }
 
+// TODO: REMOVE MOCK DATA - 待删除的模拟数据
 // 生成模拟数据（确保数据格式正确）
 const generateMockData = (count = 50) => {
   const now = Date.now();
@@ -88,6 +89,7 @@ const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
   isPaused = false,
   refreshInterval = 10000
 }) => {
+  // TODO: REMOVE MOCK DATA - 待删除的模拟数据初始化
   // 强制初始化为模拟数据（确保有数据）
   const [chartData, setChartData] = useState<any[]>(generateMockData(50));
   const [chartLoading, setChartLoading] = useState(false); // 初始关闭loading，避免遮挡
@@ -102,6 +104,7 @@ const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
   const dataRef = useRef(chartData);
   const dataUpdateCountRef = useRef(0);
 
+  // TODO: REMOVE MOCK DATA - 待删除的模拟API请求
   // 注释API请求，避免未定义的logApi报错
   const loadChartData = useCallback(async () => {
     if (isPaused) {

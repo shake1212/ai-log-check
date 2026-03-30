@@ -24,6 +24,7 @@ public class AlertServiceImpl implements AlertService {
 
     private final AlertRepository alertRepository;
     private final LogEntryRepository logEntryRepository;
+    private final com.security.ailogsystem.repository.SecurityAlertRepository securityAlertRepository;
 
     @Override
     @Transactional
@@ -48,6 +49,27 @@ public class AlertServiceImpl implements AlertService {
         Alert savedAlert = alertRepository.save(alert);
         log.info("创建告警成功: ID={}, Type={}, Level={}",
                 savedAlert.getId(), savedAlert.getAlertType(), savedAlert.getAlertLevel());
+
+        // 同步写入 SecurityAlert 表（供 /log-collector/alerts 端点查询）
+        try {
+            com.security.ailogsystem.entity.SecurityAlert secAlert = new com.security.ailogsystem.entity.SecurityAlert();
+            secAlert.setAlertType(request.getAlertType());
+            secAlert.setDescription(request.getDescription());
+            secAlert.setHandled(false);
+            secAlert.setCreatedTime(java.time.LocalDateTime.now());
+            secAlert.setMetricValue(request.getMetricValue());
+            secAlert.setThreshold(request.getThreshold());
+            // 映射 alertLevel 字符串 -> 枚举
+            try {
+                secAlert.setAlertLevel(com.security.ailogsystem.entity.SecurityAlert.AlertLevel
+                        .valueOf(request.getAlertLevel().toUpperCase()));
+            } catch (IllegalArgumentException e) {
+                secAlert.setAlertLevel(com.security.ailogsystem.entity.SecurityAlert.AlertLevel.MEDIUM);
+            }
+            securityAlertRepository.save(secAlert);
+        } catch (Exception e) {
+            log.warn("同步写入 SecurityAlert 失败: {}", e.getMessage());
+        }
 
         return AlertResponse.fromEntity(savedAlert);
     }
@@ -170,5 +192,102 @@ public class AlertServiceImpl implements AlertService {
         Pageable pageable = Pageable.ofSize(count);
         Page<Alert> alerts = alertRepository.findAll(pageable);
         return alerts.map(AlertResponse::fromEntity);
+    }
+
+    @Override
+    public java.util.List<com.security.ailogsystem.entity.SecurityAlert> getLogCollectorAlerts(
+            String status, String severity) {
+        
+        java.util.List<com.security.ailogsystem.entity.SecurityAlert> alerts;
+        
+        // Apply filters if provided
+        if (severity != null && !severity.trim().isEmpty()) {
+            try {
+                com.security.ailogsystem.entity.SecurityAlert.AlertLevel level = 
+                    com.security.ailogsystem.entity.SecurityAlert.AlertLevel.valueOf(severity.toUpperCase());
+                
+                if (status != null && !status.trim().isEmpty()) {
+                    // Filter by both severity and status
+                    boolean handled = "RESOLVED".equalsIgnoreCase(status) || "HANDLED".equalsIgnoreCase(status);
+                    alerts = securityAlertRepository.findByAlertLevelAndHandledFalseOrderByCreatedTimeDesc(level);
+                    if (handled) {
+                        alerts = alerts.stream()
+                            .filter(a -> a.getHandled() != null && a.getHandled())
+                            .collect(java.util.stream.Collectors.toList());
+                    } else {
+                        alerts = alerts.stream()
+                            .filter(a -> a.getHandled() == null || !a.getHandled())
+                            .collect(java.util.stream.Collectors.toList());
+                    }
+                } else {
+                    // Filter by severity only
+                    alerts = securityAlertRepository.findByAlertLevelOrderByCreatedTimeDesc(level);
+                }
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid severity level: {}", severity);
+                throw new IllegalArgumentException("Severity must be one of: LOW, MEDIUM, HIGH, CRITICAL");
+            }
+        } else if (status != null && !status.trim().isEmpty()) {
+            // Filter by status only
+            boolean handled = "RESOLVED".equalsIgnoreCase(status) || "HANDLED".equalsIgnoreCase(status);
+            if (handled) {
+                alerts = securityAlertRepository.findAll().stream()
+                    .filter(a -> a.getHandled() != null && a.getHandled())
+                    .sorted((a1, a2) -> a2.getCreatedTime().compareTo(a1.getCreatedTime()))
+                    .collect(java.util.stream.Collectors.toList());
+            } else {
+                alerts = securityAlertRepository.findByHandledFalseOrderByCreatedTimeDesc();
+            }
+        } else {
+            // No filters - get all alerts ordered by timestamp descending
+            alerts = securityAlertRepository.findAll().stream()
+                .sorted((a1, a2) -> a2.getCreatedTime().compareTo(a1.getCreatedTime()))
+                .collect(java.util.stream.Collectors.toList());
+        }
+        
+        log.debug("Retrieved {} log collector alerts with filters: status={}, severity={}", 
+                alerts.size(), status, severity);
+        
+        return alerts;
+    }
+    
+    @Override
+    @Transactional
+    public boolean acknowledgeAlert(Long id) {
+        try {
+            com.security.ailogsystem.entity.SecurityAlert alert = 
+                securityAlertRepository.findById(id)
+                    .orElseThrow(() -> new RuntimeException("告警不存在: " + id));
+            
+            // 标记为已确认（但未解决）
+            alert.setHandled(false); // 确认但未解决
+            securityAlertRepository.save(alert);
+            
+            log.info("告警已确认: ID={}", id);
+            return true;
+        } catch (Exception e) {
+            log.error("确认告警失败: ID={}", id, e);
+            return false;
+        }
+    }
+    
+    @Override
+    @Transactional
+    public boolean resolveAlert(Long id) {
+        try {
+            com.security.ailogsystem.entity.SecurityAlert alert = 
+                securityAlertRepository.findById(id)
+                    .orElseThrow(() -> new RuntimeException("告警不存在: " + id));
+            
+            // 标记为已解决
+            alert.setHandled(true);
+            securityAlertRepository.save(alert);
+            
+            log.info("告警已解决: ID={}", id);
+            return true;
+        } catch (Exception e) {
+            log.error("解决告警失败: ID={}", id, e);
+            return false;
+        }
     }
 }

@@ -396,7 +396,7 @@ public class SystemInfoServiceImpl implements SystemInfoService {
     }
 
     private Path resolveScriptDirectory() {
-        return Paths.get(scriptProperties.getBasePath()).toAbsolutePath().normalize();
+        return Paths.get(scriptProperties.getResolvedBasePath()).toAbsolutePath().normalize();
     }
 
     private Path resolveScriptPath(String fileName) {

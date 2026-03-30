@@ -52,7 +52,7 @@ export interface PerformanceAlert {
 export interface OptimizationRecommendation {
   id: string;
   priority: 'high' | 'medium' | 'low';
-  category: 'collection' | 'processing' | 'storage' | 'network' | 'system';
+  category: 'collection' | 'processing' | 'storage' | 'network' | 'system' | 'quality' | 'performance';
   title: string;
   description: string;
   impact: string;
@@ -60,6 +60,7 @@ export interface OptimizationRecommendation {
   estimatedImprovement: number; // 预期改善百分比
   action: string;
   parameters?: Record<string, any>;
+  resolved?: boolean; // 是否已应用
 }
 
 export interface PerformanceConfig {
@@ -158,6 +159,19 @@ export class PerformanceMonitor {
    * 收集性能指标
    */
   private async collectMetrics(): Promise<void> {
+    // TODO: 集成真实的系统指标采集
+    // 当前使用模拟数据，待后端API就绪后替换
+    // 
+    // 真实实现应该：
+    // 1. 调用后端API: GET /api/performance/metrics
+    // 2. 或使用浏览器Performance API获取前端性能数据
+    // 3. 结合WebSocket实时推送的系统指标
+    //
+    // 示例代码：
+    // const response = await fetch('/api/performance/metrics');
+    // const metrics: PerformanceMetrics = await response.json();
+    
+    // ============ 临时模拟数据 - 开始 ============
     const metrics: PerformanceMetrics = {
       timestamp: new Date().toISOString(),
       // 模拟采集性能指标
@@ -190,6 +204,7 @@ export class PerformanceMonitor {
       activeConnections: Math.floor(Math.random() * 10) + 1,
       connectionHealth: Math.random() * 20 + 80 // 80-100%
     };
+    // ============ 临时模拟数据 - 结束 ============
 
     this.metrics.push(metrics);
     
@@ -208,6 +223,10 @@ export class PerformanceMonitor {
     }
 
     const latestMetrics = this.metrics[this.metrics.length - 1];
+    if (!latestMetrics) {
+      return;
+    }
+
     const alerts: PerformanceAlert[] = [];
 
     // 检查CPU使用率
@@ -380,7 +399,10 @@ export class PerformanceMonitor {
     
     const sumX = x.reduce((sum, val) => sum + val, 0);
     const sumY = values.reduce((sum, val) => sum + val, 0);
-    const sumXY = x.reduce((sum, val, i) => sum + val * values[i], 0);
+    const sumXY = x.reduce((sum, val, i) => {
+      const yValue = values[i];
+      return sum + (yValue !== undefined ? val * yValue : 0);
+    }, 0);
     const sumXX = x.reduce((sum, val) => sum + val * val, 0);
     
     const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
@@ -392,7 +414,8 @@ export class PerformanceMonitor {
    */
   private generateTrendBasedRecommendations(trends: Record<string, number>): void {
     // CPU使用率上升趋势
-    if (trends.cpuUsage > 5) {
+    const cpuTrend = trends.cpuUsage;
+    if (cpuTrend !== undefined && cpuTrend > 5) {
       this.addRecommendation({
         id: `cpu_trend_${Date.now()}`,
         priority: 'high',
@@ -407,7 +430,8 @@ export class PerformanceMonitor {
     }
 
     // 错误率上升趋势
-    if (trends.errorRate > 1) {
+    const errorTrend = trends.errorRate;
+    if (errorTrend !== undefined && errorTrend > 1) {
       this.addRecommendation({
         id: `error_trend_${Date.now()}`,
         priority: 'high',
@@ -422,7 +446,8 @@ export class PerformanceMonitor {
     }
 
     // 延迟上升趋势
-    if (trends.avgCollectionLatency > 50) {
+    const latencyTrend = trends.avgCollectionLatency;
+    if (latencyTrend !== undefined && latencyTrend > 50) {
       this.addRecommendation({
         id: `latency_trend_${Date.now()}`,
         priority: 'medium',
@@ -488,6 +513,7 @@ export class PerformanceMonitor {
     if (this.metrics.length === 0) return;
     
     const latestMetrics = this.metrics[this.metrics.length - 1];
+    if (!latestMetrics) return;
     
     // 内存使用量建议
     if (latestMetrics.memoryUsage > 1500) {

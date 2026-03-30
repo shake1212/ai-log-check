@@ -51,4 +51,10 @@ public class AlertRequest {
     private String ipAddress;
 
     private Integer port;
+
+    /** 触发告警时的实际指标值（如 CPU 85.2%） */
+    private Double metricValue;
+
+    /** 告警阈值（如 80.0%） */
+    private Double threshold;
 }

@@ -60,6 +60,12 @@ export default defineConfig({
           name: 'whitelist',
           icon: 'CheckCircleOutlined',
         },
+        {
+          path: '/rules',
+          component: '@/pages/rules/index',
+          name: 'rules',
+          icon: 'SafetyOutlined',
+        },
         // { 
         //   path: '/logs', 
         //   component: '@/pages/logs',
@@ -81,21 +87,15 @@ export default defineConfig({
         {
           path: '/wmi',
           component: '@/pages/wmi/index',
-          name: 'wmi',
-          icon: 'DatabaseOutlined',
+          name: 'system-monitor',
+          icon: 'MonitorOutlined',
         },
         {
-          path: '/systemInfoManagement',
-          component: '@/pages/systemInfoManagement/index',
-          name: 'systemInfoManagement',
-          icon: 'SettingOutlined',
+          path: '/database',
+          component: '@/pages/database/index',
+          name: 'database',
+          icon: 'DatabaseOutlined',
         },
-        // {
-        //   path: '/database',
-        //   component: '@/pages/database/',
-        //   name: 'database',
-        //   icon: 'DatabaseOutlined',
-        // },
         { 
           path: '/system', 
           component: '@/pages/system/index',

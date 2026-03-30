@@ -57,6 +57,7 @@ interface WhitelistItem {
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
 }
 
+// TODO: REMOVE MOCK DATA - 待删除的模拟数据
 // 生成模拟数据
 const generateMockData = (): WhitelistItem[] => {
   const types: WhitelistItem['type'][] = ['IP', 'EMAIL', 'DOMAIN', 'USER', 'PATH', 'URL'];
@@ -150,6 +151,7 @@ export default function WhitelistPage() {
   const [form] = Form.useForm();
 
   // 初始化数据
+  // TODO: REMOVE MOCK DATA - 待删除的模拟数据加载
   useEffect(() => {
     setLoading(true);
     setTimeout(() => {

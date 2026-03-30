@@ -19,6 +19,7 @@ const ModelMetrics: React.FC<ModelMetricsProps> = ({ visible, model, onCancel })
   });
 
   // 加载模型指标数据
+  // TODO: REMOVE MOCK DATA - 待删除的模拟数据加载
   useEffect(() => {
     if (visible && model) {
       setLoading(true);
@@ -32,6 +33,7 @@ const ModelMetrics: React.FC<ModelMetricsProps> = ({ visible, model, onCancel })
     }
   }, [visible, model]);
 
+  // TODO: REMOVE MOCK DATA - 待删除的模拟数据
   // 生成模拟指标数据
   const generateMockMetricsData = (model: ModelInfo) => {
     // 混淆矩阵数据

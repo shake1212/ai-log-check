@@ -16,7 +16,8 @@ import {
   Alert,
   Divider,
   Timeline,
-  Avatar
+  Avatar,
+  Tabs
 } from 'antd';
 import { 
   PlayCircleOutlined, 
@@ -29,8 +30,14 @@ import {
   ClockCircleOutlined,
   ThunderboltOutlined,
   EyeOutlined,
-  FilterOutlined
+  FilterOutlined,
+  UnorderedListOutlined,
+  BarChartOutlined
 } from '@ant-design/icons';
+import SecurityEventCard from '@/components/cards/SecurityEventCard';
+import SecurityEventDetailModal from '@/components/modals/SecurityEventDetailModal';
+import RuleStatisticsDashboard from '@/components/RuleStatisticsDashboard';
+import { getSeverity, getStatus, getLevel } from '@/utils/enumLabels';
 
 const { Title, Text } = Typography;
 
@@ -50,6 +57,7 @@ interface SecurityEvent {
   tags: string[];
 }
 
+// TODO: REMOVE MOCK DATA - 待删除的模拟数据
 // 生成模拟安全事件
 const generateMockEvents = (count: number = 10): SecurityEvent[] => {
   const eventTypes = [
@@ -87,8 +95,11 @@ export default function RealtimeMonitor() {
   const [filter, setFilter] = useState<string>('ALL');
   const [loading, setLoading] = useState(true);
   const intervalRef = useRef<NodeJS.Timeout>();
+  const [selectedEvent, setSelectedEvent] = useState<SecurityEvent | null>(null);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
 
   // 初始化数据
+  // TODO: REMOVE MOCK DATA - 待删除的模拟数据加载
   useEffect(() => {
     setLoading(true);
     setTimeout(() => {
@@ -98,6 +109,7 @@ export default function RealtimeMonitor() {
   }, []);
 
   // 实时数据更新
+  // TODO: REMOVE MOCK DATA - 待删除的模拟数据更新
   useEffect(() => {
     if (isPlaying) {
       intervalRef.current = setInterval(() => {
@@ -128,31 +140,23 @@ export default function RealtimeMonitor() {
     investigating: events.filter(e => e.status === 'INVESTIGATING').length
   };
 
-  // 级别标签渲染
+  // 级别标签渲染 - 使用统一枚举映射
   const renderLevelTag = (level: SecurityEvent['level']) => {
-    const config = {
-      CRITICAL: { color: 'red', text: '严重', icon: <ExclamationCircleOutlined /> },
-      HIGH: { color: 'orange', text: '高', icon: <WarningOutlined /> },
-      MEDIUM: { color: 'gold', text: '中', icon: <InfoCircleOutlined /> },
-      LOW: { color: 'blue', text: '低', icon: <CheckCircleOutlined /> },
-      INFO: { color: 'default', text: '信息', icon: <InfoCircleOutlined /> }
+    const iconMap: Record<string, React.ReactNode> = {
+      CRITICAL: <ExclamationCircleOutlined />,
+      HIGH:     <WarningOutlined />,
+      MEDIUM:   <InfoCircleOutlined />,
+      LOW:      <CheckCircleOutlined />,
+      INFO:     <InfoCircleOutlined />,
     };
-    
-    const { color, text, icon } = config[level];
-    return <Tag color={color} icon={icon}>{text}</Tag>;
+    const { label, color } = getLevel(level);
+    return <Tag color={color} icon={iconMap[level]}>{label}</Tag>;
   };
 
-  // 状态标签渲染
+  // 状态标签渲染 - 使用统一枚举映射
   const renderStatusTag = (status: SecurityEvent['status']) => {
-    const config = {
-      NEW: { color: 'red', text: '新事件' },
-      INVESTIGATING: { color: 'processing', text: '调查中' },
-      RESOLVED: { color: 'success', text: '已解决' },
-      FALSE_POSITIVE: { color: 'default', text: '误报' }
-    };
-    
-    const { color, text } = config[status];
-    return <Tag color={color}>{text}</Tag>;
+    const { label, color } = getStatus(status);
+    return <Tag color={color}>{label}</Tag>;
   };
 
   // 过滤事件
@@ -160,6 +164,18 @@ export default function RealtimeMonitor() {
     if (filter === 'ALL') return true;
     return event.level === filter;
   });
+
+  // 处理事件点击
+  const handleEventClick = (event: SecurityEvent) => {
+    setSelectedEvent(event);
+    setDetailModalVisible(true);
+  };
+
+  // 关闭详情弹窗
+  const handleCloseDetail = () => {
+    setDetailModalVisible(false);
+    setSelectedEvent(null);
+  };
 
   return (
     <div>
@@ -390,6 +406,13 @@ export default function RealtimeMonitor() {
           </Card>
         </Col>
       </Row>
+
+      {/* 事件详情弹窗 */}
+      <SecurityEventDetailModal
+        visible={detailModalVisible}
+        onClose={handleCloseDetail}
+        event={selectedEvent}
+      />
     </div>
   );
 }

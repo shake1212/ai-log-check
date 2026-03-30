@@ -358,7 +358,7 @@ const OverviewPage: React.FC<OverviewPageProps> = ({
               }}>
                 {events
                   .filter(event => eventFilter === 'ALL' || event.level === eventFilter)
-                  .slice(0, 15)
+                  .slice(0, 10)
                   .map((event, index) => (
                     <div
                       key={event.id}

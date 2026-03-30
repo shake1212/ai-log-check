@@ -26,6 +26,12 @@ export const useWebSocket = () => {
   const stompClientRef = useRef<Client | null>(null);
   const reconnectTimerRef = useRef<NodeJS.Timeout>();
   const isMountedRef = useRef(true);
+  const retryCountRef = useRef(0); // 用 ref 避免闭包捕获旧值
+
+  // 统一的连接状态通知，使用固定 key 保证只显示一条
+  const showConnectionMessage = useCallback((type: 'success' | 'warning' | 'error', content: string) => {
+    message.open({ key: 'ws-connection-status', type, content, duration: type === 'success' ? 3 : 0 });
+  }, []);
 
   const connect = useCallback(() => {
     // 如果组件已卸载，不进行连接
@@ -43,7 +49,8 @@ export const useWebSocket = () => {
     try {
       // 创建 STOMP 客户端
       const stompClient = new Client({
-        webSocketFactory: () => new SockJS(wsUrl),
+        // Disable iframe transport to avoid 404 on /api/ws/iframe.html
+        webSocketFactory: () => new SockJS(wsUrl, null, { transports: ['websocket', 'xhr-streaming', 'xhr-polling'] }),
         reconnectDelay: 0, // 禁用自动重连，我们手动控制
         heartbeatIncoming: 10000, // 10秒心跳
         heartbeatOutgoing: 10000, // 10秒心跳
@@ -59,6 +66,7 @@ export const useWebSocket = () => {
         
         setConnected(true);
         setRetryCount(0);
+        retryCountRef.current = 0;
         console.log('WebSocket 连接成功:', frame);
         
         // 订阅各种主题
@@ -83,8 +91,10 @@ export const useWebSocket = () => {
         });
 
         // 只在第一次连接成功时显示消息
-        if (retryCount === 0) {
-          message.success('实时连接已建立');
+        if (retryCountRef.current === 0) {
+          message.open({ key: 'ws-connection-status', type: 'success', content: '实时连接已建立', duration: 3 });
+        } else {
+          showConnectionMessage('success', '实时连接已恢复');
         }
       };
 
@@ -121,7 +131,7 @@ export const useWebSocket = () => {
         handleReconnect();
       }
     }
-  }, [retryCount]);
+  }, [showConnectionMessage]);
 
   const handleReconnect = () => {
     // 清理现有的重连定时器
@@ -129,9 +139,13 @@ export const useWebSocket = () => {
       clearTimeout(reconnectTimerRef.current);
     }
 
+    // 使用 ref 读取最新的重试次数，避免闭包问题
+    const currentRetry = retryCountRef.current;
+
     // 检查是否达到最大重试次数
-    if (retryCount < WEBSOCKET_CONFIG.maxRetries) {
-      const nextRetryCount = retryCount + 1;
+    if (currentRetry < WEBSOCKET_CONFIG.maxRetries) {
+      const nextRetryCount = currentRetry + 1;
+      retryCountRef.current = nextRetryCount;
       setRetryCount(nextRetryCount);
       
       // 指数退避策略：重试间隔逐渐增加
@@ -144,13 +158,11 @@ export const useWebSocket = () => {
         }
       }, retryDelay);
       
-      // 只在第一次重试时显示消息
-      if (nextRetryCount === 1) {
-        message.warning(`连接断开，正在尝试重连... (${nextRetryCount}/${WEBSOCKET_CONFIG.maxRetries})`);
-      }
+      // 始终更新同一条通知（通过固定 key 覆盖），不会堆积
+      showConnectionMessage('warning', `连接断开，正在尝试重连... (${nextRetryCount}/${WEBSOCKET_CONFIG.maxRetries})`);
     } else {
       console.error('WebSocket 重连次数已达上限，停止重连');
-      message.error('实时连接失败，请刷新页面重试');
+      showConnectionMessage('error', '实时连接失败，请刷新页面重试');
     }
   };
 

@@ -95,6 +95,7 @@ export class DatabasePool {
 
   /**
    * 创建模拟连接池
+   * TODO: REMOVE MOCK DATA - 待删除的模拟数据
    */
   private createMockPool(): any {
     return {
@@ -113,6 +114,7 @@ export class DatabasePool {
 
   /**
    * 创建模拟连接
+   * TODO: REMOVE MOCK DATA - 待删除的模拟数据
    */
   private createMockConnection(): Connection {
     return {
@@ -156,6 +158,7 @@ export class DatabasePool {
 
   /**
    * 创建模拟事务
+   * TODO: REMOVE MOCK DATA - 待删除的模拟数据
    */
   private createMockTransaction(): Transaction {
     let isActive = false;

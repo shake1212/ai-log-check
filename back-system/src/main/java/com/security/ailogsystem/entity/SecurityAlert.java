@@ -27,6 +27,12 @@ public class SecurityAlert {
     @Column(name = "event_data", columnDefinition = "JSON")
     private String eventData;
 
+    @Column(name = "metric_value")
+    private Double metricValue;
+
+    @Column(name = "threshold")
+    private Double threshold;
+
     @Column(name = "handled")
     private Boolean handled = false;
 

@@ -35,11 +35,11 @@ public class AutoAlertScheduler {
             if (cpuPercentObj instanceof Number) {
                 double cpuPercent = ((Number) cpuPercentObj).doubleValue();
                 if (cpuPercent > 90) {
-                    createPerformanceAlert("CPU_USAGE_HIGH", "CRITICAL",
-                            String.format("CPU使用率过高: %.1f%%", cpuPercent), 0.95);
+                    createPerformanceAlertWithMetrics("CPU_USAGE_HIGH", "CRITICAL",
+                            String.format("CPU使用率过高: %.1f%%", cpuPercent), 0.95, cpuPercent, 90.0);
                 } else if (cpuPercent > 80) {
-                    createPerformanceAlert("CPU_USAGE_HIGH", "HIGH",
-                            String.format("CPU使用率较高: %.1f%%", cpuPercent), 0.85);
+                    createPerformanceAlertWithMetrics("CPU_USAGE_HIGH", "HIGH",
+                            String.format("CPU使用率较高: %.1f%%", cpuPercent), 0.85, cpuPercent, 80.0);
                 }
             }
 
@@ -48,11 +48,11 @@ public class AutoAlertScheduler {
             if (memoryPercentObj instanceof Number) {
                 double memoryPercent = ((Number) memoryPercentObj).doubleValue();
                 if (memoryPercent > 95) {
-                    createPerformanceAlert("MEMORY_USAGE_HIGH", "CRITICAL",
-                            String.format("内存使用率过高: %.1f%%", memoryPercent), 0.96);
+                    createPerformanceAlertWithMetrics("MEMORY_USAGE_HIGH", "CRITICAL",
+                            String.format("内存使用率过高: %.1f%%", memoryPercent), 0.96, memoryPercent, 95.0);
                 } else if (memoryPercent > 90) {
-                    createPerformanceAlert("MEMORY_USAGE_HIGH", "HIGH",
-                            String.format("内存使用率较高: %.1f%%", memoryPercent), 0.88);
+                    createPerformanceAlertWithMetrics("MEMORY_USAGE_HIGH", "HIGH",
+                            String.format("内存使用率较高: %.1f%%", memoryPercent), 0.88, memoryPercent, 90.0);
                 }
             }
 
@@ -141,6 +141,11 @@ public class AutoAlertScheduler {
     }
 
     private void createPerformanceAlert(String alertType, String level, String description, double confidence) {
+        createPerformanceAlertWithMetrics(alertType, level, description, confidence, null, null);
+    }
+
+    private void createPerformanceAlertWithMetrics(String alertType, String level, String description,
+                                                    double confidence, Double metricValue, Double threshold) {
         try {
             AlertRequest request = AlertRequest.builder()
                     .alertId(generateAlertId(alertType))
@@ -149,6 +154,8 @@ public class AutoAlertScheduler {
                     .alertLevel(level)
                     .description(description)
                     .aiConfidence(BigDecimal.valueOf(confidence))
+                    .metricValue(metricValue)
+                    .threshold(threshold)
                     .build();
 
             alertService.createAlert(request);

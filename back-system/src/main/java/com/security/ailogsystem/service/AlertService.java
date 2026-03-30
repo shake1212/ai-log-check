@@ -45,4 +45,14 @@ public interface AlertService {
 
     // 获取最近告警
     Page<AlertResponse> getRecentAlerts(int count);
+
+    // 获取日志采集器相关告警
+    java.util.List<com.security.ailogsystem.entity.SecurityAlert> getLogCollectorAlerts(
+            String status, String severity);
+    
+    // 确认告警
+    boolean acknowledgeAlert(Long id);
+    
+    // 解决告警
+    boolean resolveAlert(Long id);
 }

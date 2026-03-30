@@ -20,19 +20,21 @@ import {
   UserSwitchOutlined,
   SyncOutlined,
   DatabaseOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons';
 import EnhancedDashboard from '../components/EnhancedDashboard/EnhancedDashboard';
 import WMIManagement from '../pages/wmi/index';
-import SystemInfoManagement from '../pages/systemInfoManagement/index';
 import DebugRoute from '../pages/debug-route';
 import EventsPage from '../pages/events/index';
 import BatchOperationsPage from '../pages/batch-operations/index';
-// import DatabaseManagement from '../pages/database/index';
+import DatabaseManagement from '../pages/database/index';
 // 新增导入
+import LogCollectorPage from '../pages/log-collector';
 // import LogsPage from '../pages/logs/index';
 import AlertsPage from '../pages/alerts/alerts';
 import SystemPage from '../pages/system';
 import initialConfig from '../pages/settings/index';
+import RulesPage from '../pages/rules/index';
 import { useModel } from '@/utils/useModel';
 
 const { Header, Content, Footer, Sider } = Layout;
@@ -94,9 +96,19 @@ export default function DefaultLayout() {
       label: '事件查询统计',
     },
     {
-      key: '/systemInfoManagement',
-      icon: <SettingOutlined />,
-      label: '系统信息管理',
+      key: '/wmi',
+      icon: <DatabaseOutlined />,
+      label: '系统资源监控',
+    },
+    {
+      key: '/log-collector',
+      icon: <LineChartOutlined />,
+      label: '日志采集',
+    },
+    {
+      key: '/rules',
+      icon: <CheckCircleOutlined />,
+      label: '规则管理',
     },
     {
       key: '/system',
@@ -118,11 +130,6 @@ export default function DefaultLayout() {
       key: '/settings',
       icon: <SettingOutlined />,
       label: '系统设置',
-    },
-    {
-      key: '/wmi',
-      icon: <DatabaseOutlined />,
-      label: 'WMI基础',
     },
     {
       key: '/database',
@@ -197,6 +204,8 @@ export default function DefaultLayout() {
         return <EnhancedDashboard />;
       case '/alerts':
         return <AlertsPage />;
+      case '/rules':
+        return <RulesPage />;
       case '/whitelist':
         return (
           <div style={{ padding: '20px' }}>
@@ -204,8 +213,8 @@ export default function DefaultLayout() {
             <p>白名单管理功能正在开发中...</p>
           </div>
         );
-      // case '/logs':
-      //   return <LogsPage />;
+      case '/log-collector':
+        return <LogCollectorPage />;
       case '/settings':
         return (
           <div style={{ padding: '20px' }}>
@@ -215,14 +224,12 @@ export default function DefaultLayout() {
         );
       case '/wmi':
         return <WMIManagement />;
-      case '/systemInfoManagement':
-        return <SystemInfoManagement />;
       case '/events':
         return <EventsPage />;
       case '/batch-operations':
         return <BatchOperationsPage />;
-      // case '/database':
-      //   return <DatabaseManagement />;
+      case '/database':
+        return <DatabaseManagement />;
       case '/debug-route':
         return <DebugRoute />;
       case '/system':

@@ -157,11 +157,18 @@ log:
     brute-force:
       threshold: 5
       window-minutes: 10
+    # 安全日志采集配置
+    collector:
+      enabled: true
+      default-interval-minutes: 5
+      auto-start: false
+      max-retries: 3
+      retry-delay-seconds: 30
 
 scripts:
-  base-path: "D:/projects/ai-log-check/back-system/src/scripts"
+  base-path: "back-system/src/scripts"
   python:
-    executable: "D:/projects/ai-log-check/back-system/.venv/Scripts/python.exe"
+    executable: "back-system/.venv/Scripts/python.exe"
   allowed:
     unified_log_collector:
       name: "安全日志采集脚本"
@@ -200,6 +207,16 @@ python:
     enabled: true  # 是否启用Python收集器
     timeout: 30000  # 超时时间(毫秒)
     retry-count: 3  # 重试次数
+
+# Log collector metrics configuration
+log-collector:
+  metrics:
+    retention-days: 30  # Number of days to retain metrics data
+    cleanup-schedule: "0 0 0 * * ?"  # Cron expression for cleanup job (default: daily at midnight)
+    cache-ttl: 30  # Cache TTL in seconds for real-time metrics
+  python:
+    collection-interval: 300  # Python collector interval in seconds (default: 5 minutes)
+    timeout: 120  # Python collector timeout in seconds (default: 2 minutes)
 
 
 # 线程池配置

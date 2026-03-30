@@ -58,8 +58,11 @@ const EnhancedDashboard: React.FC = () => {
       }));
 
       setEvents(prev => {
-        const merged = [...mapped, ...prev];
-        return merged.slice(0, 100);
+        // 去重：过滤掉已存在相同ID的事件
+        const existingIds = new Set(prev.map(e => e.id));
+        const newItems = mapped.filter(e => !existingIds.has(e.id));
+        // 合并后最多保留50条，按时间倒序
+        return [...newItems, ...prev].slice(0, 50);
       });
       setEventLoading(false);
     }

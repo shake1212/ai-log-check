@@ -2,6 +2,7 @@ package com.security.ailogsystem.controller;
 
 import com.security.ailogsystem.dto.SystemInfoIngestRequest;
 import com.security.ailogsystem.model.SimpleWmiData;
+import com.security.ailogsystem.service.MetricsService;
 import com.security.ailogsystem.service.RealTimeSystemService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -37,6 +38,9 @@ public class RealTimeSystemController {
 
     @Autowired
     private RealTimeSystemService realTimeSystemService;
+
+    @Autowired
+    private MetricsService metricsService;
 
     // 存储连接和查询的模拟数据（在生产环境中应该使用数据库）
     private final Map<String, Map<String, Object>> connections = new HashMap<>();
@@ -697,15 +701,144 @@ public class RealTimeSystemController {
     public ResponseEntity<Map<String, Object>> ingestSystemInfo(
             @Valid @RequestBody SystemInfoIngestRequest request) {
         try {
+            // Validate dataType
+            String dataType = request.getDataType();
+            if (dataType == null || dataType.trim().isEmpty()) {
+                log.warn("接收系统信息数据失败: dataType为空");
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(createErrorResponse(HttpStatus.BAD_REQUEST, "dataType不能为空"));
+            }
+            
+            // Validate payload structure
+            Map<String, Object> payload = request.getPayload();
+            if (payload == null || payload.isEmpty()) {
+                log.warn("接收系统信息数据失败: payload为空, dataType={}", dataType);
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(createErrorResponse(HttpStatus.BAD_REQUEST, "payload不能为空"));
+            }
+            
+            // Validate required fields in payload for performance data types
+            if (isPerformanceDataType(dataType)) {
+                String validationError = validatePerformancePayload(payload, dataType);
+                if (validationError != null) {
+                    log.warn("接收系统信息数据失败: payload验证失败, dataType={}, error={}", 
+                        dataType, validationError);
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(createErrorResponse(HttpStatus.BAD_REQUEST, validationError));
+                }
+            }
+            
+            // Store in SimpleWmiData repository
             SimpleWmiData saved = realTimeSystemService.ingestSystemInfoData(request);
+            log.info("接收系统信息数据成功: ID={}, dataType={}", saved.getId(), dataType);
+            
+            // Store metrics if dataType is performance-related
+            if (isPerformanceDataType(dataType)) {
+                try {
+                    com.security.ailogsystem.entity.SystemMetrics metrics = 
+                        metricsService.storeMetrics(payload);
+                    log.info("存储性能指标成功: metricsId={}, dataType={}, timestamp={}", 
+                        metrics.getId(), dataType, metrics.getTimestamp());
+                } catch (IllegalArgumentException e) {
+                    // Invalid data format - log and return error
+                    log.error("存储性能指标失败: 数据格式无效, dataType={}, error={}", 
+                        dataType, e.getMessage());
+                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                            .body(createErrorResponse(HttpStatus.BAD_REQUEST, 
+                                "性能数据格式无效: " + e.getMessage()));
+                } catch (Exception e) {
+                    // Other errors - log but don't fail the request since SimpleWmiData was saved
+                    log.error("存储性能指标失败: dataType={}, error={}", dataType, e.getMessage(), e);
+                }
+            }
+            
             Map<String, Object> response = createSuccessResponse(saved);
-            log.info("接收系统信息数据成功: ID={}", saved.getId());
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        } catch (IllegalArgumentException e) {
+            log.error("接收系统信息数据失败: 参数无效, error={}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(createErrorResponse(HttpStatus.BAD_REQUEST, "参数无效: " + e.getMessage()));
         } catch (Exception e) {
             log.error("接收系统信息数据失败: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(createErrorResponse("接收数据失败: " + e.getMessage()));
         }
+    }
+    
+    /**
+     * Check if dataType is performance-related and should be stored as metrics
+     */
+    private boolean isPerformanceDataType(String dataType) {
+        if (dataType == null) {
+            return false;
+        }
+        String lowerDataType = dataType.toLowerCase();
+        return lowerDataType.equals("performance") ||
+               lowerDataType.equals("cpu_info") ||
+               lowerDataType.equals("memory_info") ||
+               lowerDataType.equals("disk_info") ||
+               lowerDataType.equals("process_info");
+    }
+    
+    /**
+     * Validate performance payload has required fields based on dataType
+     * @return null if valid, error message if invalid
+     */
+    private String validatePerformancePayload(Map<String, Object> payload, String dataType) {
+        if (payload == null) {
+            return "payload不能为空";
+        }
+        
+        String lowerDataType = dataType.toLowerCase();
+        
+        // Check for data node which contains the actual metrics
+        Object dataNode = payload.get("data");
+        if (dataNode == null) {
+            return "payload必须包含'data'字段";
+        }
+        
+        if (!(dataNode instanceof Map)) {
+            return "payload的'data'字段必须是对象类型";
+        }
+        
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) dataNode;
+        
+        // Validate based on specific dataType
+        switch (lowerDataType) {
+            case "performance":
+                // Performance should have cpu, memory, disk, or network data
+                if (data.isEmpty()) {
+                    return "performance类型的data不能为空";
+                }
+                break;
+                
+            case "cpu_info":
+                if (!data.containsKey("usage") && !data.containsKey("cpu_usage_percent")) {
+                    return "cpu_info类型必须包含'usage'或'cpu_usage_percent'字段";
+                }
+                break;
+                
+            case "memory_info":
+                if (!data.containsKey("usage") && !data.containsKey("usage_percent")) {
+                    return "memory_info类型必须包含'usage'或'usage_percent'字段";
+                }
+                break;
+                
+            case "disk_info":
+                if (!data.containsKey("usage") && !data.containsKey("usage_percent")) {
+                    return "disk_info类型必须包含'usage'或'usage_percent'字段";
+                }
+                break;
+                
+            case "process_info":
+                if (!data.containsKey("processes") && !data.containsKey("total_count")) {
+                    return "process_info类型必须包含'processes'或'total_count'字段";
+                }
+                break;
+        }
+        
+        return null; // Valid
     }
 
     @PostMapping("/batch-collect")

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Card,
   Table,
@@ -64,6 +64,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
+import { getSeverity, translate, EVENT_TYPE_MAP } from '../../utils/enumLabels';
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
@@ -190,6 +191,9 @@ const EventsPage: React.FC = () => {
   const [searchForm] = Form.useForm();
   const [activeTab, setActiveTab] = useState('events');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Add mounted ref to prevent state updates after unmount
+  const isMountedRef = useRef(true);
 
   // 查询参数
   const [queryParams, setQueryParams] = useState<QueryParams>({
@@ -214,6 +218,7 @@ const EventsPage: React.FC = () => {
   // 获取仪表板统计信息（无需时间参数）
   const fetchDashboardStats = async () => {
     try {
+      if (!isMountedRef.current) return;
       setStatisticsLoading(true);
       
       console.log('调用仪表板统计API:', '/api/events/dashboard-stats');
@@ -228,6 +233,8 @@ const EventsPage: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         console.log('仪表板统计返回数据:', data);
+        
+        if (!isMountedRef.current) return;
         
         // 转换数据结构
         const dashboardData: DashboardStats = {
@@ -283,14 +290,20 @@ const EventsPage: React.FC = () => {
       } else {
         const errorText = await response.text();
         console.error('仪表板统计API响应失败:', response.status, errorText);
-        message.error(`获取仪表板统计失败: ${response.status}`);
+        if (isMountedRef.current) {
+          message.error(`获取仪表板统计失败: ${response.status}`);
+        }
       }
       
     } catch (error) {
       console.error('获取仪表板统计错误:', error);
-      message.error('获取仪表板统计失败，请检查网络连接');
+      if (isMountedRef.current) {
+        message.error('获取仪表板统计失败，请检查网络连接');
+      }
     } finally {
-      setStatisticsLoading(false);
+      if (isMountedRef.current) {
+        setStatisticsLoading(false);
+      }
     }
   };
 
@@ -326,6 +339,7 @@ const EventsPage: React.FC = () => {
   // 获取事件列表
   const fetchEvents = async (page = pagination.current, pageSize = pagination.pageSize) => {
     try {
+      if (!isMountedRef.current) return;
       setLoading(true);
       
       const queryDTO = {
@@ -356,6 +370,8 @@ const EventsPage: React.FC = () => {
         10000
       );
 
+      if (!isMountedRef.current) return;
+
       if (response.ok) {
         const data = await response.json();
         setEvents(data.content || data || []);
@@ -367,19 +383,27 @@ const EventsPage: React.FC = () => {
         }));
       } else {
         console.error('事件搜索API响应失败:', response.status, response.statusText);
-        message.error('获取事件列表失败');
+        if (isMountedRef.current) {
+          message.error('获取事件列表失败');
+        }
       }
     } catch (error) {
       console.error('获取事件列表错误:', error);
-      message.error('获取事件列表失败');
+      if (isMountedRef.current) {
+        message.error('获取事件列表失败');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   // 获取时间序列趋势数据
   const fetchTrends = async () => {
     try {
+      if (!isMountedRef.current) return;
+      
       const params = new URLSearchParams({
         startTime: queryParams.startTime.format('YYYY-MM-DDTHH:mm:ss'),
         endTime: queryParams.endTime.format('YYYY-MM-DDTHH:mm:ss'),
@@ -393,6 +417,8 @@ const EventsPage: React.FC = () => {
       );
       
       console.log('趋势API响应状态:', response.status);
+      
+      if (!isMountedRef.current) return;
       
       if (response.ok) {
         const data = await response.json();
@@ -425,20 +451,29 @@ const EventsPage: React.FC = () => {
         console.error('趋势数据API响应失败:', response.status, errorText);
         // 不再使用模拟数据，设置空数组
         setTrends([]);
-        message.error(`获取趋势数据失败: ${response.status}`);
+        if (isMountedRef.current) {
+          message.error(`获取趋势数据失败: ${response.status}`);
+        }
       }
     } catch (error) {
       console.error('获取趋势数据错误:', error);
       // 不再使用模拟数据，设置空数组
-      setTrends([]);
-      message.error('获取趋势数据失败，请检查网络连接');
+      if (isMountedRef.current) {
+        setTrends([]);
+        message.error('获取趋势数据失败，请检查网络连接');
+      }
     }
   };
 
   // 获取最近事件（备用方案）
   const fetchRecentEvents = async () => {
     try {
+      if (!isMountedRef.current) return;
+      
       const response = await fetch('/api/events/recent?limit=50');
+      
+      if (!isMountedRef.current) return;
+      
       if (response.ok) {
         const data = await response.json();
         setEvents(data || []);
@@ -458,13 +493,16 @@ const EventsPage: React.FC = () => {
       const response = await fetch('/api/events/collect', {
         method: 'POST'
       });
+      if (!isMountedRef.current) return;
       if (response.ok) {
         message.success('日志收集任务已启动');
       } else {
         message.error('触发日志收集失败');
       }
     } catch (error) {
-      message.error('触发日志收集失败');
+      if (isMountedRef.current) {
+        message.error('触发日志收集失败');
+      }
     }
   };
 
@@ -474,13 +512,16 @@ const EventsPage: React.FC = () => {
       const response = await fetch('/api/events/cleanup?daysToKeep=30', {
         method: 'POST'
       });
+      if (!isMountedRef.current) return;
       if (response.ok) {
         message.success('已清理30天前的旧数据');
       } else {
         message.error('清理旧数据失败');
       }
     } catch (error) {
-      message.error('清理旧数据失败');
+      if (isMountedRef.current) {
+        message.error('清理旧数据失败');
+      }
     }
   };
 
@@ -490,6 +531,7 @@ const EventsPage: React.FC = () => {
       const response = await fetch(`/api/events/${id}/status?status=${status}`, {
         method: 'PUT'
       });
+      if (!isMountedRef.current) return;
       if (response.ok) {
         message.success('事件状态更新成功');
         fetchEvents();
@@ -497,7 +539,9 @@ const EventsPage: React.FC = () => {
         message.error('更新事件状态失败');
       }
     } catch (error) {
-      message.error('更新事件状态失败');
+      if (isMountedRef.current) {
+        message.error('更新事件状态失败');
+      }
     }
   };
 
@@ -580,7 +624,7 @@ const EventsPage: React.FC = () => {
       width: 150,
       render: (text) => (
         <Tag color="blue" style={{ fontWeight: 500, padding: '2px 8px' }}>
-          {getDisplayText(text)}
+          {translate(EVENT_TYPE_MAP, text) || getDisplayText(text)}
         </Tag>
       )
     },
@@ -590,17 +634,8 @@ const EventsPage: React.FC = () => {
       key: 'severity',
       width: 120,
       render: (severity) => {
-        const colors = {
-          LOW: 'green',
-          MEDIUM: 'orange',
-          HIGH: 'red',
-          CRITICAL: 'purple',
-          INFO: 'blue',
-          WARN: 'orange',
-          ERROR: 'red',
-          DEBUG: 'gray'
-        };
-        const icons = {
+        const { label, color } = getSeverity(severity);
+        const icons: Record<string, React.ReactNode> = {
           HIGH: <WarningOutlined />,
           MEDIUM: <WarningOutlined />,
           LOW: <CheckCircleOutlined />,
@@ -608,19 +643,19 @@ const EventsPage: React.FC = () => {
           INFO: <InfoCircleOutlined />,
           DEBUG: <SettingOutlined />
         };
+        const colorHex: Record<string, string> = {
+          red: '#ff4d4f', orange: '#fa8c16', gold: '#faad14',
+          green: '#52c41a', blue: '#1890ff', default: '#d9d9d9'
+        };
+        const hex = colorHex[color] || '#1890ff';
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <div style={{
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              background: colors[severity as keyof typeof colors] || '#1890ff',
-              boxShadow: `0 0 6px ${colors[severity as keyof typeof colors] || '#1890ff'}`
+              width: '8px', height: '8px', borderRadius: '50%',
+              background: hex, boxShadow: `0 0 6px ${hex}`
             }} />
-            {icons[severity as keyof typeof icons] || <InfoCircleOutlined />}
-            <span style={{ fontSize: '12px', fontWeight: 500 }}>
-              {getDisplayText(severity)}
-            </span>
+            {icons[severity?.toUpperCase()] || <InfoCircleOutlined />}
+            <span style={{ fontSize: '12px', fontWeight: 500 }}>{label}</span>
           </div>
         );
       }
@@ -765,7 +800,11 @@ const EventsPage: React.FC = () => {
 
   // 初始化数据
   useEffect(() => {
+    isMountedRef.current = true;
+    let statsTimer: ReturnType<typeof setTimeout> | null = null;
+
     const initData = async () => {
+      if (!isMountedRef.current) return;
       setLoading(true);
       try {
         searchForm.setFieldsValue({
@@ -777,10 +816,12 @@ const EventsPage: React.FC = () => {
         });
 
         await fetchEvents();
+        if (!isMountedRef.current) return;
         setLoading(false);
 
         // 同时获取仪表板统计和趋势数据
-        setTimeout(async () => {
+        statsTimer = setTimeout(async () => {
+          if (!isMountedRef.current) return;
           try {
             await Promise.allSettled([
               fetchDashboardStats(),
@@ -797,18 +838,24 @@ const EventsPage: React.FC = () => {
         } catch (e) {
           console.error('获取最近事件也失败:', e);
         } finally {
-          setLoading(false);
+          if (isMountedRef.current) setLoading(false);
         }
       }
     };
 
     initData();
+
+    return () => {
+      isMountedRef.current = false;
+      if (statsTimer) clearTimeout(statsTimer);
+    };
   }, []);
 
   // 显示事件详情
   const showEventDetail = async (record: EventData) => {
     try {
       const response = await fetch(`/api/events/${record.id}`);
+      if (!isMountedRef.current) return;
       if (response.ok) {
         const eventData = await response.json();
         Modal.info({
@@ -853,11 +900,15 @@ const EventsPage: React.FC = () => {
           onOk() {},
         });
       } else {
-        message.error('获取事件详情失败');
+        if (isMountedRef.current) {
+          message.error('获取事件详情失败');
+        }
       }
     } catch (error) {
       console.error('获取事件详情错误:', error);
-      message.error('获取事件详情失败');
+      if (isMountedRef.current) {
+        message.error('获取事件详情失败');
+      }
     }
   };
 

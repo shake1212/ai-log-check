@@ -39,6 +39,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
+import { getWmiInfoType } from '../../utils/enumLabels';
 
 // 导入服务
 import {
@@ -488,7 +489,8 @@ const SystemInfoManagement: React.FC = () => {
     {
       title: '信息类型',
       dataIndex: 'infoType',
-      key: 'infoType'
+      key: 'infoType',
+      render: (type) => getWmiInfoType(type)
     },
     {
       title: '状态',

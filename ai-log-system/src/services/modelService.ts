@@ -129,6 +129,7 @@ export const modelService = {
   deactivateModel: (id: string) => api.post<ModelInfo>(`/models/${id}/deactivate`, {}),
 };
 
+// TODO: REMOVE MOCK DATA - 待删除的模拟数据
 // 模拟响应数据（开发阶段使用）
 export const mockModels: ModelInfo[] = [
   {

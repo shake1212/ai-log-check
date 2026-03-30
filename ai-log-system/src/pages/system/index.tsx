@@ -138,6 +138,7 @@ const ROLE_COLORS = {
   VIEWER: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)'
 };
 
+// TODO: REMOVE MOCK DATA - 待删除的模拟数据
 // 模拟用户数据
 const generateMockUsers = (): User[] => {
   return [
@@ -199,6 +200,7 @@ const generateMockUsers = (): User[] => {
   ];
 };
 
+// TODO: REMOVE MOCK DATA - 待删除的模拟数据
 // 模拟操作日志数据
 const generateMockAuditLogs = (count: number): AuditLog[] => {
   const actions: string[] = ['登录', '查看日志', '修改配置', '处理预警', '创建用户', '删除用户', '修改用户权限'];
@@ -309,6 +311,7 @@ const SystemPage: React.FC = () => {
     }
   }, []);
 
+  // TODO: REMOVE MOCK DATA - 待删除的模拟数据加载
   useEffect(() => {
     setLoading(true);
     const mockTimer = setTimeout(() => {
@@ -773,15 +776,47 @@ const SystemPage: React.FC = () => {
     },
   ];
 
+  // 脚本功能说明映射表
+  const getScriptFunctionDescription = (scriptKey: string): string => {
+    const descriptions: Record<string, string> = {
+      'system_log_collector': '📋 系统日志采集 - 获取Windows系统日志(应用程序、安全、系统日志),用于安全审计和异常检测',
+      'performance_collector': '📊 性能数据采集 - 收集CPU、内存、磁盘、网络等性能指标,监控系统资源使用情况',
+      'network_monitor': '🌐 网络流量监控 - 监控网络连接和流量数据,检测异常网络行为和潜在威胁',
+      'security_event_collector': '🔒 安全事件采集 - 采集安全相关事件日志,包括登录失败、权限变更等安全事件',
+      'process_monitor': '⚙️ 进程监控 - 监控系统进程状态,检测异常进程和可疑行为',
+      'file_integrity_monitor': '📁 文件完整性监控 - 监控关键文件变更,检测未授权的文件修改',
+      'user_activity_monitor': '👤 用户活动监控 - 记录用户操作行为,用于审计和安全分析',
+      'threat_detection': '🛡️ 威胁检测 - 基于规则库检测系统中的潜在威胁和入侵行为',
+      'log_aggregator': '📦 日志聚合 - 汇总多个来源的日志数据,统一存储和分析',
+      'alert_generator': '🚨 预警生成 - 根据检测结果生成安全预警,及时通知管理员',
+    };
+    return descriptions[scriptKey] || '🔧 数据采集脚本 - 执行系统信息采集和监控任务';
+  };
+
   const scrtColumns: ColumnsType<ScrtInfo> = [
     {
       title: '脚本信息',
       key: 'scriptInfo',
-      width: 200,
+      width: 280,
       render: (_, record) => (
         <div>
-          <Text strong style={{ fontSize: '13px', display: 'block' }}>{record.name}</Text>
-          <Text type="secondary" style={{ fontSize: '11px' }}>{record.description}</Text>
+          <Text strong style={{ fontSize: '13px', display: 'block', marginBottom: '4px' }}>
+            {record.name}
+          </Text>
+          <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginBottom: '6px' }}>
+            {record.description}
+          </Text>
+          <div style={{ 
+            padding: '6px 10px', 
+            background: '#f0f7ff', 
+            borderLeft: '3px solid #1890ff',
+            borderRadius: '4px',
+            fontSize: '11px',
+            color: '#666',
+            lineHeight: '1.5'
+          }}>
+            {getScriptFunctionDescription(record.key)}
+          </div>
         </div>
       ),
     },

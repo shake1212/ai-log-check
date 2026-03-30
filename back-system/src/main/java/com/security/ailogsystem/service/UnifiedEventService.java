@@ -1,7 +1,10 @@
 package com.security.ailogsystem.service;
 
+import com.security.ailogsystem.dto.RuleMatchResult;
+import com.security.ailogsystem.dto.ThreatLevel;
 import com.security.ailogsystem.dto.UnifiedEventQueryDTO;
 import com.security.ailogsystem.dto.UnifiedSecurityEventDTO;
+import com.security.ailogsystem.dto.request.AlertRequest;
 import com.security.ailogsystem.model.UnifiedSecurityEvent;
 import com.security.ailogsystem.repository.UnifiedEventRepository;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.persistence.criteria.Predicate;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,7 +34,9 @@ import java.util.stream.Collectors;
 public class UnifiedEventService {
 
     private final UnifiedEventRepository eventRepository;
-    private final AdvancedAnomalyDetector anomalyDetector; // 添加异常检测器注入
+    private final AdvancedAnomalyDetector anomalyDetector;
+    private final RuleEngineService ruleEngineService;
+    private final AlertService alertService;
 
     /**
      * 创建安全事件
@@ -41,16 +47,17 @@ public class UnifiedEventService {
 
         UnifiedSecurityEvent event = eventDTO.toEntity();
 
-        // 添加异常检测
+        // 异常检测
         try {
             anomalyDetector.detectAnomalies(event);
-            log.debug("异常检测完成，分数: {}", event.getAnomalyScore());
         } catch (Exception e) {
             log.warn("异常检测失败: {}", e.getMessage());
-            // 即使检测失败也继续保存事件
         }
 
         UnifiedSecurityEvent savedEvent = eventRepository.save(event);
+
+        // 规则引擎匹配
+        runRuleEngine(savedEvent);
 
         return UnifiedSecurityEventDTO.fromEntity(savedEvent);
     }
@@ -66,22 +73,69 @@ public class UnifiedEventService {
                 .map(UnifiedSecurityEventDTO::toEntity)
                 .collect(Collectors.toList());
 
-        // 对每个事件进行异常检测
+        // 异常检测
         events.forEach(event -> {
             try {
                 anomalyDetector.detectAnomalies(event);
-                log.debug("事件异常检测完成，分数: {}", event.getAnomalyScore());
             } catch (Exception e) {
                 log.warn("异常检测失败: {}", e.getMessage());
-                // 继续处理其他事件，不中断批量操作
             }
         });
 
         List<UnifiedSecurityEvent> savedEvents = eventRepository.saveAll(events);
 
+        // 规则引擎匹配（每个事件独立匹配）
+        savedEvents.forEach(this::runRuleEngine);
+
         return savedEvents.stream()
                 .map(UnifiedSecurityEventDTO::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 对单个事件执行规则引擎匹配，命中时自动创建告警
+     */
+    private void runRuleEngine(UnifiedSecurityEvent event) {
+        try {
+            RuleMatchResult ruleMatch = ruleEngineService.matchRules(event);
+
+            if (!ruleMatch.getHasMatch()) {
+                return;
+            }
+
+            Double threatScore = ruleEngineService.calculateThreatScore(event, ruleMatch);
+            ThreatLevel threatLevel = ruleEngineService.determineThreatLevel(threatScore);
+
+            // 更新事件的威胁等级
+            event.setThreatLevel(threatLevel.name());
+            eventRepository.save(event);
+
+            log.info("规则匹配命中: 事件ID={}, 匹配规则数={}, 威胁等级={}, 分数={}",
+                    event.getId(), ruleMatch.getMatchedRules().size(), threatLevel, threatScore);
+
+            // 为每条命中的规则创建告警
+            for (RuleMatchResult.MatchedRule matched : ruleMatch.getMatchedRules()) {
+                try {
+                    AlertRequest alertRequest = AlertRequest.builder()
+                            .alertId("RULE_" + matched.getRuleId() + "_EVT_" + event.getId())
+                            .source("RULE_ENGINE")
+                            .alertType(matched.getThreatType() != null ? matched.getThreatType() : matched.getRuleName())
+                            .alertLevel(matched.getSeverity() != null ? matched.getSeverity() : threatLevel.name())
+                            .description(String.format("规则[%s]命中: %s",
+                                    matched.getRuleName(),
+                                    event.getNormalizedMessage() != null ? event.getNormalizedMessage() : event.getRawMessage()))
+                            .aiConfidence(BigDecimal.valueOf(matched.getConfidence() != null ? matched.getConfidence() : 0.9))
+                            .build();
+
+                    alertService.createAlert(alertRequest);
+                } catch (Exception e) {
+                    log.warn("创建规则告警失败: 规则={}, 事件={}, 原因={}", matched.getRuleName(), event.getId(), e.getMessage());
+                }
+            }
+
+        } catch (Exception e) {
+            log.error("规则引擎匹配失败: 事件ID={}, 原因={}", event.getId(), e.getMessage());
+        }
     }
 
     /**
