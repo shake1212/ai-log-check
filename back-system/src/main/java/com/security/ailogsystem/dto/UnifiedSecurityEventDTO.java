@@ -87,7 +87,14 @@ public class UnifiedSecurityEventDTO {
     private Integer size;
     private String sortBy;
     private String sortDirection;
+    @Builder.Default
+    private Double aiAnomalyScore = 0.0;     // AI异常分数 (0-1)
 
+    @Builder.Default
+    private Boolean aiIsAnomaly = false;     // AI是否判定为异常
+
+    @Builder.Default
+    private Double combinedScore = 0.0;      // 综合分数 (0-1)
     /**
      * 从实体类转换为DTO
      */
@@ -130,6 +137,11 @@ public class UnifiedSecurityEventDTO {
                 .updatedAt(entity.getUpdatedAt())
                 .features(entity.getFeatures())
                 .rawData(entity.getRawData())
+                .threatLevel(entity.getThreatLevel())
+                // 新增 AI 字段映射
+                .aiAnomalyScore(entity.getAiAnomalyScore())
+                .aiIsAnomaly(entity.getAiIsAnomaly())
+                .combinedScore(entity.getCombinedScore())
                 .build();
     }
 
@@ -171,6 +183,11 @@ public class UnifiedSecurityEventDTO {
                 .resolutionNotes(this.resolutionNotes)
                 .resolvedAt(this.resolvedAt)
                 .rawData(this.rawData)
+                .threatLevel(this.threatLevel)
+                // 新增 AI 字段
+                .aiAnomalyScore(this.aiAnomalyScore)
+                .aiIsAnomaly(this.aiIsAnomaly)
+                .combinedScore(this.combinedScore)
                 .build();
 
         // 设置 Map 数据

@@ -127,6 +127,14 @@ public class UnifiedSecurityEvent {
 
     @Column(name = "level")
     private String level;
+    @Column(name = "ai_anomaly_score")
+    private Double aiAnomalyScore;
+
+    @Column(name = "ai_is_anomaly")
+    private Boolean aiIsAnomaly;
+
+    @Column(name = "combined_score")
+    private Double combinedScore;
     // 辅助方法：获取 eventData Map
     @Transient
     public Map<String, Object> getEventData() {

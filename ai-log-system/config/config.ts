@@ -90,12 +90,12 @@ export default defineConfig({
           name: 'system-monitor',
           icon: 'MonitorOutlined',
         },
-        {
-          path: '/database',
-          component: '@/pages/database/index',
-          name: 'database',
-          icon: 'DatabaseOutlined',
-        },
+        // {
+        //   path: '/database',
+        //   component: '@/pages/database/index',
+        //   name: 'database',
+        //   icon: 'DatabaseOutlined',
+        // },
         { 
           path: '/system', 
           component: '@/pages/system/index',

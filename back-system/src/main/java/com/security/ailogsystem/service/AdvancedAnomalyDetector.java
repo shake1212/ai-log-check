@@ -50,6 +50,18 @@ public class AdvancedAnomalyDetector {
     );
 
     public void detectAnomalies(UnifiedSecurityEvent event) {
+        Set<String> skipEventTypes = Set.of(
+                "MEMORY_USAGE", "CPU_USAGE", "DISK_USAGE", "NETWORK_USAGE",
+                "COLLECTOR_STATUS", "COLLECTOR_ERROR", "COLLECTOR_STOPPED",
+                "APPLICATION_METRICS", "PERFORMANCE_METRIC",
+                "SYSTEM_PERFORMANCE", "SYSTEM_CPU_INFO", "SYSTEM_MEMORY_INFO",
+                "SYSTEM_DISK_INFO", "SYSTEM_PROCESS_INFO", "SYSTEM_NETWORK_INFO","SYSTEM_SYSTEM_BASIC"
+        );
+        if (skipEventTypes.contains(event.getEventType())) {
+            log.debug("跳过非安全事件的异常检测: eventType={}, id={}",
+                    event.getEventType(), event.getId());
+            return;
+        }
         AnomalyDetectionResult result = new AnomalyDetectionResult();
 
         try {

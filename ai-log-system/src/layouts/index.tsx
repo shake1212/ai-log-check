@@ -27,7 +27,7 @@ import WMIManagement from '../pages/wmi/index';
 import DebugRoute from '../pages/debug-route';
 import EventsPage from '../pages/events/index';
 import BatchOperationsPage from '../pages/batch-operations/index';
-import DatabaseManagement from '../pages/database/index';
+// import DatabaseManagement from '../pages/database/index';
 // 新增导入
 import LogCollectorPage from '../pages/log-collector';
 // import LogsPage from '../pages/logs/index';
@@ -131,11 +131,11 @@ export default function DefaultLayout() {
       icon: <SettingOutlined />,
       label: '系统设置',
     },
-    {
-      key: '/database',
-      icon: <DatabaseOutlined />,
-      label: '数据库管理',
-    },
+    // {
+    //   key: '/database',
+    //   icon: <DatabaseOutlined />,
+    //   label: '数据库管理',
+    // },
     {
       key: '/batch-operations',
       icon: <SettingOutlined />,
@@ -228,8 +228,7 @@ export default function DefaultLayout() {
         return <EventsPage />;
       case '/batch-operations':
         return <BatchOperationsPage />;
-      case '/database':
-        return <DatabaseManagement />;
+     
       case '/debug-route':
         return <DebugRoute />;
       case '/system':

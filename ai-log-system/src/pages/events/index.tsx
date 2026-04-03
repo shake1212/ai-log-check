@@ -90,6 +90,10 @@ interface EventData {
   sourceSystem?: string;
   hostName?: string;
   description?: string;
+  // 新增 AI 字段
+  aiAnomalyScore?: number;   // AI异常分数 (0-1)
+  aiIsAnomaly?: boolean;     // AI是否判定异常
+  combinedScore?: number;    // 综合分数 (0-1)
 }
 
 // 查询参数接口
@@ -732,7 +736,7 @@ const EventsPage: React.FC = () => {
       title: '异常',
       dataIndex: 'isAnomaly',
       key: 'isAnomaly',
-      width: 120,
+      width: 100,
       render: (isAnomaly, record) => (
         <Space>
           <div style={{
@@ -759,6 +763,53 @@ const EventsPage: React.FC = () => {
           )}
         </Space>
       )
+    },
+    // 新增：AI判定列
+    {
+      title: 'AI判定',
+      dataIndex: 'aiIsAnomaly',
+      key: 'aiIsAnomaly',
+      width: 90,
+      render: (aiIsAnomaly) => (
+        <Tag color={aiIsAnomaly === true ? 'error' : aiIsAnomaly === false ? 'success' : 'default'}>
+          {aiIsAnomaly === undefined ? '-' : (aiIsAnomaly ? '异常' : '正常')}
+        </Tag>
+      ),
+      sorter: true,
+    },
+    // 新增：AI分数列（同时显示AI异常分数和综合分数）
+    {
+      title: 'AI分数',
+      dataIndex: 'aiAnomalyScore',
+      key: 'aiAnomalyScore',
+      width: 130,
+      render: (score, record) => {
+        if (score === undefined && record.combinedScore === undefined) return '-';
+        return (
+          <Space size="small">
+            {score !== undefined && (
+              <Tooltip title={`AI异常分数: ${(score * 100).toFixed(1)}%`}>
+                <Progress 
+                  type="circle" 
+                  percent={Math.round(score * 100)} 
+                  size={28}
+                  strokeColor={score > 0.8 ? '#ff4d4f' : score > 0.5 ? '#fa8c16' : '#faad14'}
+                  format={() => `${Math.round(score * 100)}%`}
+                />
+              </Tooltip>
+            )}
+            {record.combinedScore !== undefined && (
+              <Tooltip title={`综合分数: ${(record.combinedScore * 100).toFixed(1)}%`}>
+                <Badge 
+                  count={`综${Math.round(record.combinedScore * 100)}%`} 
+                  style={{ backgroundColor: '#1890ff', fontSize: 10 }}
+                />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
+      sorter: true,
     },
     {
       title: '操作',
@@ -881,6 +932,22 @@ const EventsPage: React.FC = () => {
                     <Descriptions.Item label="异常分数">{eventData.anomalyScore}</Descriptions.Item>
                     <Descriptions.Item label="异常原因">{getDisplayText(eventData.anomalyReason)}</Descriptions.Item>
                   </>
+                )}
+                {/* 新增 AI 字段展示 */}
+                {eventData.aiAnomalyScore !== undefined && (
+                  <Descriptions.Item label="AI异常分数">
+                    {(eventData.aiAnomalyScore * 100).toFixed(1)}%
+                  </Descriptions.Item>
+                )}
+                {eventData.aiIsAnomaly !== undefined && (
+                  <Descriptions.Item label="AI判定">
+                    {eventData.aiIsAnomaly ? '异常' : '正常'}
+                  </Descriptions.Item>
+                )}
+                {eventData.combinedScore !== undefined && (
+                  <Descriptions.Item label="综合分数">
+                    {(eventData.combinedScore * 100).toFixed(1)}%
+                  </Descriptions.Item>
                 )}
                 <Descriptions.Item label="创建时间">{eventData.createdAt ? dayjs(eventData.createdAt).format('YYYY-MM-DD HH:mm:ss') : '-'}</Descriptions.Item>
                 <Descriptions.Item label="更新时间">{eventData.updatedAt ? dayjs(eventData.updatedAt).format('YYYY-MM-DD HH:mm:ss') : '-'}</Descriptions.Item>
@@ -1296,11 +1363,7 @@ const EventsPage: React.FC = () => {
           marginTop: 'auto',
           padding: '8px 0'
         }}>
-         
-          
-         
-          
-         
+          {/* 可选的额外指标 */}
         </div>
         
         {/* 添加数据更新时间 */}
@@ -1481,416 +1544,416 @@ const EventsPage: React.FC = () => {
   );
 
   // 渲染统计分析页面
-const renderStatisticsTab = () => (
-  <Card
-    title={
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <BarChartOutlined />
-        <Text strong style={{ fontSize: '16px' }}>事件统计分析</Text>
-        {dashboardStats && (
-          <Badge 
-            count={dashboardStats.totalLogs} 
-            style={{ 
-              backgroundColor: '#1890ff',
-              marginLeft: '8px'
-            }} 
-          />
-        )}
-      </div>
-    }
-    style={{ 
-      borderRadius: '16px',
-      marginBottom: '32px',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
-    }}
-    bodyStyle={{ padding: '20px' }}
-  >
-    {/* 检查统计状态 */}
-    {!dashboardStats ? (
-      <div style={{ 
-        padding: '40px 0', 
-        textAlign: 'center',
-        color: '#999'
-      }}>
-        <Spin size="large" />
-        <div style={{ marginTop: '16px' }}>正在加载统计数据...</div>
-      </div>
-    ) : (
-      <>
-        {/* 今日统计卡片 */}
-        <Row gutter={[24, 24]} style={{ marginBottom: '24px' }}>
-          <Col span={8}>
-            <Card
-              title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <ClockCircleOutlined />
-                  <Text strong>今日事件</Text>
-                </div>
-              }
-              style={{ borderRadius: '12px', height: '100%' }}
-            >
-              <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                <Title level={2} style={{ color: '#1890ff', margin: 0 }}>
-                  {dashboardStats.todayLogs}
-                </Title>
-                <Text type="secondary">条事件</Text>
-                <div style={{ marginTop: '16px' }}>
-                  <Progress 
-                    type="circle" 
-                    percent={dashboardStats.totalLogs > 0 ? (dashboardStats.todayLogs / dashboardStats.totalLogs * 100) : 0}
-                    width={80}
-                    format={() => (
-                      <div>
-                        <div style={{ fontSize: '12px' }}>今日占比</div>
-                        <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
-                          {dashboardStats.totalLogs > 0 ? ((dashboardStats.todayLogs / dashboardStats.totalLogs * 100).toFixed(1)) : 0}%
+  const renderStatisticsTab = () => (
+    <Card
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <BarChartOutlined />
+          <Text strong style={{ fontSize: '16px' }}>事件统计分析</Text>
+          {dashboardStats && (
+            <Badge 
+              count={dashboardStats.totalLogs} 
+              style={{ 
+                backgroundColor: '#1890ff',
+                marginLeft: '8px'
+              }} 
+            />
+          )}
+        </div>
+      }
+      style={{ 
+        borderRadius: '16px',
+        marginBottom: '32px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
+      }}
+      bodyStyle={{ padding: '20px' }}
+    >
+      {/* 检查统计状态 */}
+      {!dashboardStats ? (
+        <div style={{ 
+          padding: '40px 0', 
+          textAlign: 'center',
+          color: '#999'
+        }}>
+          <Spin size="large" />
+          <div style={{ marginTop: '16px' }}>正在加载统计数据...</div>
+        </div>
+      ) : (
+        <>
+          {/* 今日统计卡片 */}
+          <Row gutter={[24, 24]} style={{ marginBottom: '24px' }}>
+            <Col span={8}>
+              <Card
+                title={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ClockCircleOutlined />
+                    <Text strong>今日事件</Text>
+                  </div>
+                }
+                style={{ borderRadius: '12px', height: '100%' }}
+              >
+                <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                  <Title level={2} style={{ color: '#1890ff', margin: 0 }}>
+                    {dashboardStats.todayLogs}
+                  </Title>
+                  <Text type="secondary">条事件</Text>
+                  <div style={{ marginTop: '16px' }}>
+                    <Progress 
+                      type="circle" 
+                      percent={dashboardStats.totalLogs > 0 ? (dashboardStats.todayLogs / dashboardStats.totalLogs * 100) : 0}
+                      width={80}
+                      format={() => (
+                        <div>
+                          <div style={{ fontSize: '12px' }}>今日占比</div>
+                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
+                            {dashboardStats.totalLogs > 0 ? ((dashboardStats.todayLogs / dashboardStats.totalLogs * 100).toFixed(1)) : 0}%
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  />
+                      )}
+                    />
+                  </div>
                 </div>
-              </div>
-            </Card>
-          </Col>
-          
-          <Col span={8}>
-            <Card
-              title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <WarningOutlined />
-                  <Text strong>异常事件</Text>
-                </div>
-              }
-              style={{ borderRadius: '12px', height: '100%' }}
-            >
-              <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                <Title level={2} style={{ color: '#ff4d4f', margin: 0 }}>
-                  {dashboardStats.anomalyCount}
-                </Title>
-                <Text type="secondary">条异常</Text>
-                <div style={{ marginTop: '16px' }}>
-                  <Progress 
-                    type="circle" 
-                    percent={dashboardStats.totalLogs > 0 ? (dashboardStats.anomalyCount / dashboardStats.totalLogs * 100) : 0}
-                    width={80}
-                    strokeColor="#ff4d4f"
-                    format={() => (
-                      <div>
-                        <div style={{ fontSize: '12px' }}>异常率</div>
-                        <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
-                          {dashboardStats.totalLogs > 0 ? ((dashboardStats.anomalyCount / dashboardStats.totalLogs * 100).toFixed(1)) : 0}%
+              </Card>
+            </Col>
+            
+            <Col span={8}>
+              <Card
+                title={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <WarningOutlined />
+                    <Text strong>异常事件</Text>
+                  </div>
+                }
+                style={{ borderRadius: '12px', height: '100%' }}
+              >
+                <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                  <Title level={2} style={{ color: '#ff4d4f', margin: 0 }}>
+                    {dashboardStats.anomalyCount}
+                  </Title>
+                  <Text type="secondary">条异常</Text>
+                  <div style={{ marginTop: '16px' }}>
+                    <Progress 
+                      type="circle" 
+                      percent={dashboardStats.totalLogs > 0 ? (dashboardStats.anomalyCount / dashboardStats.totalLogs * 100) : 0}
+                      width={80}
+                      strokeColor="#ff4d4f"
+                      format={() => (
+                        <div>
+                          <div style={{ fontSize: '12px' }}>异常率</div>
+                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
+                            {dashboardStats.totalLogs > 0 ? ((dashboardStats.anomalyCount / dashboardStats.totalLogs * 100).toFixed(1)) : 0}%
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  />
+                      )}
+                    />
+                  </div>
                 </div>
-              </div>
-            </Card>
-          </Col>
-          
-          <Col span={8}>
-            <Card
-              title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <DatabaseOutlined />
-                  <Text strong>总事件数</Text>
+              </Card>
+            </Col>
+            
+            <Col span={8}>
+              <Card
+                title={
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <DatabaseOutlined />
+                    <Text strong>总事件数</Text>
+                  </div>
+                }
+                style={{ borderRadius: '12px', height: '100%' }}
+              >
+                <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                  <Title level={2} style={{ color: '#52c41a', margin: 0 }}>
+                    {dashboardStats.totalLogs.toLocaleString()}
+                  </Title>
+                  <Text type="secondary">条记录</Text>
+                  <div style={{ marginTop: '16px' }}>
+                    <Text style={{ fontSize: '14px' }}>
+                      最后更新: {dayjs(dashboardStats.lastUpdate).format('HH:mm:ss')}
+                    </Text>
+                  </div>
                 </div>
-              }
-              style={{ borderRadius: '12px', height: '100%' }}
-            >
-              <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                <Title level={2} style={{ color: '#52c41a', margin: 0 }}>
-                  {dashboardStats.totalLogs.toLocaleString()}
-                </Title>
-                <Text type="secondary">条记录</Text>
-                <div style={{ marginTop: '16px' }}>
-                  <Text style={{ fontSize: '14px' }}>
-                    最后更新: {dayjs(dashboardStats.lastUpdate).format('HH:mm:ss')}
-                  </Text>
-                </div>
-              </div>
-            </Card>
-          </Col>
-        </Row>
+              </Card>
+            </Col>
+          </Row>
 
-        {/* 严重程度分布卡片 */}
-        <Card
-          title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <SafetyCertificateOutlined />
-              <Text strong>事件严重程度分布</Text>
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                {dashboardStats.severityCounts ? Object.keys(dashboardStats.severityCounts).length : 0} 个级别
-              </Text>
-            </div>
-          }
-          style={{ borderRadius: '12px', marginBottom: '24px' }}
-          loading={statisticsLoading}
-        >
-          <div style={{ minHeight: '300px' }}>
-            {dashboardStats.severityCounts && Object.keys(dashboardStats.severityCounts).length > 0 ? (
-              <div>
-                {Object.entries(dashboardStats.severityCounts).map(([severity, count]) => {
-                  const severityLevels = {
-                    'HIGH': { color: '#ff4d4f', label: '高', gradient: 'rgba(255,77,79,0.1)' },
-                    'MEDIUM': { color: '#fa8c16', label: '中', gradient: 'rgba(250,140,22,0.1)' },
-                    'LOW': { color: '#52c41a', label: '低', gradient: 'rgba(82,196,26,0.1)' },
-                    'INFO': { color: '#1890ff', label: '信息', gradient: 'rgba(24,144,255,0.1)' },
-                    'CRITICAL': { color: '#722ed1', label: '严重', gradient: 'rgba(114,46,209,0.1)' },
-                    'WARN': { color: '#faad14', label: '警告', gradient: 'rgba(250,173,20,0.1)' },
-                    'ERROR': { color: '#ff4d4f', label: '错误', gradient: 'rgba(255,77,79,0.1)' },
-                    'DEBUG': { color: '#666666', label: '调试', gradient: 'rgba(102,102,102,0.1)' }
-                  };
-                  
-                  const levelInfo = severityLevels[severity as keyof typeof severityLevels] || { 
-                    color: '#1890ff', 
-                    label: severity, 
-                    gradient: 'rgba(24,144,255,0.1)' 
-                  };
-                  
-                  const percentage = dashboardStats.totalLogs > 0 ? ((count / dashboardStats.totalLogs) * 100).toFixed(1) : '0.0';
-                  
-                  return (
-                    <div key={severity} style={{ 
-                      marginBottom: '16px',
-                      padding: '16px',
-                      borderRadius: '12px',
-                      background: `linear-gradient(90deg, ${levelInfo.gradient} 0%, rgba(255, 255, 255, 0) 100%)`,
-                      borderLeft: `4px solid ${levelInfo.color}`,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      transition: 'all 0.3s',
-                      cursor: 'pointer',
-                      '&:hover': {
-                        transform: 'translateX(4px)',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                      }
-                    } as React.CSSProperties}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
-                        <div style={{
-                          width: '40px',
-                          height: '40px',
-                          borderRadius: '8px',
-                          background: levelInfo.color,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: 'white',
-                          fontWeight: 'bold',
-                          fontSize: '14px'
-                        }}>
-                          {levelInfo.label.charAt(0)}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div>
-                              <Text strong style={{ fontSize: '14px' }}>{levelInfo.label}</Text>
-                              <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                                {severity} • 占比: {percentage}%
+          {/* 严重程度分布卡片 */}
+          <Card
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <SafetyCertificateOutlined />
+                <Text strong>事件严重程度分布</Text>
+                <Text type="secondary" style={{ fontSize: '12px' }}>
+                  {dashboardStats.severityCounts ? Object.keys(dashboardStats.severityCounts).length : 0} 个级别
+                </Text>
+              </div>
+            }
+            style={{ borderRadius: '12px', marginBottom: '24px' }}
+            loading={statisticsLoading}
+          >
+            <div style={{ minHeight: '300px' }}>
+              {dashboardStats.severityCounts && Object.keys(dashboardStats.severityCounts).length > 0 ? (
+                <div>
+                  {Object.entries(dashboardStats.severityCounts).map(([severity, count]) => {
+                    const severityLevels = {
+                      'HIGH': { color: '#ff4d4f', label: '高', gradient: 'rgba(255,77,79,0.1)' },
+                      'MEDIUM': { color: '#fa8c16', label: '中', gradient: 'rgba(250,140,22,0.1)' },
+                      'LOW': { color: '#52c41a', label: '低', gradient: 'rgba(82,196,26,0.1)' },
+                      'INFO': { color: '#1890ff', label: '信息', gradient: 'rgba(24,144,255,0.1)' },
+                      'CRITICAL': { color: '#722ed1', label: '严重', gradient: 'rgba(114,46,209,0.1)' },
+                      'WARN': { color: '#faad14', label: '警告', gradient: 'rgba(250,173,20,0.1)' },
+                      'ERROR': { color: '#ff4d4f', label: '错误', gradient: 'rgba(255,77,79,0.1)' },
+                      'DEBUG': { color: '#666666', label: '调试', gradient: 'rgba(102,102,102,0.1)' }
+                    };
+                    
+                    const levelInfo = severityLevels[severity as keyof typeof severityLevels] || { 
+                      color: '#1890ff', 
+                      label: severity, 
+                      gradient: 'rgba(24,144,255,0.1)' 
+                    };
+                    
+                    const percentage = dashboardStats.totalLogs > 0 ? ((count / dashboardStats.totalLogs) * 100).toFixed(1) : '0.0';
+                    
+                    return (
+                      <div key={severity} style={{ 
+                        marginBottom: '16px',
+                        padding: '16px',
+                        borderRadius: '12px',
+                        background: `linear-gradient(90deg, ${levelInfo.gradient} 0%, rgba(255, 255, 255, 0) 100%)`,
+                        borderLeft: `4px solid ${levelInfo.color}`,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        transition: 'all 0.3s',
+                        cursor: 'pointer',
+                        '&:hover': {
+                          transform: 'translateX(4px)',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                        }
+                      } as React.CSSProperties}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
+                          <div style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '8px',
+                            background: levelInfo.color,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'white',
+                            fontWeight: 'bold',
+                            fontSize: '14px'
+                          }}>
+                            {levelInfo.label.charAt(0)}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div>
+                                <Text strong style={{ fontSize: '14px' }}>{levelInfo.label}</Text>
+                                <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
+                                  {severity} • 占比: {percentage}%
+                                </div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <Text strong style={{ fontSize: '18px', color: levelInfo.color }}>
+                                  {count.toLocaleString()}
+                                </Text>
+                                <div style={{ fontSize: '12px', color: '#666' }}>条事件</div>
                               </div>
                             </div>
-                            <div style={{ textAlign: 'right' }}>
-                              <Text strong style={{ fontSize: '18px', color: levelInfo.color }}>
-                                {count.toLocaleString()}
-                              </Text>
-                              <div style={{ fontSize: '12px', color: '#666' }}>条事件</div>
-                            </div>
+                            <Progress 
+                              percent={parseFloat(percentage)}
+                              strokeColor={levelInfo.color}
+                              size="small"
+                              style={{ marginTop: '12px' }}
+                              showInfo={false}
+                            />
                           </div>
-                          <Progress 
-                            percent={parseFloat(percentage)}
-                            strokeColor={levelInfo.color}
-                            size="small"
-                            style={{ marginTop: '12px' }}
-                            showInfo={false}
-                          />
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-                
-                {/* 统计摘要 */}
+                    );
+                  })}
+                  
+                  {/* 统计摘要 */}
+                  <div style={{ 
+                    marginTop: '24px',
+                    padding: '16px',
+                    background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
+                    borderRadius: '12px',
+                    border: '1px solid #b7eb8f'
+                  }}>
+                    <Row gutter={[16, 16]}>
+                      <Col span={6}>
+                        <div style={{ textAlign: 'center' }}>
+                          <Text strong style={{ fontSize: '20px', color: '#1890ff' }}>
+                            {dashboardStats.totalLogs.toLocaleString()}
+                          </Text>
+                          <div style={{ fontSize: '12px', color: '#666' }}>总事件数</div>
+                        </div>
+                      </Col>
+                      <Col span={6}>
+                        <div style={{ textAlign: 'center' }}>
+                          <Text strong style={{ fontSize: '20px', color: '#ff4d4f' }}>
+                            {dashboardStats.anomalyCount}
+                          </Text>
+                          <div style={{ fontSize: '12px', color: '#666' }}>异常事件</div>
+                        </div>
+                      </Col>
+                      <Col span={6}>
+                        <div style={{ textAlign: 'center' }}>
+                          <Text strong style={{ fontSize: '20px', color: '#52c41a' }}>
+                            {dashboardStats.todayLogs}
+                          </Text>
+                          <div style={{ fontSize: '12px', color: '#666' }}>今日事件</div>
+                        </div>
+                      </Col>
+                      <Col span={6}>
+                        <div style={{ textAlign: 'center' }}>
+                          <Text strong style={{ fontSize: '20px', color: '#fa8c16' }}>
+                            {Object.keys(dashboardStats.severityCounts || {}).length}
+                          </Text>
+                          <div style={{ fontSize: '12px', color: '#666' }}>严重程度</div>
+                        </div>
+                      </Col>
+                    </Row>
+                  </div>
+                </div>
+              ) : (
                 <div style={{ 
-                  marginTop: '24px',
-                  padding: '16px',
+                  height: '300px', 
+                  display: 'flex', 
+                  flexDirection: 'column',
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  color: '#999',
+                  gap: '16px'
+                }}>
+                  <BarChartOutlined style={{ fontSize: '64px', color: '#d9d9d9' }} />
+                  <div style={{ fontSize: '16px' }}>暂无严重程度统计数据</div>
+                  <Text type="secondary">请等待数据收集或重新加载</Text>
+                  <div style={{ marginTop: '16px' }}>
+                    <Space>
+                      <Button 
+                        type="primary"
+                        onClick={() => fetchDashboardStats()}
+                        loading={statisticsLoading}
+                      >
+                        重新加载统计数据
+                      </Button>
+                      <Button 
+                        onClick={() => triggerLogCollection()}
+                      >
+                        手动收集日志
+                      </Button>
+                    </Space>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* 数据质量卡片 */}
+          <Card
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <DatabaseOutlined />
+                <Text strong>数据质量概览</Text>
+              </div>
+            }
+            style={{ borderRadius: '12px' }}
+          >
+            <Row gutter={[24, 24]}>
+              <Col span={12}>
+                <div style={{ 
+                  padding: '20px',
+                  background: 'linear-gradient(135deg, #f0f5ff 0%, #d6e4ff 100%)',
+                  borderRadius: '12px',
+                  border: '1px solid #adc6ff'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                    <div style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '12px',
+                      background: '#1890ff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <ThunderboltOutlined style={{ fontSize: '24px', color: 'white' }} />
+                    </div>
+                    <div>
+                      <Text strong style={{ fontSize: '16px' }}>数据完整性</Text>
+                      <div style={{ fontSize: '12px', color: '#666' }}>事件记录完整度</div>
+                    </div>
+                  </div>
+                  <Progress 
+                    percent={95.8}
+                    strokeColor="#1890ff"
+                    size="small"
+                    style={{ marginBottom: '8px' }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#666' }}>
+                    <span>完整性评分</span>
+                    <span>95.8%</span>
+                  </div>
+                </div>
+              </Col>
+              
+              <Col span={12}>
+                <div style={{ 
+                  padding: '20px',
                   background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
                   borderRadius: '12px',
                   border: '1px solid #b7eb8f'
                 }}>
-                  <Row gutter={[16, 16]}>
-                    <Col span={6}>
-                      <div style={{ textAlign: 'center' }}>
-                        <Text strong style={{ fontSize: '20px', color: '#1890ff' }}>
-                          {dashboardStats.totalLogs.toLocaleString()}
-                        </Text>
-                        <div style={{ fontSize: '12px', color: '#666' }}>总事件数</div>
-                      </div>
-                    </Col>
-                    <Col span={6}>
-                      <div style={{ textAlign: 'center' }}>
-                        <Text strong style={{ fontSize: '20px', color: '#ff4d4f' }}>
-                          {dashboardStats.anomalyCount}
-                        </Text>
-                        <div style={{ fontSize: '12px', color: '#666' }}>异常事件</div>
-                      </div>
-                    </Col>
-                    <Col span={6}>
-                      <div style={{ textAlign: 'center' }}>
-                        <Text strong style={{ fontSize: '20px', color: '#52c41a' }}>
-                          {dashboardStats.todayLogs}
-                        </Text>
-                        <div style={{ fontSize: '12px', color: '#666' }}>今日事件</div>
-                      </div>
-                    </Col>
-                    <Col span={6}>
-                      <div style={{ textAlign: 'center' }}>
-                        <Text strong style={{ fontSize: '20px', color: '#fa8c16' }}>
-                          {Object.keys(dashboardStats.severityCounts || {}).length}
-                        </Text>
-                        <div style={{ fontSize: '12px', color: '#666' }}>严重程度</div>
-                      </div>
-                    </Col>
-                  </Row>
-                </div>
-              </div>
-            ) : (
-              <div style={{ 
-                height: '300px', 
-                display: 'flex', 
-                flexDirection: 'column',
-                alignItems: 'center', 
-                justifyContent: 'center',
-                color: '#999',
-                gap: '16px'
-              }}>
-                <BarChartOutlined style={{ fontSize: '64px', color: '#d9d9d9' }} />
-                <div style={{ fontSize: '16px' }}>暂无严重程度统计数据</div>
-                <Text type="secondary">请等待数据收集或重新加载</Text>
-                <div style={{ marginTop: '16px' }}>
-                  <Space>
-                    <Button 
-                      type="primary"
-                      onClick={() => fetchDashboardStats()}
-                      loading={statisticsLoading}
-                    >
-                      重新加载统计数据
-                    </Button>
-                    <Button 
-                      onClick={() => triggerLogCollection()}
-                    >
-                      手动收集日志
-                    </Button>
-                  </Space>
-                </div>
-              </div>
-            )}
-          </div>
-        </Card>
-
-        {/* 数据质量卡片 */}
-        <Card
-          title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <DatabaseOutlined />
-              <Text strong>数据质量概览</Text>
-            </div>
-          }
-          style={{ borderRadius: '12px' }}
-        >
-          <Row gutter={[24, 24]}>
-            <Col span={12}>
-              <div style={{ 
-                padding: '20px',
-                background: 'linear-gradient(135deg, #f0f5ff 0%, #d6e4ff 100%)',
-                borderRadius: '12px',
-                border: '1px solid #adc6ff'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                  <div style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '12px',
-                    background: '#1890ff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <ThunderboltOutlined style={{ fontSize: '24px', color: 'white' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                    <div style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '12px',
+                      background: '#52c41a',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <CheckCircleOutlined style={{ fontSize: '24px', color: 'white' }} />
+                    </div>
+                    <div>
+                      <Text strong style={{ fontSize: '16px' }}>数据准确性</Text>
+                      <div style={{ fontSize: '12px', color: '#666' }}>异常检测准确率</div>
+                    </div>
                   </div>
-                  <div>
-                    <Text strong style={{ fontSize: '16px' }}>数据完整性</Text>
-                    <div style={{ fontSize: '12px', color: '#666' }}>事件记录完整度</div>
+                  <Progress 
+                    percent={92.3}
+                    strokeColor="#52c41a"
+                    size="small"
+                    style={{ marginBottom: '8px' }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#666' }}>
+                    <span>准确率</span>
+                    <span>92.3%</span>
                   </div>
                 </div>
-                <Progress 
-                  percent={95.8}
-                  strokeColor="#1890ff"
-                  size="small"
-                  style={{ marginBottom: '8px' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#666' }}>
-                  <span>完整性评分</span>
-                  <span>95.8%</span>
-                </div>
-              </div>
-            </Col>
+              </Col>
+            </Row>
             
-            <Col span={12}>
-              <div style={{ 
-                padding: '20px',
-                background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
-                borderRadius: '12px',
-                border: '1px solid #b7eb8f'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                  <div style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '12px',
-                    background: '#52c41a',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    <CheckCircleOutlined style={{ fontSize: '24px', color: 'white' }} />
-                  </div>
-                  <div>
-                    <Text strong style={{ fontSize: '16px' }}>数据准确性</Text>
-                    <div style={{ fontSize: '12px', color: '#666' }}>异常检测准确率</div>
-                  </div>
-                </div>
-                <Progress 
-                  percent={92.3}
-                  strokeColor="#52c41a"
-                  size="small"
-                  style={{ marginBottom: '8px' }}
-                />
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#666' }}>
-                  <span>准确率</span>
-                  <span>92.3%</span>
-                </div>
-              </div>
-            </Col>
-          </Row>
-          
-          {/* 最后更新时间 */}
-          <div style={{ 
-            marginTop: '24px',
-            padding: '12px',
-            background: '#fafafa',
-            borderRadius: '8px',
-            textAlign: 'center'
-          }}>
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              数据最后更新时间: {dayjs(dashboardStats.lastUpdate).format('YYYY-MM-DD HH:mm:ss')}
-            </Text>
-          </div>
-        </Card>
-      </>
-    )}
-  </Card>
-);
+            {/* 最后更新时间 */}
+            <div style={{ 
+              marginTop: '24px',
+              padding: '12px',
+              background: '#fafafa',
+              borderRadius: '8px',
+              textAlign: 'center'
+            }}>
+              <Text type="secondary" style={{ fontSize: '12px' }}>
+                数据最后更新时间: {dayjs(dashboardStats.lastUpdate).format('YYYY-MM-DD HH:mm:ss')}
+              </Text>
+            </div>
+          </Card>
+        </>
+      )}
+    </Card>
+  );
 
   // 渲染趋势分析页面
   const renderTrendsTab = () => (
@@ -2270,7 +2333,7 @@ const renderStatisticsTab = () => (
               dataSource={events}
               rowKey="id"
               loading={loading}
-              scroll={{ x: 1300 }}
+              scroll={{ x: 1500 }}
               pagination={{
                 ...pagination,
                 showSizeChanger: true,

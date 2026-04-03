@@ -20,11 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -95,7 +91,29 @@ public class UnifiedEventService {
     /**
      * 对单个事件执行规则引擎匹配，命中时自动创建告警
      */
+    /**
+     * 对单个事件执行规则引擎匹配，命中时自动创建告警
+     * 只处理真正的安全事件，过滤掉性能/系统事件
+     */
     private void runRuleEngine(UnifiedSecurityEvent event) {
+        // 1. 定义安全事件类型白名单（只匹配这些类型）
+        List<String> securityEventTypes = Arrays.asList(
+                "LOGIN_FAILED", "LOGIN_SUCCESS", "LOGON_FAILED", "LOGON_SUCCESS",
+                "PROCESS_CREATION", "SUSPICIOUS_PROCESS", "PRIVILEGED_PROCESS",
+                "SUSPICIOUS_CONNECTION", "NETWORK_CONNECTION", "FIREWALL_EVENT",
+                "FILE_ACCESS", "PRIVILEGE_ESCALATION", "USER_CREATED",
+                "USER_DELETED", "GROUP_CHANGED", "SCHEDULED_TASK_CREATED",
+                "SERVICE_INSTALLED", "KERBEROS_TICKET_REQUEST",
+                "WINDOWS_EVENT_4624", "WINDOWS_EVENT_4625", "WINDOWS_EVENT_4688",
+                "SSH_SESSION", "SUDO_USAGE"
+        );
+
+        // 2. 如果不是安全事件，直接返回（不调用规则引擎）
+        if (!securityEventTypes.contains(event.getEventType())) {
+            log.debug("跳过非安全事件类型: eventType={}, id={}", event.getEventType(), event.getId());
+            return;
+        }
+
         try {
             RuleMatchResult ruleMatch = ruleEngineService.matchRules(event);
 
@@ -129,7 +147,8 @@ public class UnifiedEventService {
 
                     alertService.createAlert(alertRequest);
                 } catch (Exception e) {
-                    log.warn("创建规则告警失败: 规则={}, 事件={}, 原因={}", matched.getRuleName(), event.getId(), e.getMessage());
+                    log.warn("创建规则告警失败: 规则={}, 事件={}, 原因={}",
+                            matched.getRuleName(), event.getId(), e.getMessage());
                 }
             }
 

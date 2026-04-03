@@ -166,7 +166,7 @@ log:
       retry-delay-seconds: 30
 
 scripts:
-  base-path: "back-system/src/scripts"
+  base-path: "src/scripts"
   python:
     executable: "back-system/.venv/Scripts/python.exe"
   allowed:
@@ -233,3 +233,11 @@ security:
     default-risk-threshold: 60
     auto-cleanup-days: 30
     max-running-tasks: 10
+
+ai:
+  service:
+    python:
+      command: .venv/Scripts/python.exe   # 相对路径，注意斜杠方向（Windows 也可用 /）
+    script:
+      path: src/scripts/ai_service/ai_service.py
+    auto-start: true
