@@ -41,26 +41,32 @@ public class ScriptProperties {
 
     /**
      * 获取解析后的 Python 可执行文件路径
-     * 如果配置的路径不存在，自动降级到系统 python/python3
+     * 如果配置的路径不存在或不可执行，自动降级到系统 python/python3
      */
     public String getResolvedPythonExecutable() {
         String configured = python.getExecutable();
 
-        // 如果是绝对路径且文件存在，直接使用
+        // 如果是绝对路径且文件存在且可执行，直接使用
         File configuredFile = new File(configured);
         if (configuredFile.isAbsolute() && configuredFile.exists()) {
-            return configured;
+            if (verifyPythonExecutable(configured)) {
+                return configured;
+            }
+            log.warn("配置的Python路径 {} 文件存在但无法执行，尝试降级", configured);
         }
 
         // 如果是相对路径，尝试相对项目根目录解析
         if (!configuredFile.isAbsolute()) {
             String resolved = resolvePath(configured);
             if (new File(resolved).exists()) {
-                return resolved;
+                if (verifyPythonExecutable(resolved)) {
+                    return resolved;
+                }
+                log.warn("解析的Python路径 {} 文件存在但无法执行，尝试降级", resolved);
             }
         }
 
-        // 降级：尝试 venv 相对路径
+        // 降级：尝试 venv 相对路径和系统 python
         String projectRoot = getProjectRoot();
         String[] fallbackPaths = {
             projectRoot + "/back-system/.venv/Scripts/python.exe",  // Windows venv
@@ -74,13 +80,36 @@ public class ScriptProperties {
         for (String path : fallbackPaths) {
             File f = new File(path);
             if (f.exists() || path.equals("python") || path.equals("python3")) {
-                log.info("Python 可执行文件使用: {}", path);
-                return path;
+                if (verifyPythonExecutable(path)) {
+                    log.info("Python 可执行文件使用: {}", path);
+                    return path;
+                }
             }
         }
 
-        log.warn("未找到 Python 可执行文件，使用默认 'python'");
+        log.warn("未找到可用的 Python 可执行文件，使用默认 'python'");
         return "python";
+    }
+
+    /**
+     * 验证 Python 可执行文件是否可用
+     * 尝试执行 python --version，超时3秒
+     */
+    private boolean verifyPythonExecutable(String path) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder(path, "--version");
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            boolean exited = process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
+            if (!exited) {
+                process.destroyForcibly();
+                return false;
+            }
+            return process.exitValue() == 0;
+        } catch (Exception e) {
+            log.debug("Python可执行文件验证失败 {}: {}", path, e.getMessage());
+            return false;
+        }
     }
 
     private String resolvePath(String path) {

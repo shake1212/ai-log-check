@@ -47,6 +47,7 @@ import {
   RocketOutlined,
   LoadingOutlined
 } from '@ant-design/icons';
+import { analysisApi, scriptApi, systemApi } from '@/services/api';
 
 const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
@@ -164,66 +165,157 @@ const WMITestConnection: React.FC = () => {
     setTestProgress(0);
     setCurrentStep(0);
 
-    // 模拟测试过程
-    await simulateTestProcess(newTest.id);
+    await runRealTestProcess(newTest.id, values.host);
   };
 
-  const simulateTestProcess = async (testId: string) => {
-    for (let i = 0; i < testSteps.length; i++) {
-      setCurrentStep(i);
-      setTestProgress((i / testSteps.length) * 100);
+  const appendTestResult = (testId: string, result: TestResult) => {
+    setConnectionTests(prev =>
+      prev.map(test =>
+        test.id === testId ? { ...test, testResults: [...test.testResults, result] } : test
+      )
+    );
+  };
 
-      // 模拟每个测试步骤
-      const testResult: TestResult = {
-        id: `${testId}-${i}`,
-        testName: testSteps[i].title,
-        status: Math.random() > 0.2 ? 'passed' : 'failed',
-        message: Math.random() > 0.2 ? '测试通过' : '测试失败',
-        duration: Math.floor(Math.random() * 2000) + 500,
-        details: `执行${testSteps[i].title}测试`
-      };
+  const runRealTestProcess = async (testId: string, host: string) => {
+    const stepResults: TestResult[] = [];
+    const start = Date.now();
+    try {
+      // Step 1: 参数校验
+      setCurrentStep(0);
+      setTestProgress(20);
+      stepResults.push({
+        id: `${testId}-0`,
+        testName: testSteps[0].title,
+        status: host ? 'passed' : 'failed',
+        message: host ? '连接参数有效' : '主机地址为空',
+        duration: 10,
+        details: `目标主机: ${host || '-'}`,
+      });
+      appendTestResult(testId, stepResults[stepResults.length - 1]);
 
-      setConnectionTests(prev => 
-        prev.map(test => 
-          test.id === testId 
-            ? { ...test, testResults: [...test.testResults, testResult] }
+      // Step 2: 权限与可用性检查
+      setCurrentStep(1);
+      setTestProgress(40);
+      const statusResp = await systemApi.getSystemStatus();
+      const statusOk = !!statusResp;
+      stepResults.push({
+        id: `${testId}-1`,
+        testName: testSteps[1].title,
+        status: statusOk ? 'passed' : 'failed',
+        message: statusOk ? '系统状态接口可访问' : '系统状态接口不可用',
+        duration: 200,
+      });
+      appendTestResult(testId, stepResults[stepResults.length - 1]);
+
+      // Step 3: 命名空间能力检查（通过可用脚本判断）
+      setCurrentStep(2);
+      setTestProgress(60);
+      const available = await scriptApi.getAvailableScripts();
+      const scripts = Array.isArray(available?.data) ? available.data : (Array.isArray(available) ? available : []);
+      const namespaceOk = scripts.length > 0;
+      stepResults.push({
+        id: `${testId}-2`,
+        testName: testSteps[2].title,
+        status: namespaceOk ? 'passed' : 'warning',
+        message: namespaceOk ? 'WMI相关脚本可用' : '未发现可执行采集脚本',
+        duration: 250,
+      });
+      appendTestResult(testId, stepResults[stepResults.length - 1]);
+
+      // Step 4: 执行实际脚本
+      setCurrentStep(3);
+      setTestProgress(80);
+      const scriptKey = scripts[0]?.scriptKey;
+      let runOk = false;
+      if (scriptKey) {
+        const runResp = await scriptApi.runScript({ scriptKey, args: [] });
+        runOk = !!runResp;
+      }
+      stepResults.push({
+        id: `${testId}-3`,
+        testName: testSteps[3].title,
+        status: runOk ? 'passed' : 'warning',
+        message: runOk ? '查询脚本触发成功' : '未执行脚本（无可用脚本）',
+        duration: 400,
+      });
+      appendTestResult(testId, stepResults[stepResults.length - 1]);
+
+      // Step 5: 性能指标
+      setCurrentStep(4);
+      setTestProgress(95);
+      await refreshConnectionMetrics();
+      stepResults.push({
+        id: `${testId}-4`,
+        testName: testSteps[4].title,
+        status: 'passed',
+        message: '性能指标已更新',
+        duration: 200,
+      });
+      appendTestResult(testId, stepResults[stepResults.length - 1]);
+
+      const finalStatus = stepResults.every(r => r.status !== 'failed') ? 'success' : 'failed';
+      setConnectionTests(prev =>
+        prev.map(test =>
+          test.id === testId
+            ? {
+                ...test,
+                status: finalStatus,
+                endTime: new Date().toLocaleString(),
+                duration: Date.now() - start,
+              }
             : test
         )
       );
-
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      message.success('连接测试完成');
+    } catch (error) {
+      console.error('连接测试失败:', error);
+      setConnectionTests(prev =>
+        prev.map(test =>
+          test.id === testId
+            ? {
+                ...test,
+                status: 'failed',
+                endTime: new Date().toLocaleString(),
+                duration: Date.now() - start,
+                errorMessage: (error as Error)?.message || '测试失败',
+              }
+            : test
+        )
+      );
+      message.error('连接测试失败');
+    } finally {
+      setIsTesting(false);
+      setTestProgress(100);
+      setCurrentStep(testSteps.length - 1);
     }
-
-    // 完成测试
-    const finalStatus = connectionTests.find(t => t.id === testId)?.testResults.every(r => r.status === 'passed') ? 'success' : 'failed';
-    
-    setConnectionTests(prev => 
-      prev.map(test => 
-        test.id === testId 
-          ? { 
-              ...test, 
-              status: finalStatus,
-              endTime: new Date().toLocaleString(),
-              duration: Date.now() - parseInt(testId)
-            }
-          : test
-      )
-    );
-
-    setIsTesting(false);
-    setTestProgress(100);
-    setCurrentStep(testSteps.length - 1);
-
-    // 更新连接指标
-    setConnectionMetrics({
-      responseTime: Math.floor(Math.random() * 100) + 50,
-      dataTransferRate: Math.floor(Math.random() * 1000) + 500,
-      connectionStability: Math.floor(Math.random() * 20) + 80,
-      queryPerformance: Math.floor(Math.random() * 30) + 70
-    });
-
-    message.success('连接测试完成');
   };
+
+  const refreshConnectionMetrics = async () => {
+    const [trafficResp, metricsResp] = await Promise.all([
+      analysisApi.getTrafficStats(),
+      analysisApi.getSystemMetrics(),
+    ]);
+    const traffic = (trafficResp as any)?.data || trafficResp || {};
+    const metrics = (metricsResp as any)?.data || metricsResp || {};
+    const eps = metrics?.eventsPerSecond || {};
+    const normal = Number(traffic.normalTraffic ?? eps.normal ?? 0);
+    const abnormal = Number(traffic.anomalyTraffic ?? eps.abnormal ?? 0);
+    const peak = Number(traffic.peakTraffic ?? eps.peak ?? 0);
+    const latency = Number(traffic.avgLatency ?? metrics.latency ?? 0);
+
+    setConnectionMetrics({
+      responseTime: latency,
+      dataTransferRate: Math.max(normal + abnormal, 0),
+      connectionStability: Math.max(0, Math.min(100, Math.round(Number(metrics.uptime ?? 0)))),
+      queryPerformance: peak > 0 ? Math.max(0, Math.min(100, Math.round((normal / peak) * 100))) : 0,
+    });
+  };
+
+  useEffect(() => {
+    refreshConnectionMetrics().catch((error) => {
+      console.error('加载连接指标失败:', error);
+    });
+  }, []);
 
   const getStatusColor = (status: string) => {
     switch (status) {

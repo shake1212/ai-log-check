@@ -2,6 +2,7 @@
  * 增量日志采集机制
  * 实现高效的增量日志采集，避免重复采集和遗漏
  */
+import { api } from './api';
 
 export interface LogCollectionConfig {
   collectionInterval: number; // 采集间隔（毫秒）
@@ -63,7 +64,7 @@ const getMemoryUsage = (): any => {
   if (typeof process !== 'undefined' && process.memoryUsage && typeof process.memoryUsage === 'function') {
     return process.memoryUsage();
   } else {
-    // 浏览器环境返回模拟数据
+    // 浏览器环境使用 Performance API 数据
     if (typeof window !== 'undefined' && (window as any).performance && (window as any).performance.memory) {
       // 使用 Chrome 的 performance.memory
       const mem = (window as any).performance.memory;
@@ -102,9 +103,21 @@ export class IncrementalLogCollector {
   private memoryUsage: number = 0;
   private maxHistorySize: number = 1000;
 
+  private schedulerStarted: boolean = false;
+
   constructor() {
     this.initializeDefaultTasks();
-    this.startScheduler();
+    this.loadCheckpointsFromStorage();
+  }
+
+  /**
+   * 显式启动调度器（延迟启动，避免模块导入时自动运行）
+   */
+  start(): void {
+    if (!this.schedulerStarted) {
+      this.startScheduler();
+      this.schedulerStarted = true;
+    }
   }
 
   /**
@@ -264,31 +277,28 @@ export class IncrementalLogCollector {
    * 从数据源获取增量数据
    */
   private async fetchIncrementalData(task: CollectionTask, checkpoint: LogCheckpoint): Promise<any[]> {
-    // 模拟从WMI或其他数据源获取数据
-    const events: any[] = [];
-    const eventCount = Math.floor(Math.random() * 50) + 10;
-    
-    for (let i = 0; i < eventCount; i++) {
-      const event = {
-        id: `evt_${Date.now()}_${i}`,
-        timestamp: new Date(Date.now() - Math.random() * 3600000).toISOString(),
-        eventId: Math.floor(Math.random() * 1000) + 1000,
-        source: task.sourceId,
-        message: `Event message ${i}`,
-        data: {
-          processId: Math.floor(Math.random() * 1000) + 100,
-          userId: `user_${Math.floor(Math.random() * 100)}`,
-          computerName: 'COMPUTER-01'
-        }
-      };
-      
-      events.push(event);
+    try {
+      const response = await api.log.getRecentLogs(task.config.batchSize);
+      const rawList = response?.data || response || [];
+      const list = Array.isArray(rawList) ? rawList : [];
+
+      const checkpointTime = new Date(checkpoint.lastTimestamp).getTime();
+
+      return list
+        .map((item: any, index: number) => ({
+          id: String(item.id ?? item.eventId ?? `${task.sourceId}-${Date.now()}-${index}`),
+          timestamp: item.eventTime || item.timestamp || new Date().toISOString(),
+          eventId: item.eventId ?? item.id ?? index,
+          source: item.sourceName || task.sourceId,
+          message: item.rawMessage || item.description || '',
+          data: item,
+        }))
+        .filter((event: any) => new Date(event.timestamp).getTime() >= checkpointTime)
+        .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    } catch (error) {
+      console.error(`获取增量日志失败(${task.sourceId}):`, error);
+      return [];
     }
-    
-    // 模拟网络延迟
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
-    
-    return events;
   }
 
   /**
@@ -343,10 +353,13 @@ export class IncrementalLogCollector {
 
   /**
    * 判断是否为更新事件
+   * 事件ID已存在于检查点范围（时间戳相同且ID相同），但内容可能有变化
    */
   private isUpdatedEvent(event: any, checkpoint: LogCheckpoint): boolean {
-    // 简化实现：检查事件ID是否已存在但内容有变化
-    return false; // 在实际应用中需要更复杂的逻辑
+    const eventTime = new Date(event.timestamp).getTime();
+    const checkpointTime = new Date(checkpoint.lastTimestamp).getTime();
+    // 时间戳等于检查点且事件ID也等于检查点ID，视为可能的更新事件
+    return eventTime === checkpointTime && event.id === checkpoint.lastEventId;
   }
 
   /**
@@ -375,14 +388,46 @@ export class IncrementalLogCollector {
     };
   }
 
+  private static readonly CHECKPOINT_STORAGE_KEY = 'log_collector_checkpoints';
+
+  /**
+   * 从 localStorage 加载检查点
+   */
+  private loadCheckpointsFromStorage(): void {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const stored = localStorage.getItem(IncrementalLogCollector.CHECKPOINT_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, LogCheckpoint>;
+        for (const [key, value] of Object.entries(parsed)) {
+          this.checkpoints.set(key, value);
+        }
+      }
+    } catch (error) {
+      console.warn('加载检查点失败，将使用默认检查点:', error);
+    }
+  }
+
+  /**
+   * 保存检查点到 localStorage
+   */
+  private saveCheckpointsToStorage(): void {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const obj: Record<string, LogCheckpoint> = {};
+      this.checkpoints.forEach((value, key) => { obj[key] = value; });
+      localStorage.setItem(IncrementalLogCollector.CHECKPOINT_STORAGE_KEY, JSON.stringify(obj));
+    } catch (error) {
+      console.warn('保存检查点到 localStorage 失败:', error);
+    }
+  }
+
   /**
    * 更新检查点
    */
   private async updateCheckpoint(sourceId: string, checkpoint: LogCheckpoint): Promise<void> {
     this.checkpoints.set(sourceId, checkpoint);
-    
-    // 在实际应用中，这里应该持久化到数据库或文件
-    // await this.saveCheckpoint(checkpoint);
+    this.saveCheckpointsToStorage();
   }
 
   /**
@@ -633,5 +678,13 @@ export class IncrementalLogCollector {
   }
 }
 
-// 创建全局增量日志采集器实例
+// 懒加载全局增量日志采集器实例（避免模块导入时自动启动调度器）
+let _incrementalLogCollector: IncrementalLogCollector | null = null;
+export function getIncrementalLogCollector(): IncrementalLogCollector {
+  if (!_incrementalLogCollector) {
+    _incrementalLogCollector = new IncrementalLogCollector();
+  }
+  return _incrementalLogCollector;
+}
+/** @deprecated 使用 getIncrementalLogCollector() 替代 */
 export const incrementalLogCollector = new IncrementalLogCollector();

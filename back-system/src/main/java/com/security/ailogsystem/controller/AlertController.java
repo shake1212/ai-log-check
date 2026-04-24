@@ -90,6 +90,7 @@ public class AlertController {
     public ResponseEntity<Page<AlertResponse>> searchAlerts(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String alertLevel,
+            @RequestParam(required = false) String alertType,
             @RequestParam(required = false) Boolean handled,
             @RequestParam(required = false) Alert.AlertStatus status,
             @RequestParam(defaultValue = "0") int page,
@@ -97,7 +98,7 @@ public class AlertController {
 
         try {
             Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdTime"));
-            Page<AlertResponse> alerts = alertService.searchAlerts(keyword, alertLevel, handled, status, pageable);
+            Page<AlertResponse> alerts = alertService.searchAlerts(keyword, alertLevel, alertType, handled, status, pageable);
             return ResponseEntity.ok(alerts);
         } catch (Exception e) {
             log.error("搜索告警失败", e);
@@ -221,6 +222,12 @@ public class AlertController {
                     "success", false
             ));
         }
+    }
+
+    @PutMapping("/batch")
+    public ResponseEntity<Map<String, Object>> batchHandleAlertsAlias(
+            @RequestBody Map<String, Object> request) {
+        return batchHandleAlerts(request);
     }
     @GetMapping("/statistics/dashboard")
     public ResponseEntity<Map<String, Object>> getDashboardStatistics() {

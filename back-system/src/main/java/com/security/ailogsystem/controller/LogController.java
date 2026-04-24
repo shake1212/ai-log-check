@@ -4,12 +4,16 @@ package com.security.ailogsystem.controller;
 import com.security.ailogsystem.entity.SecurityLog;
 import com.security.ailogsystem.entity.SecurityAlert;
 import com.security.ailogsystem.service.WindowsLogService;
+import com.security.ailogsystem.service.DataExportService;
 import com.security.ailogsystem.repository.SecurityLogRepository;
 import com.security.ailogsystem.repository.SecurityAlertRepository;
+import org.springframework.core.io.Resource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,6 +35,9 @@ public class LogController {
 
     @Autowired
     private WindowsLogService logService;
+
+    @Autowired
+    private DataExportService dataExportService;
 
     /**
      * 获取最近的日志
@@ -144,6 +151,24 @@ public class LogController {
         }
 
         return ResponseEntity.ok(List.of());
+    }
+
+    @GetMapping("/export")
+    public ResponseEntity<Resource> exportLogs(
+            @RequestParam(defaultValue = "csv") String format,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
+            @RequestParam(required = false) String level,
+            @RequestParam(required = false) String keyword) {
+        Resource resource = dataExportService.exportLogs(format, startTime, endTime, level, keyword);
+        String ext = "excel".equalsIgnoreCase(format) ? "xlsx" : ("json".equalsIgnoreCase(format) ? "json" : "csv");
+        MediaType mediaType = "excel".equalsIgnoreCase(format)
+                ? MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                : ("json".equalsIgnoreCase(format) ? MediaType.APPLICATION_JSON : MediaType.parseMediaType("text/csv"));
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"logs-export." + ext + "\"")
+                .body(resource);
     }
     @GetMapping("/threat-levels")
     public ResponseEntity<Map<String, Long>> getThreatLevels(

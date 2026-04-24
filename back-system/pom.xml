@@ -121,6 +121,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Apache POI for Excel export -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+
         <!-- Property-based testing with jqwik -->
         <dependency>
             <groupId>net.jqwik</groupId>

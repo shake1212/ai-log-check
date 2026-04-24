@@ -22,7 +22,6 @@ import {
   Typography,
   Divider,
   Descriptions,
-  Dropdown,
   Segmented,
   Rate,
   Alert
@@ -30,19 +29,15 @@ import {
 import {
   SearchOutlined,
   ReloadOutlined,
-  DownloadOutlined,
-  FilterOutlined,
   BarChartOutlined,
   LineChartOutlined,
   PieChartOutlined,
-  ExportOutlined,
   SettingOutlined,
   InfoCircleOutlined,
   ThunderboltOutlined,
   WarningOutlined,
   CheckCircleOutlined,
   RiseOutlined,
-  EyeOutlined,
   DashboardOutlined,
   SafetyCertificateOutlined,
   ClockCircleOutlined,
@@ -64,7 +59,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
-import { getSeverity, translate, EVENT_TYPE_MAP } from '../../utils/enumLabels';
+import { getSeverity, getStatus, translate, EVENT_TYPE_MAP } from '../../utils/enumLabels';
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
@@ -96,10 +91,10 @@ interface EventData {
   combinedScore?: number;    // 综合分数 (0-1)
 }
 
-// 查询参数接口
+// 查询参数接口（时间可为 null 表示不限时间，仅按其它条件筛选）
 interface QueryParams {
-  startTime: dayjs.Dayjs;
-  endTime: dayjs.Dayjs;
+  startTime: dayjs.Dayjs | null;
+  endTime: dayjs.Dayjs | null;
   eventType: string;
   severity: string;
   keyword: string;
@@ -181,15 +176,16 @@ const LEVEL_GRADIENTS = {
   CRITICAL_GRADIENT: 'linear-gradient(135deg, #ff4d4f 0%, #cf1322 100%)'
 };
 
-const EventsPage: React.FC = () => {
+const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) => {
   const [loading, setLoading] = useState(false);
+  const [highlightEventId, setHighlightEventId] = useState<number | null>(initialEventId ?? null);
   const [statisticsLoading, setStatisticsLoading] = useState(false);
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [events, setEvents] = useState<EventData[]>([]);
   const [trends, setTrends] = useState<TrendData[]>([]);
   const [pagination, setPagination] = useState({
     current: 1,
-    pageSize: 20,
+    pageSize: 10,
     total: 0
   });
   const [searchForm] = Form.useForm();
@@ -208,6 +204,9 @@ const EventsPage: React.FC = () => {
     keyword: '',
     isAnomaly: undefined
   });
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [selectedEventDetail, setSelectedEventDetail] = useState<any>(null);
 
   // 带超时的 Promise 包装函数
   const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number = 8000): Promise<T> => {
@@ -311,13 +310,69 @@ const EventsPage: React.FC = () => {
     }
   };
 
+  /** 图表/统计用时间：未选时间时用最近 30 天，避免请求无时间参数 */
+  const chartTimeRange = (q: QueryParams) => ({
+    start: q.startTime ?? dayjs().subtract(30, 'day'),
+    end: q.endTime ?? dayjs(),
+  });
+
+  const normalizeEventList = (payload: any): EventData[] => {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.content)) return payload.content;
+    if (Array.isArray(payload?.records)) return payload.records;
+    if (Array.isArray(payload?.items)) return payload.items;
+    if (Array.isArray(payload?.data?.content)) return payload.data.content;
+    if (Array.isArray(payload?.data?.records)) return payload.data.records;
+    if (Array.isArray(payload?.data)) return payload.data;
+    return [];
+  };
+
+  const hasActiveFilter = (q: QueryParams): boolean =>
+    Boolean(
+      q.eventType ||
+      q.severity ||
+      q.keyword ||
+      q.isAnomaly !== undefined ||
+      (q.startTime && q.endTime)
+    );
+
+  const eventMatchesQuery = (event: EventData, q: QueryParams): boolean => {
+    if (q.eventType && event.eventType !== q.eventType) return false;
+    if (q.severity && event.severity !== q.severity) return false;
+    if (q.isAnomaly !== undefined && event.isAnomaly !== q.isAnomaly) return false;
+    if (q.keyword) {
+      const kw = q.keyword.toLowerCase();
+      const text = [
+        event.rawMessage,
+        event.normalizedMessage,
+        event.anomalyReason,
+        event.sourceIp,
+        event.userId,
+        event.userName,
+        event.hostName,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      if (!text.includes(kw)) return false;
+    }
+    if (q.startTime && q.endTime) {
+      const ts = dayjs(event.timestamp);
+      if (ts.isValid() && (ts.isBefore(q.startTime) || ts.isAfter(q.endTime))) {
+        return false;
+      }
+    }
+    return true;
+  };
+
   // 获取时间范围的统计信息（需要时间参数）
-  const fetchTimeRangeStatistics = async () => {
+  const fetchTimeRangeStatistics = async (overrideQuery?: Partial<QueryParams>) => {
     try {
-      // 构建API参数
+      const effectiveQuery = { ...queryParams, ...overrideQuery };
+      const { start, end } = chartTimeRange(effectiveQuery);
       const params = new URLSearchParams({
-        startTime: queryParams.startTime.format('YYYY-MM-DDTHH:mm:ss'),
-        endTime: queryParams.endTime.format('YYYY-MM-DDTHH:mm:ss'),
+        startTime: start.format('YYYY-MM-DDTHH:mm:ss'),
+        endTime: end.format('YYYY-MM-DDTHH:mm:ss'),
       });
 
       console.log('调用时间范围统计API:', `/api/events/statistics?${params}`);
@@ -341,25 +396,37 @@ const EventsPage: React.FC = () => {
   };
 
   // 获取事件列表
-  const fetchEvents = async (page = pagination.current, pageSize = pagination.pageSize) => {
+  const fetchEvents = async (
+    page = pagination.current,
+    pageSize = pagination.pageSize,
+    overrideQuery?: Partial<QueryParams>
+  ) => {
     try {
       if (!isMountedRef.current) return;
       setLoading(true);
-      
-      const queryDTO = {
+      const effectiveQuery = { ...queryParams, ...overrideQuery };
+
+      const queryDTO: Record<string, unknown> = {
         page: page - 1,
         size: pageSize,
-        startTime: queryParams.startTime.format('YYYY-MM-DDTHH:mm:ss'),
-        endTime: queryParams.endTime.format('YYYY-MM-DDTHH:mm:ss'),
-        eventType: queryParams.eventType || undefined,
-        severity: queryParams.severity || undefined,
-        keyword: queryParams.keyword || undefined,
-        isAnomaly: queryParams.isAnomaly
+        eventType: effectiveQuery.eventType || undefined,
+        severity: effectiveQuery.severity || undefined,
+        keyword: effectiveQuery.keyword || undefined,
+        isAnomaly:
+          effectiveQuery.isAnomaly === null || effectiveQuery.isAnomaly === undefined
+            ? undefined
+            : effectiveQuery.isAnomaly,
       };
 
-      Object.keys(queryDTO).forEach(key => {
-        if (queryDTO[key as keyof typeof queryDTO] === undefined) {
-          delete queryDTO[key as keyof typeof queryDTO];
+      if (effectiveQuery.startTime && effectiveQuery.endTime) {
+        queryDTO.startTime = effectiveQuery.startTime.format('YYYY-MM-DDTHH:mm:ss');
+        queryDTO.endTime = effectiveQuery.endTime.format('YYYY-MM-DDTHH:mm:ss');
+      }
+
+      Object.keys(queryDTO).forEach((key) => {
+        const v = queryDTO[key];
+        if (v === undefined || v === null || v === '') {
+          delete queryDTO[key];
         }
       });
 
@@ -378,22 +445,36 @@ const EventsPage: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setEvents(data.content || data || []);
+        const serverEvents = normalizeEventList(data);
+        const displayEvents = hasActiveFilter(effectiveQuery)
+          ? serverEvents.filter((event) => eventMatchesQuery(event, effectiveQuery))
+          : serverEvents;
+        setEvents(displayEvents);
         setPagination(prev => ({
           ...prev,
           current: page,
           pageSize,
-          total: data.totalElements || data.total || 0
+          total:
+            hasActiveFilter(effectiveQuery) && displayEvents.length !== serverEvents.length
+              ? displayEvents.length
+              : data.totalElements || data.total || displayEvents.length
         }));
+        if (displayEvents.length === 0 && hasActiveFilter(effectiveQuery)) {
+          message.info('未找到匹配数据');
+        }
       } else {
         console.error('事件搜索API响应失败:', response.status, response.statusText);
         if (isMountedRef.current) {
+          setEvents([]);
+          setPagination(prev => ({ ...prev, current: page, pageSize, total: 0 }));
           message.error('获取事件列表失败');
         }
       }
     } catch (error) {
       console.error('获取事件列表错误:', error);
       if (isMountedRef.current) {
+        setEvents([]);
+        setPagination(prev => ({ ...prev, current: page, pageSize, total: 0 }));
         message.error('获取事件列表失败');
       }
     } finally {
@@ -404,13 +485,14 @@ const EventsPage: React.FC = () => {
   };
 
   // 获取时间序列趋势数据
-  const fetchTrends = async () => {
+  const fetchTrends = async (overrideQuery?: Partial<QueryParams>) => {
     try {
       if (!isMountedRef.current) return;
-      
+      const effectiveQuery = { ...queryParams, ...overrideQuery };
+      const { start, end } = chartTimeRange(effectiveQuery);
       const params = new URLSearchParams({
-        startTime: queryParams.startTime.format('YYYY-MM-DDTHH:mm:ss'),
-        endTime: queryParams.endTime.format('YYYY-MM-DDTHH:mm:ss'),
+        startTime: start.format('YYYY-MM-DDTHH:mm:ss'),
+        endTime: end.format('YYYY-MM-DDTHH:mm:ss'),
       });
 
       console.log('调用趋势API:', `/api/events/statistics/timeseries?${params}`);
@@ -549,35 +631,79 @@ const EventsPage: React.FC = () => {
     }
   };
 
-  // 搜索处理
+  // 搜索处理（任意条件即可筛选；未选时间则不限时间；快速筛选的 isAnomaly 无表单项时从 queryParams 保留）
   const handleSearch = () => {
     const values = searchForm.getFieldsValue();
-    setQueryParams(prev => ({
-      ...prev,
-      startTime: values.timeRange?.[0] || prev.startTime,
-      endTime: values.timeRange?.[1] || prev.endTime,
-      eventType: values.eventType || '',
-      severity: values.severity || '',
-      keyword: values.keyword || '',
-      isAnomaly: values.isAnomaly
-    }));
+    const tr = values.timeRange as [dayjs.Dayjs, dayjs.Dayjs] | null | undefined;
+    let startTime: dayjs.Dayjs | null;
+    let endTime: dayjs.Dayjs | null;
+    if (Array.isArray(tr) && tr[0] && tr[1]) {
+      startTime = tr[0];
+      endTime = tr[1];
+    } else if (tr === null) {
+      startTime = null;
+      endTime = null;
+    } else {
+      startTime = queryParams.startTime;
+      endTime = queryParams.endTime;
+    }
+    const newQuery: QueryParams = {
+      startTime,
+      endTime,
+      eventType: values.eventType ?? '',
+      severity: values.severity ?? '',
+      keyword: values.keyword ?? '',
+      isAnomaly:
+        typeof values.isAnomaly === 'boolean'
+          ? values.isAnomaly
+          : queryParams.isAnomaly,
+    };
+    setQueryParams(newQuery);
     setPagination(prev => ({ ...prev, current: 1 }));
-    fetchEvents(1);
-    fetchTrends();
-    fetchTimeRangeStatistics();
+    fetchEvents(1, pagination.pageSize, newQuery);
+    fetchTrends(newQuery);
+    fetchTimeRangeStatistics(newQuery);
   };
 
   // 重置查询
   const handleReset = () => {
-    searchForm.resetFields();
-    setQueryParams({
+    const resetQuery: QueryParams = {
       startTime: dayjs().subtract(7, 'day'),
       endTime: dayjs(),
       eventType: '',
       severity: '',
       keyword: '',
       isAnomaly: undefined
+    };
+    searchForm.setFieldsValue({
+      timeRange: [resetQuery.startTime, resetQuery.endTime],
+      eventType: '',
+      severity: '',
+      keyword: '',
+      isAnomaly: undefined
     });
+    setQueryParams(resetQuery);
+    setPagination(prev => ({ ...prev, current: 1 }));
+    fetchEvents(1, pagination.pageSize, resetQuery);
+    fetchTrends(resetQuery);
+    fetchTimeRangeStatistics(resetQuery);
+  };
+
+  const handleRestoreRecent7Days = () => {
+    const recentQuery: QueryParams = {
+      ...queryParams,
+      startTime: dayjs().subtract(7, 'day'),
+      endTime: dayjs(),
+    };
+    searchForm.setFieldsValue({
+      ...searchForm.getFieldsValue(),
+      timeRange: [recentQuery.startTime, recentQuery.endTime],
+    });
+    setQueryParams(recentQuery);
+    setPagination((prev) => ({ ...prev, current: 1 }));
+    fetchEvents(1, pagination.pageSize, recentQuery);
+    fetchTrends(recentQuery);
+    fetchTimeRangeStatistics(recentQuery);
   };
 
   // 获取显示文本
@@ -703,36 +829,6 @@ const EventsPage: React.FC = () => {
       )
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 110,
-      render: (status) => {
-        const statusColors = {
-          OPEN: 'red',
-          IN_PROGRESS: 'orange',
-          RESOLVED: 'green',
-          CLOSED: 'gray'
-        };
-        return (
-          <div style={{
-            padding: '3px 10px',
-            borderRadius: '20px',
-            background: statusColors[status as keyof typeof statusColors] ? 
-              `rgba(${status === 'OPEN' ? '255,77,79' : status === 'IN_PROGRESS' ? '250,140,22' : status === 'RESOLVED' ? '82,196,26' : '158,158,158'}, 0.1)` : 
-              'rgba(158,158,158,0.1)',
-            border: `1px solid ${statusColors[status as keyof typeof statusColors] || '#d9d9d9'}`,
-            color: statusColors[status as keyof typeof statusColors] || '#666',
-            fontSize: '11px',
-            fontWeight: 500,
-            textAlign: 'center'
-          }}>
-            {getDisplayText(status)}
-          </div>
-        );
-      }
-    },
-    {
       title: '异常',
       dataIndex: 'isAnomaly',
       key: 'isAnomaly',
@@ -811,42 +907,22 @@ const EventsPage: React.FC = () => {
       },
       sorter: true,
     },
-    {
-      title: '操作',
-      key: 'action',
-      width: 180,
-      fixed: 'right' as const,
-      render: (_, record) => (
-        <Space>
-          <Button
-            type="link"
-            icon={<EyeOutlined />}
-            onClick={() => showEventDetail(record)}
-            size="small"
-            style={{ fontSize: '12px' }}
-          >
-            详情
-          </Button>
-          {record.isAnomaly && record.status !== 'RESOLVED' && (
-            <Button 
-              type="primary"
-              icon={<CheckCircleOutlined />}
-              size="small"
-              style={{ fontSize: '12px' }}
-              onClick={() => updateEventStatus(record.id, 'RESOLVED')}
-            >
-              处理
-            </Button>
-          )}
-        </Space>
-      )
-    }
   ];
 
-  // 表格分页处理
+  // 表格分页：显式带上当前 queryParams，避免仅依赖闭包导致与表单筛选不一致
   const handleTableChange = (newPagination: any) => {
-    setPagination(newPagination);
-    fetchEvents(newPagination.current, newPagination.pageSize);
+    if (!newPagination || newPagination.current == null) return;
+    setPagination((prev) => ({
+      ...prev,
+      current: newPagination.current,
+      pageSize: newPagination.pageSize ?? prev.pageSize,
+      total: newPagination.total ?? prev.total,
+    }));
+    fetchEvents(
+      newPagination.current,
+      newPagination.pageSize ?? pagination.pageSize,
+      queryParams,
+    );
   };
 
   // 初始化数据
@@ -854,12 +930,20 @@ const EventsPage: React.FC = () => {
     isMountedRef.current = true;
     let statsTimer: ReturnType<typeof setTimeout> | null = null;
 
+    // 若有 initialEventId，设置高亮
+    if (initialEventId) {
+      setHighlightEventId(initialEventId);
+    }
+
     const initData = async () => {
       if (!isMountedRef.current) return;
       setLoading(true);
       try {
         searchForm.setFieldsValue({
-          timeRange: [queryParams.startTime, queryParams.endTime],
+          timeRange:
+            queryParams.startTime && queryParams.endTime
+              ? [queryParams.startTime, queryParams.endTime]
+              : null,
           eventType: queryParams.eventType,
           severity: queryParams.severity,
           keyword: queryParams.keyword,
@@ -869,6 +953,28 @@ const EventsPage: React.FC = () => {
         await fetchEvents();
         if (!isMountedRef.current) return;
         setLoading(false);
+
+        // 若有 initialEventId，加载完成后自动打开详情
+        if (initialEventId) {
+          setTimeout(async () => {
+            try {
+              // 滚动到高亮行
+              const highlightedRow = document.querySelector('.highlighted-event-row');
+              if (highlightedRow) {
+                highlightedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+              // 自动打开详情
+              const resp = await fetch(`/api/events/${initialEventId}`);
+              if (resp.ok && isMountedRef.current) {
+                const data = await resp.json();
+                setSelectedEventDetail(data);
+                setDetailVisible(true);
+              }
+            } catch (e) {
+              console.error('自动打开事件详情失败:', e);
+            }
+          }, 500);
+        }
 
         // 同时获取仪表板统计和趋势数据
         statsTimer = setTimeout(async () => {
@@ -900,72 +1006,18 @@ const EventsPage: React.FC = () => {
       isMountedRef.current = false;
       if (statsTimer) clearTimeout(statsTimer);
     };
-  }, []);
+  }, [initialEventId]);
 
   // 显示事件详情
   const showEventDetail = async (record: EventData) => {
     try {
+      setDetailLoading(true);
       const response = await fetch(`/api/events/${record.id}`);
       if (!isMountedRef.current) return;
       if (response.ok) {
         const eventData = await response.json();
-        Modal.info({
-          title: '事件详情',
-          width: '60%',
-          content: (
-            <div>
-              <Descriptions column={1} bordered>
-                <Descriptions.Item label="ID">{eventData.id}</Descriptions.Item>
-                <Descriptions.Item label="时间">{eventData.timestamp ? dayjs(eventData.timestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}</Descriptions.Item>
-                <Descriptions.Item label="事件类型">{getDisplayText(eventData.eventType)}</Descriptions.Item>
-                <Descriptions.Item label="严重程度">{getDisplayText(eventData.severity)}</Descriptions.Item>
-                <Descriptions.Item label="标准化消息">{getDisplayText(eventData.normalizedMessage)}</Descriptions.Item>
-                <Descriptions.Item label="原始消息">{getDisplayText(eventData.rawMessage)}</Descriptions.Item>
-                <Descriptions.Item label="源IP">{getDisplayText(eventData.sourceIp)}</Descriptions.Item>
-                <Descriptions.Item label="用户ID">{getDisplayText(eventData.userId)}</Descriptions.Item>
-                <Descriptions.Item label="用户名">{getDisplayText(eventData.userName)}</Descriptions.Item>
-                <Descriptions.Item label="主机名">{getDisplayText(eventData.hostName)}</Descriptions.Item>
-                <Descriptions.Item label="状态">{getDisplayText(eventData.status)}</Descriptions.Item>
-                <Descriptions.Item label="是否异常">{eventData.isAnomaly ? '是' : '否'}</Descriptions.Item>
-                {eventData.isAnomaly && (
-                  <>
-                    <Descriptions.Item label="异常分数">{eventData.anomalyScore}</Descriptions.Item>
-                    <Descriptions.Item label="异常原因">{getDisplayText(eventData.anomalyReason)}</Descriptions.Item>
-                  </>
-                )}
-                {/* 新增 AI 字段展示 */}
-                {eventData.aiAnomalyScore !== undefined && (
-                  <Descriptions.Item label="AI异常分数">
-                    {(eventData.aiAnomalyScore * 100).toFixed(1)}%
-                  </Descriptions.Item>
-                )}
-                {eventData.aiIsAnomaly !== undefined && (
-                  <Descriptions.Item label="AI判定">
-                    {eventData.aiIsAnomaly ? '异常' : '正常'}
-                  </Descriptions.Item>
-                )}
-                {eventData.combinedScore !== undefined && (
-                  <Descriptions.Item label="综合分数">
-                    {(eventData.combinedScore * 100).toFixed(1)}%
-                  </Descriptions.Item>
-                )}
-                <Descriptions.Item label="创建时间">{eventData.createdAt ? dayjs(eventData.createdAt).format('YYYY-MM-DD HH:mm:ss') : '-'}</Descriptions.Item>
-                <Descriptions.Item label="更新时间">{eventData.updatedAt ? dayjs(eventData.updatedAt).format('YYYY-MM-DD HH:mm:ss') : '-'}</Descriptions.Item>
-              </Descriptions>
-              {(eventData.rawData || eventData.eventData) && (
-                <>
-                  <Divider>原始数据</Divider>
-                  <Paragraph style={{ maxHeight: 320, overflow: 'auto', background: '#f6f8fa', padding: 12 }}>
-                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
-                      {formatJsonContent(eventData.rawData || eventData.eventData)}
-                    </pre>
-                  </Paragraph>
-                </>
-              )}
-            </div>
-          ),
-          onOk() {},
-        });
+        setSelectedEventDetail(eventData);
+        setDetailVisible(true);
       } else {
         if (isMountedRef.current) {
           message.error('获取事件详情失败');
@@ -975,6 +1027,10 @@ const EventsPage: React.FC = () => {
       console.error('获取事件详情错误:', error);
       if (isMountedRef.current) {
         message.error('获取事件详情失败');
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setDetailLoading(false);
       }
     }
   };
@@ -1010,22 +1066,45 @@ const EventsPage: React.FC = () => {
     return dashboardStats?.avgDailyEvents || 0;
   };
 
-  // 计算待处理告警（基于异常事件的30%）
+  // 基于真实事件状态计算待处理异常
   const calculatePendingAlerts = (): number => {
-    const anomalyEvents = getAnomalyEvents();
-    return Math.round(anomalyEvents * 0.3);
+    return events.filter((event) => event.isAnomaly && event.status !== 'RESOLVED').length;
   };
 
-  // 计算已处理告警（基于异常事件的70%）
+  // 基于真实事件状态计算已处理异常
   const calculateResolvedAlerts = (): number => {
-    const anomalyEvents = getAnomalyEvents();
-    return Math.round(anomalyEvents * 0.7);
+    return events.filter((event) => event.isAnomaly && event.status === 'RESOLVED').length;
   };
 
-  // 计算误报告警（基于异常事件的10%）
+  // 基于真实状态计算误报
   const calculateFalsePositiveAlerts = (): number => {
+    return events.filter((event) => event.status === 'FALSE_POSITIVE').length;
+  };
+
+  // 数据完整性评分（关键字段非空比例）
+  const calculateDataIntegrity = (): number => {
+    if (events.length === 0) return 0;
+    const requiredFields = ['timestamp', 'eventType', 'severity', 'status'] as const;
+    const completeCount = events.filter((event) =>
+      requiredFields.every((field) => Boolean((event as any)[field]))
+    ).length;
+    return Number(((completeCount / events.length) * 100).toFixed(1));
+  };
+
+  // 数据准确性评分（优先使用AI置信度，否则使用异常分数）
+  const calculateDataAccuracy = (): number => {
+    const scores = events
+      .map((event) => event.aiAnomalyScore ?? event.anomalyScore)
+      .filter((score): score is number => typeof score === 'number');
+    if (scores.length === 0) return 0;
+    const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    return Number((avgScore * 100).toFixed(1));
+  };
+
+  const calculateProcessingRate = (): number => {
     const anomalyEvents = getAnomalyEvents();
-    return Math.round(anomalyEvents * 0.1);
+    if (anomalyEvents === 0) return 100;
+    return Number(((calculateResolvedAlerts() / anomalyEvents) * 100).toFixed(1));
   };
 
   // ========== 渲染函数 ==========
@@ -1085,7 +1164,7 @@ const EventsPage: React.FC = () => {
               fontSize: '16px',
               maxWidth: '600px'
             }}>
-              实时日志收集、智能分析、多维统计与可视化
+              聚焦事件检索、关联分析与趋势统计，支撑溯源研判
             </Paragraph>
           </div>
         </div>
@@ -1168,33 +1247,6 @@ const EventsPage: React.FC = () => {
         </div>
         <div>
           <Space size="large" wrap>
-            <Dropdown
-              menu={{
-                items: [
-                  { key: 'excel', icon: <DownloadOutlined />, label: '导出Excel报告' },
-                  { key: 'csv', icon: <ExportOutlined />, label: '导出CSV数据' },
-                  { key: 'json', icon: <DatabaseOutlined />, label: '导出JSON数据' },
-                ],
-                onClick: ({ key }) => console.log('导出:', key),
-              }}
-              placement="bottomRight"
-            >
-              <Button 
-                icon={<ExportOutlined />}
-                shape="round"
-                size="large"
-                style={{ 
-                  background: 'linear-gradient(135deg, #722ed1 0%, #531dab 100%)',
-                  border: 'none',
-                  color: 'white',
-                  height: '44px',
-                  padding: '0 20px'
-                }}
-              >
-                数据导出
-              </Button>
-            </Dropdown>
-
             <Button
               icon={<ReloadOutlined spin={loading} />}
               onClick={() => {
@@ -1225,320 +1277,22 @@ const EventsPage: React.FC = () => {
 
   // 渲染核心指标卡片
   const renderCoreMetrics = () => (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '32px' }}>
-      {/* 总事件数卡片 */}
-      <Card 
-        hoverable
-        style={{ 
-          borderRadius: '16px',
-          overflow: 'hidden',
-          border: 'none',
-          background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-          boxShadow: '0 6px 16px rgba(0,0,0,0.08)'
-        }}
-        bodyStyle={{ 
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          marginBottom: '20px'
-        }}>
-          <div>
-            <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
-              总事件数
-            </Text>
-            <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#096dd9' }}>
-              {getTotalEvents()}
-            </Title>
-          </div>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <ThunderboltOutlined style={{ fontSize: '28px', color: 'white' }} />
-          </div>
-        </div>
-        
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '8px',
-          margin: '12px 0'
-        }}>
-          <ArrowUpOutlined style={{ color: '#52c41a' }} />
-          <Text strong style={{ fontSize: '14px', color: '#389e0d' }}>
-            今日新增: {getTodayEvents()} 条
-          </Text>
-          <Tag color="success" style={{ marginLeft: 'auto' }}>
-            {getTotalEvents() > 0 ? ((getTodayEvents() / getTotalEvents()) * 100).toFixed(1) : 0}%
-          </Tag>
-        </div>
-        
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          marginTop: 'auto'
-        }}>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>异常率</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>{getAnomalyRate().toFixed(1)}%</Text>
-          </div>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>日均事件</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>{getAvgDailyEvents().toFixed(0)}</Text>
-          </div>
-        </div>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '10px' }}>
+      <Card size="small" bodyStyle={{ padding: '10px 12px' }}>
+        <Text type="secondary" style={{ fontSize: '12px' }}>总事件数</Text>
+        <div><Text strong style={{ fontSize: '22px', color: '#096dd9' }}>{getTotalEvents()}</Text></div>
       </Card>
-
-      {/* 异常事件卡片 */}
-      <Card 
-        hoverable
-        style={{ 
-          borderRadius: '16px',
-          overflow: 'hidden',
-          border: 'none',
-          background: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)',
-          boxShadow: '0 6px 16px rgba(250, 140, 22, 0.12)'
-        }}
-        bodyStyle={{ 
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          marginBottom: '20px'
-        }}>
-          <div>
-            <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
-              异常事件
-            </Text>
-            <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#d46b08' }}>
-              {getAnomalyEvents()}
-            </Title>
-          </div>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #fa8c16 0%, #d46b08 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <WarningOutlined style={{ fontSize: '28px', color: 'white' }} />
-          </div>
-        </div>
-        
-        {/* 使用动态数据计算的进度条 */}
-        <Progress 
-          percent={getTotalEvents() > 0 ? (getAnomalyEvents() / getTotalEvents() * 100) : 0}
-          strokeColor="#fa8c16"
-          strokeWidth={6}
-          style={{ margin: '12px 0' }}
-          format={(percent) => {
-            if (percent === undefined) return '0%';
-            const anomalyCount = getAnomalyEvents();
-            const totalCount = getTotalEvents();
-            return `${percent.toFixed(1)}% (${anomalyCount}/${totalCount})`;
-          }}
-        />
-        
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          marginTop: 'auto',
-          padding: '8px 0'
-        }}>
-          {/* 可选的额外指标 */}
-        </div>
-        
-        {/* 添加数据更新时间 */}
-        {dashboardStats?.lastUpdate && (
-          <div style={{ 
-            fontSize: '11px', 
-            color: '#999', 
-            textAlign: 'center',
-            marginTop: '8px',
-            borderTop: '1px dashed #eee',
-            paddingTop: '8px'
-          }}>
-            更新于 {dayjs(dashboardStats.lastUpdate).format('HH:mm:ss')}
-          </div>
-        )}
+      <Card size="small" bodyStyle={{ padding: '10px 12px' }}>
+        <Text type="secondary" style={{ fontSize: '12px' }}>异常事件</Text>
+        <div><Text strong style={{ fontSize: '22px', color: '#d46b08' }}>{getAnomalyEvents()}</Text></div>
       </Card>
-
-      {/* 正常事件卡片 */}
-      <Card 
-        hoverable
-        style={{ 
-          borderRadius: '16px',
-          overflow: 'hidden',
-          border: 'none',
-          background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
-          boxShadow: '0 6px 16px rgba(82, 196, 26, 0.12)'
-        }}
-        bodyStyle={{ 
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          marginBottom: '20px'
-        }}>
-          <div>
-            <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
-              正常事件
-            </Text>
-            <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#389e0d' }}>
-              {getNormalEvents()}
-            </Title>
-          </div>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <CheckCircleOutlined style={{ fontSize: '28px', color: 'white' }} />
-          </div>
-        </div>
-        
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '8px',
-          margin: '12px 0'
-        }}>
-          <ArrowDownOutlined style={{ color: '#52c41a' }} />
-          <Text strong style={{ fontSize: '14px', color: '#389e0d' }}>
-            占比 {getTotalEvents() > 0 ? ((getNormalEvents() / getTotalEvents()) * 100).toFixed(1) : 0}%
-          </Text>
-          <Tag color="success" style={{ marginLeft: 'auto' }}>稳定</Tag>
-        </div>
-        
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          marginTop: 'auto'
-        }}>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>健康度</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>
-              {getTotalEvents() > 0 ? (100 - getAnomalyRate()).toFixed(1) : 100}%
-            </Text>
-          </div>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>处理率</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>98.5%</Text>
-          </div>
-        </div>
+      <Card size="small" bodyStyle={{ padding: '10px 12px' }}>
+        <Text type="secondary" style={{ fontSize: '12px' }}>正常事件</Text>
+        <div><Text strong style={{ fontSize: '22px', color: '#389e0d' }}>{getNormalEvents()}</Text></div>
       </Card>
-
-      {/* 数据质量卡片 */}
-      <Card 
-        hoverable
-        style={{ 
-          borderRadius: '16px',
-          overflow: 'hidden',
-          border: 'none',
-          background: 'linear-gradient(135deg, #f0f5ff 0%, #d6e4ff 100%)',
-          boxShadow: '0 6px 16px rgba(24, 144, 255, 0.12)'
-        }}
-        bodyStyle={{ 
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          marginBottom: '20px'
-        }}>
-          <div>
-            <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
-              严重程度分布
-            </Text>
-            <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#096dd9' }}>
-              {dashboardStats?.severityCounts ? Object.keys(dashboardStats.severityCounts).length : 0}
-            </Title>
-          </div>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <BarChartOutlined style={{ fontSize: '28px', color: 'white' }} />
-          </div>
-        </div>
-        
-        <div style={{ margin: '12px 0' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            {dashboardStats?.severityCounts && Object.entries(dashboardStats.severityCounts).slice(0, 2).map(([severity, count]) => (
-              <div key={severity} style={{ 
-                background: `rgba(${severity === 'CRITICAL' ? '255,77,79' : severity === 'HIGH' ? '250,140,22' : '24,144,255'}, 0.1)`,
-                padding: '8px',
-                borderRadius: '8px',
-                textAlign: 'center'
-              }}>
-                <Text strong style={{ 
-                  color: severity === 'CRITICAL' ? '#ff4d4f' : severity === 'HIGH' ? '#fa8c16' : '#1890ff', 
-                  fontSize: '18px' 
-                }}>
-                  {count}
-                </Text>
-                <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
-                  {severity}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          marginTop: 'auto'
-        }}>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>低风险</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>
-              {dashboardStats?.severityCounts?.LOW || 0}
-            </Text>
-          </div>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>中风险</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>
-              {dashboardStats?.severityCounts?.MEDIUM || 0}
-            </Text>
-          </div>
-        </div>
+      <Card size="small" bodyStyle={{ padding: '10px 12px' }}>
+        <Text type="secondary" style={{ fontSize: '12px' }}>严重程度分布</Text>
+        <div><Text strong style={{ fontSize: '22px', color: '#096dd9' }}>{dashboardStats?.severityCounts ? Object.keys(dashboardStats.severityCounts).length : 0}</Text></div>
       </Card>
     </div>
   );
@@ -1549,407 +1303,91 @@ const EventsPage: React.FC = () => {
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <BarChartOutlined />
-          <Text strong style={{ fontSize: '16px' }}>事件统计分析</Text>
-          {dashboardStats && (
-            <Badge 
-              count={dashboardStats.totalLogs} 
-              style={{ 
-                backgroundColor: '#1890ff',
-                marginLeft: '8px'
-              }} 
-            />
-          )}
+          <Text strong>事件统计分析</Text>
         </div>
       }
-      style={{ 
-        borderRadius: '16px',
-        marginBottom: '32px',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
-      }}
-      bodyStyle={{ padding: '20px' }}
+      style={{ borderRadius: '12px', marginBottom: '24px' }}
     >
-      {/* 检查统计状态 */}
       {!dashboardStats ? (
-        <div style={{ 
-          padding: '40px 0', 
-          textAlign: 'center',
-          color: '#999'
-        }}>
+        <div style={{ padding: '40px 0', textAlign: 'center', color: '#999' }}>
           <Spin size="large" />
           <div style={{ marginTop: '16px' }}>正在加载统计数据...</div>
         </div>
       ) : (
         <>
-          {/* 今日统计卡片 */}
-          <Row gutter={[24, 24]} style={{ marginBottom: '24px' }}>
-            <Col span={8}>
-              <Card
-                title={
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ClockCircleOutlined />
-                    <Text strong>今日事件</Text>
-                  </div>
-                }
-                style={{ borderRadius: '12px', height: '100%' }}
-              >
-                <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                  <Title level={2} style={{ color: '#1890ff', margin: 0 }}>
-                    {dashboardStats.todayLogs}
-                  </Title>
-                  <Text type="secondary">条事件</Text>
-                  <div style={{ marginTop: '16px' }}>
-                    <Progress 
-                      type="circle" 
-                      percent={dashboardStats.totalLogs > 0 ? (dashboardStats.todayLogs / dashboardStats.totalLogs * 100) : 0}
-                      width={80}
-                      format={() => (
-                        <div>
-                          <div style={{ fontSize: '12px' }}>今日占比</div>
-                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
-                            {dashboardStats.totalLogs > 0 ? ((dashboardStats.todayLogs / dashboardStats.totalLogs * 100).toFixed(1)) : 0}%
-                          </div>
-                        </div>
-                      )}
-                    />
-                  </div>
-                </div>
-              </Card>
+          {/* 核心指标 */}
+          <Row gutter={16} style={{ marginBottom: '24px' }}>
+            <Col span={6}>
+              <Statistic title="总事件数" value={dashboardStats.totalLogs} valueStyle={{ color: '#1890ff' }} />
             </Col>
-            
-            <Col span={8}>
-              <Card
-                title={
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <WarningOutlined />
-                    <Text strong>异常事件</Text>
-                  </div>
-                }
-                style={{ borderRadius: '12px', height: '100%' }}
-              >
-                <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                  <Title level={2} style={{ color: '#ff4d4f', margin: 0 }}>
-                    {dashboardStats.anomalyCount}
-                  </Title>
-                  <Text type="secondary">条异常</Text>
-                  <div style={{ marginTop: '16px' }}>
-                    <Progress 
-                      type="circle" 
-                      percent={dashboardStats.totalLogs > 0 ? (dashboardStats.anomalyCount / dashboardStats.totalLogs * 100) : 0}
-                      width={80}
-                      strokeColor="#ff4d4f"
-                      format={() => (
-                        <div>
-                          <div style={{ fontSize: '12px' }}>异常率</div>
-                          <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
-                            {dashboardStats.totalLogs > 0 ? ((dashboardStats.anomalyCount / dashboardStats.totalLogs * 100).toFixed(1)) : 0}%
-                          </div>
-                        </div>
-                      )}
-                    />
-                  </div>
-                </div>
-              </Card>
+            <Col span={6}>
+              <Statistic title="今日事件" value={dashboardStats.todayLogs} valueStyle={{ color: '#52c41a' }} />
             </Col>
-            
-            <Col span={8}>
-              <Card
-                title={
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <DatabaseOutlined />
-                    <Text strong>总事件数</Text>
-                  </div>
-                }
-                style={{ borderRadius: '12px', height: '100%' }}
-              >
-                <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                  <Title level={2} style={{ color: '#52c41a', margin: 0 }}>
-                    {dashboardStats.totalLogs.toLocaleString()}
-                  </Title>
-                  <Text type="secondary">条记录</Text>
-                  <div style={{ marginTop: '16px' }}>
-                    <Text style={{ fontSize: '14px' }}>
-                      最后更新: {dayjs(dashboardStats.lastUpdate).format('HH:mm:ss')}
-                    </Text>
-                  </div>
-                </div>
-              </Card>
+            <Col span={6}>
+              <Statistic title="异常事件" value={dashboardStats.anomalyCount} valueStyle={{ color: '#ff4d4f' }} />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="异常率"
+                value={dashboardStats.totalLogs > 0 ? ((dashboardStats.anomalyCount / dashboardStats.totalLogs) * 100).toFixed(1) : 0}
+                suffix="%"
+                valueStyle={{ color: dashboardStats.anomalyCount / dashboardStats.totalLogs > 0.1 ? '#ff4d4f' : '#52c41a' }}
+              />
             </Col>
           </Row>
 
-          {/* 严重程度分布卡片 */}
+          {/* 严重程度分布 */}
           <Card
-            title={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <SafetyCertificateOutlined />
-                <Text strong>事件严重程度分布</Text>
-                <Text type="secondary" style={{ fontSize: '12px' }}>
-                  {dashboardStats.severityCounts ? Object.keys(dashboardStats.severityCounts).length : 0} 个级别
-                </Text>
-              </div>
-            }
-            style={{ borderRadius: '12px', marginBottom: '24px' }}
+            type="inner"
+            title="严重程度分布"
+            style={{ borderRadius: '8px' }}
             loading={statisticsLoading}
           >
-            <div style={{ minHeight: '300px' }}>
-              {dashboardStats.severityCounts && Object.keys(dashboardStats.severityCounts).length > 0 ? (
-                <div>
-                  {Object.entries(dashboardStats.severityCounts).map(([severity, count]) => {
-                    const severityLevels = {
-                      'HIGH': { color: '#ff4d4f', label: '高', gradient: 'rgba(255,77,79,0.1)' },
-                      'MEDIUM': { color: '#fa8c16', label: '中', gradient: 'rgba(250,140,22,0.1)' },
-                      'LOW': { color: '#52c41a', label: '低', gradient: 'rgba(82,196,26,0.1)' },
-                      'INFO': { color: '#1890ff', label: '信息', gradient: 'rgba(24,144,255,0.1)' },
-                      'CRITICAL': { color: '#722ed1', label: '严重', gradient: 'rgba(114,46,209,0.1)' },
-                      'WARN': { color: '#faad14', label: '警告', gradient: 'rgba(250,173,20,0.1)' },
-                      'ERROR': { color: '#ff4d4f', label: '错误', gradient: 'rgba(255,77,79,0.1)' },
-                      'DEBUG': { color: '#666666', label: '调试', gradient: 'rgba(102,102,102,0.1)' }
-                    };
-                    
-                    const levelInfo = severityLevels[severity as keyof typeof severityLevels] || { 
-                      color: '#1890ff', 
-                      label: severity, 
-                      gradient: 'rgba(24,144,255,0.1)' 
-                    };
-                    
-                    const percentage = dashboardStats.totalLogs > 0 ? ((count / dashboardStats.totalLogs) * 100).toFixed(1) : '0.0';
-                    
-                    return (
-                      <div key={severity} style={{ 
-                        marginBottom: '16px',
-                        padding: '16px',
-                        borderRadius: '12px',
-                        background: `linear-gradient(90deg, ${levelInfo.gradient} 0%, rgba(255, 255, 255, 0) 100%)`,
-                        borderLeft: `4px solid ${levelInfo.color}`,
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        transition: 'all 0.3s',
-                        cursor: 'pointer',
-                        '&:hover': {
-                          transform: 'translateX(4px)',
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                        }
-                      } as React.CSSProperties}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1 }}>
-                          <div style={{
-                            width: '40px',
-                            height: '40px',
-                            borderRadius: '8px',
-                            background: levelInfo.color,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: 'white',
-                            fontWeight: 'bold',
-                            fontSize: '14px'
-                          }}>
-                            {levelInfo.label.charAt(0)}
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div>
-                                <Text strong style={{ fontSize: '14px' }}>{levelInfo.label}</Text>
-                                <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                                  {severity} • 占比: {percentage}%
-                                </div>
-                              </div>
-                              <div style={{ textAlign: 'right' }}>
-                                <Text strong style={{ fontSize: '18px', color: levelInfo.color }}>
-                                  {count.toLocaleString()}
-                                </Text>
-                                <div style={{ fontSize: '12px', color: '#666' }}>条事件</div>
-                              </div>
-                            </div>
-                            <Progress 
-                              percent={parseFloat(percentage)}
-                              strokeColor={levelInfo.color}
-                              size="small"
-                              style={{ marginTop: '12px' }}
-                              showInfo={false}
-                            />
-                          </div>
+            {dashboardStats.severityCounts && Object.keys(dashboardStats.severityCounts).length > 0 ? (
+              <Row gutter={[16, 12]}>
+                {Object.entries(dashboardStats.severityCounts).map(([severity, count]) => {
+                  const severityColors: Record<string, { color: string; label: string }> = {
+                    'CRITICAL': { color: '#722ed1', label: '严重' },
+                    'HIGH': { color: '#ff4d4f', label: '高危' },
+                    'MEDIUM': { color: '#fa8c16', label: '中危' },
+                    'LOW': { color: '#52c41a', label: '低危' },
+                    'INFO': { color: '#1890ff', label: '信息' },
+                    'WARN': { color: '#faad14', label: '警告' },
+                    'ERROR': { color: '#ff4d4f', label: '错误' },
+                    'DEBUG': { color: '#666', label: '调试' },
+                  };
+                  const info = severityColors[severity] || { color: '#1890ff', label: severity };
+                  const pct = dashboardStats.totalLogs > 0 ? ((count / dashboardStats.totalLogs) * 100).toFixed(1) : '0.0';
+                  return (
+                    <Col span={6} key={severity}>
+                      <div style={{ padding: '8px 12px', background: '#fafafa', borderRadius: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Tag color={info.color}>{info.label}</Tag>
+                          <Text strong style={{ fontSize: '16px', color: info.color }}>{count.toLocaleString()}</Text>
                         </div>
+                        <Progress percent={parseFloat(pct)} strokeColor={info.color} size="small" showInfo={false} style={{ marginTop: 4 }} />
+                        <Text type="secondary" style={{ fontSize: '12px' }}>占比 {pct}%</Text>
                       </div>
-                    );
-                  })}
-                  
-                  {/* 统计摘要 */}
-                  <div style={{ 
-                    marginTop: '24px',
-                    padding: '16px',
-                    background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
-                    borderRadius: '12px',
-                    border: '1px solid #b7eb8f'
-                  }}>
-                    <Row gutter={[16, 16]}>
-                      <Col span={6}>
-                        <div style={{ textAlign: 'center' }}>
-                          <Text strong style={{ fontSize: '20px', color: '#1890ff' }}>
-                            {dashboardStats.totalLogs.toLocaleString()}
-                          </Text>
-                          <div style={{ fontSize: '12px', color: '#666' }}>总事件数</div>
-                        </div>
-                      </Col>
-                      <Col span={6}>
-                        <div style={{ textAlign: 'center' }}>
-                          <Text strong style={{ fontSize: '20px', color: '#ff4d4f' }}>
-                            {dashboardStats.anomalyCount}
-                          </Text>
-                          <div style={{ fontSize: '12px', color: '#666' }}>异常事件</div>
-                        </div>
-                      </Col>
-                      <Col span={6}>
-                        <div style={{ textAlign: 'center' }}>
-                          <Text strong style={{ fontSize: '20px', color: '#52c41a' }}>
-                            {dashboardStats.todayLogs}
-                          </Text>
-                          <div style={{ fontSize: '12px', color: '#666' }}>今日事件</div>
-                        </div>
-                      </Col>
-                      <Col span={6}>
-                        <div style={{ textAlign: 'center' }}>
-                          <Text strong style={{ fontSize: '20px', color: '#fa8c16' }}>
-                            {Object.keys(dashboardStats.severityCounts || {}).length}
-                          </Text>
-                          <div style={{ fontSize: '12px', color: '#666' }}>严重程度</div>
-                        </div>
-                      </Col>
-                    </Row>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ 
-                  height: '300px', 
-                  display: 'flex', 
-                  flexDirection: 'column',
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  color: '#999',
-                  gap: '16px'
-                }}>
-                  <BarChartOutlined style={{ fontSize: '64px', color: '#d9d9d9' }} />
-                  <div style={{ fontSize: '16px' }}>暂无严重程度统计数据</div>
-                  <Text type="secondary">请等待数据收集或重新加载</Text>
-                  <div style={{ marginTop: '16px' }}>
-                    <Space>
-                      <Button 
-                        type="primary"
-                        onClick={() => fetchDashboardStats()}
-                        loading={statisticsLoading}
-                      >
-                        重新加载统计数据
-                      </Button>
-                      <Button 
-                        onClick={() => triggerLogCollection()}
-                      >
-                        手动收集日志
-                      </Button>
-                    </Space>
-                  </div>
-                </div>
-              )}
-            </div>
+                    </Col>
+                  );
+                })}
+              </Row>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '24px 0', color: '#999' }}>
+                <BarChartOutlined style={{ fontSize: '48px', color: '#d9d9d9' }} />
+                <div style={{ marginTop: 8 }}>暂无严重程度统计数据</div>
+                <Button type="primary" size="small" onClick={() => fetchDashboardStats()} loading={statisticsLoading} style={{ marginTop: 12 }}>
+                  重新加载
+                </Button>
+              </div>
+            )}
           </Card>
 
-          {/* 数据质量卡片 */}
-          <Card
-            title={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <DatabaseOutlined />
-                <Text strong>数据质量概览</Text>
-              </div>
-            }
-            style={{ borderRadius: '12px' }}
-          >
-            <Row gutter={[24, 24]}>
-              <Col span={12}>
-                <div style={{ 
-                  padding: '20px',
-                  background: 'linear-gradient(135deg, #f0f5ff 0%, #d6e4ff 100%)',
-                  borderRadius: '12px',
-                  border: '1px solid #adc6ff'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                    <div style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '12px',
-                      background: '#1890ff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <ThunderboltOutlined style={{ fontSize: '24px', color: 'white' }} />
-                    </div>
-                    <div>
-                      <Text strong style={{ fontSize: '16px' }}>数据完整性</Text>
-                      <div style={{ fontSize: '12px', color: '#666' }}>事件记录完整度</div>
-                    </div>
-                  </div>
-                  <Progress 
-                    percent={95.8}
-                    strokeColor="#1890ff"
-                    size="small"
-                    style={{ marginBottom: '8px' }}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#666' }}>
-                    <span>完整性评分</span>
-                    <span>95.8%</span>
-                  </div>
-                </div>
-              </Col>
-              
-              <Col span={12}>
-                <div style={{ 
-                  padding: '20px',
-                  background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
-                  borderRadius: '12px',
-                  border: '1px solid #b7eb8f'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                    <div style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: '12px',
-                      background: '#52c41a',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      <CheckCircleOutlined style={{ fontSize: '24px', color: 'white' }} />
-                    </div>
-                    <div>
-                      <Text strong style={{ fontSize: '16px' }}>数据准确性</Text>
-                      <div style={{ fontSize: '12px', color: '#666' }}>异常检测准确率</div>
-                    </div>
-                  </div>
-                  <Progress 
-                    percent={92.3}
-                    strokeColor="#52c41a"
-                    size="small"
-                    style={{ marginBottom: '8px' }}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#666' }}>
-                    <span>准确率</span>
-                    <span>92.3%</span>
-                  </div>
-                </div>
-              </Col>
-            </Row>
-            
-            {/* 最后更新时间 */}
-            <div style={{ 
-              marginTop: '24px',
-              padding: '12px',
-              background: '#fafafa',
-              borderRadius: '8px',
-              textAlign: 'center'
-            }}>
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                数据最后更新时间: {dayjs(dashboardStats.lastUpdate).format('YYYY-MM-DD HH:mm:ss')}
-              </Text>
-            </div>
-          </Card>
+          <div style={{ marginTop: 16, textAlign: 'right' }}>
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              最后更新: {dayjs(dashboardStats.lastUpdate).format('YYYY-MM-DD HH:mm:ss')}
+            </Text>
+          </div>
         </>
       )}
     </Card>
@@ -1961,7 +1399,7 @@ const EventsPage: React.FC = () => {
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <LineChartOutlined />
-          <Text strong style={{ fontSize: '16px' }}>事件趋势分析</Text>
+          <Text strong>事件趋势分析</Text>
           {trends && trends.length > 0 && (
             <Text type="secondary" style={{ fontSize: '12px', marginLeft: '8px' }}>
               最近 {trends.length} 个时间点
@@ -1969,198 +1407,94 @@ const EventsPage: React.FC = () => {
           )}
         </div>
       }
-      style={{ 
-        borderRadius: '16px',
-        marginBottom: '32px',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
-      }}
-      bodyStyle={{ padding: '20px' }}
+      extra={trends && trends.length > 0 && (
+        <Button icon={<ReloadOutlined />} size="small" onClick={() => fetchTrends()}>刷新</Button>
+      )}
+      style={{ borderRadius: '12px', marginBottom: '24px' }}
     >
-      <div style={{ minHeight: '400px' }}>
-        {trends && trends.length > 0 ? (
-          <>
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '24px' 
-            }}>
-              <div>
-                <Text strong>最近 {trends.length} 个时间点的趋势数据</Text>
-                <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                  时间范围: {dayjs(trends[0].timestamp).format('YYYY-MM-DD HH:mm')} 至 {dayjs(trends[trends.length-1].timestamp).format('YYYY-MM-DD HH:mm')}
-                </div>
-              </div>
-              <Button 
-                icon={<ReloadOutlined />} 
-                size="small"
-                onClick={() => fetchTrends()}
-              >
-                刷新数据
-              </Button>
-            </div>
-            
-            <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
-              {trends.map((trend, index) => {
-                const timestamp = dayjs(trend.timestamp);
-                const isCurrentHour = timestamp.isSame(dayjs(), 'hour');
-                
+      {trends && trends.length > 0 ? (
+        <Table
+          dataSource={trends.map((t, i) => ({ ...t, key: i }))}
+          size="small"
+          pagination={false}
+          scroll={{ y: 400 }}
+          columns={[
+            {
+              title: '时间',
+              dataIndex: 'timestamp',
+              width: 160,
+              render: (ts: string) => {
+                const isCurrent = dayjs(ts).isSame(dayjs(), 'hour');
                 return (
-                  <div key={index} style={{ 
-                    marginBottom: '12px',
-                    padding: '16px',
-                    border: '1px solid #f0f0f0',
-                    borderRadius: '12px',
-                    background: isCurrentHour ? '#f6ffed' : index % 2 === 0 ? '#fafafa' : 'white',
-                    transition: 'all 0.3s',
-                    boxShadow: isCurrentHour ? '0 2px 8px rgba(82,196,26,0.2)' : 'none'
-                  }}>
-                    <Row gutter={16} align="middle">
-                      <Col span={6}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <ClockCircleOutlined style={{ 
-                            color: isCurrentHour ? '#52c41a' : '#666', 
-                            fontSize: '14px' 
-                          }} />
-                          <div>
-                            <div style={{ 
-                              fontSize: '12px', 
-                              fontWeight: 500,
-                              color: isCurrentHour ? '#52c41a' : '#333'
-                            }}>
-                              {timestamp.format('MM-DD')}
-                            </div>
-                            <div style={{ 
-                              fontSize: '11px', 
-                              color: isCurrentHour ? '#52c41a' : '#666'
-                            }}>
-                              {timestamp.format('HH:mm')}
-                              {isCurrentHour && <Tag color="success" size="small" style={{ marginLeft: '4px' }}>当前</Tag>}
-                            </div>
-                          </div>
-                        </div>
-                      </Col>
-                      <Col span={6}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <ThunderboltOutlined style={{ color: '#1890ff', fontSize: '14px' }} />
-                          <div>
-                            <Text strong style={{ fontSize: '14px' }}>{trend.eventCount}</Text>
-                            <div style={{ fontSize: '11px', color: '#666' }}>总事件</div>
-                          </div>
-                        </div>
-                      </Col>
-                      <Col span={6}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <WarningOutlined style={{ color: '#fa8c16', fontSize: '14px' }} />
-                          <div>
-                            <Text strong style={{ fontSize: '14px', color: '#fa8c16' }}>{trend.anomalyCount}</Text>
-                            <div style={{ fontSize: '11px', color: '#666' }}>异常事件</div>
-                          </div>
-                        </div>
-                      </Col>
-                      <Col span={6}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <RiseOutlined style={{ 
-                            color: trend.anomalyRate > 0.1 ? '#ff4d4f' : 
-                                   trend.anomalyRate > 0.05 ? '#fa8c16' : '#52c41a', 
-                            fontSize: '14px' 
-                          }} />
-                          <div>
-                            <Text strong style={{ 
-                              fontSize: '14px', 
-                              color: trend.anomalyRate > 0.1 ? '#ff4d4f' : 
-                                     trend.anomalyRate > 0.05 ? '#fa8c16' : '#52c41a'
-                            }}>
-                              {(trend.anomalyRate * 100).toFixed(2)}%
-                            </Text>
-                            <div style={{ fontSize: '11px', color: '#666' }}>异常率</div>
-                          </div>
-                        </div>
-                      </Col>
-                    </Row>
-                    
-                    {/* 添加进度条展示 */}
-                    <div style={{ marginTop: '12px' }}>
-                      <div style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between',
-                        marginBottom: '4px' 
-                      }}>
-                        <Text type="secondary" style={{ fontSize: '11px' }}>事件分布</Text>
-                        <Text type="secondary" style={{ fontSize: '11px' }}>
-                          正常: {trend.eventCount - trend.anomalyCount} | 异常: {trend.anomalyCount}
-                        </Text>
-                      </div>
-                      <div style={{ 
-                        height: '6px', 
-                        background: '#f0f0f0',
-                        borderRadius: '3px',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          width: `${(1 - trend.anomalyRate) * 100}%`,
-                          height: '100%',
-                          background: '#52c41a',
-                          float: 'left'
-                        }} />
-                        <div style={{
-                          width: `${trend.anomalyRate * 100}%`,
-                          height: '100%',
-                          background: '#ff4d4f',
-                          float: 'left'
-                        }} />
-                      </div>
-                    </div>
-                  </div>
+                  <span>
+                    {dayjs(ts).format('MM-DD HH:mm')}
+                    {isCurrent && <Tag color="success" style={{ marginLeft: 4 }}>当前</Tag>}
+                  </span>
                 );
-              })}
-            </div>
-          </>
-        ) : (
-          <div style={{ 
-            height: '300px', 
-            display: 'flex', 
-            flexDirection: 'column',
-            alignItems: 'center', 
-            justifyContent: 'center',
-            color: '#999',
-            gap: '16px'
-          }}>
-            <LineChartOutlined style={{ fontSize: '64px', color: '#d9d9d9' }} />
-            <div style={{ fontSize: '16px' }}>暂无趋势数据</div>
-            <Text type="secondary">请选择时间范围或等待数据收集</Text>
-            <div style={{ marginTop: '16px' }}>
-              <Space>
-                <Button 
-                  type="primary"
-                  onClick={() => fetchTrends()}
-                  loading={statisticsLoading}
-                >
-                  重新加载趋势数据
-                </Button>
-                <Button 
-                  onClick={() => {
-                    setQueryParams(prev => ({
-                      ...prev,
-                      startTime: dayjs().subtract(1, 'day'),
-                      endTime: dayjs()
-                    }));
-                    fetchTrends();
-                  }}
-                >
-                  选择最近24小时
-                </Button>
-              </Space>
-            </div>
-          </div>
-        )}
-      </div>
+              }
+            },
+            {
+              title: '总事件',
+              dataIndex: 'eventCount',
+              width: 100,
+              render: (v: number) => <Text strong>{v}</Text>
+            },
+            {
+              title: '异常事件',
+              dataIndex: 'anomalyCount',
+              width: 100,
+              render: (v: number) => <Text strong style={{ color: v > 0 ? '#ff4d4f' : undefined }}>{v}</Text>
+            },
+            {
+              title: '异常率',
+              dataIndex: 'anomalyRate',
+              width: 100,
+              render: (v: number) => {
+                const pct = (v * 100).toFixed(1);
+                const color = v > 0.1 ? '#ff4d4f' : v > 0.05 ? '#fa8c16' : '#52c41a';
+                return <Text strong style={{ color }}>{pct}%</Text>;
+              }
+            },
+            {
+              title: '分布',
+              key: 'bar',
+              render: (_: any, r: any) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={{ flex: 1, height: 8, background: '#f0f0f0', borderRadius: 4, overflow: 'hidden', display: 'flex' }}>
+                    <div style={{ width: `${(1 - r.anomalyRate) * 100}%`, height: '100%', background: '#52c41a' }} />
+                    <div style={{ width: `${r.anomalyRate * 100}%`, height: '100%', background: '#ff4d4f' }} />
+                  </div>
+                </div>
+              )
+            }
+          ]}
+        />
+      ) : (
+        <div style={{ textAlign: 'center', padding: '40px 0', color: '#999' }}>
+          <LineChartOutlined style={{ fontSize: '48px', color: '#d9d9d9' }} />
+          <div style={{ marginTop: 8 }}>暂无趋势数据</div>
+          <Space style={{ marginTop: 12 }}>
+            <Button type="primary" size="small" onClick={() => fetchTrends()} loading={statisticsLoading}>重新加载</Button>
+            <Button size="small" onClick={() => { setQueryParams(prev => ({ ...prev, startTime: dayjs().subtract(1, 'day'), endTime: dayjs() })); fetchTrends(); }}>最近24小时</Button>
+          </Space>
+        </div>
+      )}
     </Card>
   );
 
+  const activeFilterItems = [
+    queryParams.startTime && queryParams.endTime
+      ? `时间: ${queryParams.startTime.format('MM-DD HH:mm')} ~ ${queryParams.endTime.format('MM-DD HH:mm')}`
+      : '时间: 不限',
+    queryParams.eventType ? `事件类型: ${translate(EVENT_TYPE_MAP, queryParams.eventType)}` : null,
+    queryParams.severity ? `严重程度: ${getSeverity(queryParams.severity).label}` : null,
+    queryParams.keyword ? `关键词: ${queryParams.keyword}` : null,
+    queryParams.isAnomaly === undefined ? null : `异常类型: ${queryParams.isAnomaly ? '仅异常' : '仅正常'}`,
+  ].filter(Boolean) as string[];
+
   return (
     <div style={{ 
-      padding: '32px',
+      padding: '16px',
       maxWidth: '1600px',
       margin: '0 auto',
       position: 'relative'
@@ -2174,16 +1508,11 @@ const EventsPage: React.FC = () => {
           type="warning"
           showIcon
           message={
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-              <div>
-                <Text strong style={{ fontSize: '15px' }}>注意：检测到 {getAnomalyEvents()} 个异常事件</Text>
-                <div style={{ fontSize: '13px', color: 'rgba(0,0,0,0.65)', marginTop: '2px' }}>
-                  当前异常率 {getAnomalyRate().toFixed(1)}%，建议及时分析处理
-                </div>
+            <div>
+              <Text strong style={{ fontSize: '15px' }}>注意：检测到 {getAnomalyEvents()} 个异常事件</Text>
+              <div style={{ fontSize: '13px', color: 'rgba(0,0,0,0.65)', marginTop: '2px' }}>
+                当前异常率 {getAnomalyRate().toFixed(1)}%，建议及时分析处理
               </div>
-              <Button type="primary" size="middle">
-                立即分析
-              </Button>
             </div>
           }
           style={{ 
@@ -2204,7 +1533,7 @@ const EventsPage: React.FC = () => {
           title={
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <SearchOutlined />
-              <Text strong style={{ fontSize: '16px' }}>高级事件查询</Text>
+              <Text strong style={{ fontSize: '16px' }}>事件查询与统计</Text>
             </div>
           }
           extra={
@@ -2228,103 +1557,180 @@ const EventsPage: React.FC = () => {
             </div>
           }
           style={{ 
-            borderRadius: '16px',
-            marginBottom: '32px',
+            borderRadius: '12px',
+            marginBottom: '16px',
             boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
           }}
-          bodyStyle={{ padding: '20px' }}
+          bodyStyle={{ padding: '14px' }}
         >
-          {/* 搜索表单 */}
-          <Form form={searchForm} layout="vertical">
-            <div style={{ 
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '16px',
-              marginBottom: '24px'
-            }}>
-              <div>
-                <Text strong style={{ fontSize: '13px', marginBottom: '8px', display: 'block' }}>时间范围</Text>
-                <Form.Item name="timeRange" label={null}>
-                  <RangePicker 
-                    showTime 
-                    format="YYYY-MM-DD HH:mm:ss"
-                    style={{ width: '100%', height: '40px' }}
+          {/* 统计数字区 */}
+          <div style={{ 
+            marginBottom: '12px',
+            padding: '10px 16px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '24px',
+            flexWrap: 'wrap'
+          }}>
+            <Text style={{ fontSize: '13px' }}>总事件: <Text strong>{pagination.total}</Text></Text>
+            <Text style={{ fontSize: '13px' }}>异常: <Text strong style={{ color: '#ff4d4f' }}>{getAnomalyEvents()}</Text></Text>
+            <Text style={{ fontSize: '13px' }}>已解决: <Text strong style={{ color: '#52c41a' }}>{events.filter((event) => event.status === 'RESOLVED').length}</Text></Text>
+            <Text style={{ fontSize: '13px' }}>异常率: <Text strong>{getAnomalyRate().toFixed(1)}%</Text></Text>
+          </div>
+
+          {/* 筛选区 */}
+          <div style={{ 
+            border: '1px solid #e8e8e8', 
+            borderRadius: '16px', 
+            padding: '16px', 
+            background: '#fafafa',
+            marginBottom: '12px'
+          }}>
+            <Form form={searchForm} layout="vertical">
+              {/* 第一行：关键词 */}
+              <div style={{ marginBottom: '12px' }}>
+                <Form.Item name="keyword" style={{ marginBottom: 0 }}>
+                  <Input
+                    placeholder="搜索关键词（事件描述、源IP、用户等）..."
+                    prefix={<SearchOutlined style={{ color: '#999' }} />}
+                    onPressEnter={handleSearch}
+                    style={{ height: '36px', borderRadius: '18px' }}
+                    allowClear
                   />
                 </Form.Item>
               </div>
-              <div>
-                <Text strong style={{ fontSize: '13px', marginBottom: '8px', display: 'block' }}>事件类型</Text>
-                <Form.Item name="eventType" label={null}>
-                  <Select
-                    placeholder="全部类型"
-                    style={{ width: '100%', height: '40px' }}
+              
+              {/* 第二行：下拉框 */}
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <Form.Item name="timeRange" style={{ marginBottom: 0, flex: '1 1 220px', minWidth: '200px' }}>
+                  <RangePicker
                     allowClear
+                    showTime
+                    format="YYYY-MM-DD HH:mm:ss"
+                    style={{ width: '100%', borderRadius: '8px' }}
+                    placeholder={['开始时间', '结束时间']}
+                    onChange={() => {
+                      setTimeout(() => handleSearch(), 0);
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item name="eventType" style={{ marginBottom: 0, flex: '1 1 160px', minWidth: '130px' }}>
+                  <Select
+                    placeholder="事件类型"
+                    style={{ width: '100%', borderRadius: '8px' }}
+                    allowClear
+                    onChange={() => {
+                      setTimeout(() => handleSearch(), 0);
+                    }}
                   >
                     <Option value="LOGIN_SUCCESS">登录成功</Option>
                     <Option value="LOGIN_FAILURE">登录失败</Option>
-                    <Option value="PROCESS_CREATION">进程创建</Option>
+                    <Option value="LOGOUT">注销</Option>
+                    <Option value="PERMISSION_DENIED">权限拒绝</Option>
+                    <Option value="FILE_ACCESS">文件访问</Option>
                     <Option value="NETWORK_CONNECTION">网络连接</Option>
-                    <Option value="FILE_OPERATION">文件操作</Option>
+                    <Option value="SYSTEM_STARTUP">系统启动</Option>
+                    <Option value="SYSTEM_SHUTDOWN">系统关闭</Option>
+                    <Option value="PROCESS_CREATION">进程创建</Option>
+                    <Option value="PROCESS_TERMINATION">进程终止</Option>
+                    <Option value="SERVICE_START">服务启动</Option>
+                    <Option value="SERVICE_STOP">服务停止</Option>
+                    <Option value="CONFIGURATION_CHANGE">配置变更</Option>
+                    <Option value="SECURITY_POLICY_CHANGE">安全策略变更</Option>
+                    <Option value="MALWARE_DETECTED">恶意软件检测</Option>
+                    <Option value="SUSPICIOUS_ACTIVITY">可疑活动</Option>
+                    <Option value="DATA_ACCESS">数据访问</Option>
+                    <Option value="PRIVILEGE_ESCALATION">权限提升</Option>
+                    <Option value="BRUTE_FORCE_ATTACK">暴力破解</Option>
                   </Select>
                 </Form.Item>
-              </div>
-              <div>
-                <Text strong style={{ fontSize: '13px', marginBottom: '8px', display: 'block' }}>严重程度</Text>
-                <Form.Item name="severity" label={null}>
+                <Form.Item name="severity" style={{ marginBottom: 0, flex: '1 1 130px', minWidth: '100px' }}>
                   <Select
-                    placeholder="全部级别"
-                    style={{ width: '100%', height: '40px' }}
+                    placeholder="严重程度"
+                    style={{ width: '100%', borderRadius: '8px' }}
                     allowClear
+                    onChange={() => {
+                      setTimeout(() => handleSearch(), 0);
+                    }}
                   >
-                    <Option value="LOW">低</Option>
-                    <Option value="MEDIUM">中</Option>
-                    <Option value="HIGH">高</Option>
                     <Option value="CRITICAL">严重</Option>
+                    <Option value="HIGH">高危</Option>
+                    <Option value="MEDIUM">中危</Option>
+                    <Option value="LOW">低危</Option>
                   </Select>
                 </Form.Item>
               </div>
-              <div>
-                <Text strong style={{ fontSize: '13px', marginBottom: '8px', display: 'block' }}>关键词</Text>
-                <Form.Item name="keyword" label={null}>
-                  <Input
-                    placeholder="事件描述、源IP、用户..."
-                    prefix={<SearchOutlined style={{ color: '#666' }} />}
-                    onPressEnter={handleSearch}
-                    style={{ height: '40px' }}
-                  />
-                </Form.Item>
+              
+              {/* 第三行：快捷标签 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <Text type="secondary" style={{ fontSize: '12px' }}>快捷:</Text>
+                <Tag 
+                  style={{ 
+                    margin: 0, 
+                    padding: '2px 12px', 
+                    borderRadius: '12px', 
+                    cursor: 'pointer',
+                    background: '#fff',
+                    border: '1px solid #ff4d4f',
+                    color: '#ff4d4f'
+                  }} 
+                  onClick={() => {
+                    const q = { ...queryParams, isAnomaly: true };
+                    setQueryParams(q);
+                    searchForm.setFieldsValue({ isAnomaly: true });
+                    fetchEvents(1, pagination.pageSize, q);
+                  }}
+                >异常</Tag>
+                <Tag 
+                  style={{ 
+                    margin: 0, 
+                    padding: '2px 12px', 
+                    borderRadius: '12px', 
+                    cursor: 'pointer',
+                    background: '#fff',
+                    border: '1px solid #cf1322',
+                    color: '#cf1322'
+                  }} 
+                  onClick={() => {
+                    const q = { ...queryParams, severity: 'CRITICAL' };
+                    setQueryParams(q);
+                    searchForm.setFieldsValue({ severity: 'CRITICAL' });
+                    fetchEvents(1, pagination.pageSize, q);
+                  }}
+                >严重</Tag>
+                <Tag 
+                  style={{ 
+                    margin: 0, 
+                    padding: '2px 12px', 
+                    borderRadius: '12px', 
+                    cursor: 'pointer',
+                    background: '#fff',
+                    border: '1px solid #fa8c16',
+                    color: '#fa8c16'
+                  }} 
+                  onClick={() => {
+                    const q = { ...queryParams, severity: 'HIGH' };
+                    setQueryParams(q);
+                    searchForm.setFieldsValue({ severity: 'HIGH' });
+                    fetchEvents(1, pagination.pageSize, q);
+                  }}
+                >高危</Tag>
+                <div style={{ flex: 1 }} />
+                <Button 
+                  size="small" 
+                  type="text" 
+                  style={{ color: '#999' }}
+                  onClick={() => handleReset()}
+                >清空筛选</Button>
               </div>
-            </div>
-          </Form>
-
-          {/* 操作按钮 */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <Space>
-              <Button 
-                icon={<FilterOutlined />}
-                onClick={triggerLogCollection}
-                style={{ height: '36px', padding: '0 16px' }}
-              >
-                手动收集日志
-              </Button>
-              <Button 
-                danger
-                onClick={cleanupOldEvents}
-                style={{ height: '36px', padding: '0 16px' }}
-              >
-                清理旧数据
-              </Button>
-            </Space>
-            <div>
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                共 {pagination.total} 条记录，当前显示第 {pagination.current} 页
-              </Text>
-            </div>
+            </Form>
           </div>
 
           {/* 事件表格 */}
           <div style={{ 
-            borderRadius: '12px',
+            borderRadius: '8px',
             overflow: 'hidden',
             border: '1px solid #f0f0f0'
           }}>
@@ -2333,10 +1739,20 @@ const EventsPage: React.FC = () => {
               dataSource={events}
               rowKey="id"
               loading={loading}
-              scroll={{ x: 1500 }}
+              size="small"
+              rowClassName={(record) => {
+                if (record.id === highlightEventId) return 'highlighted-event-row';
+                if (record.isAnomaly) return 'anomaly-event-row';
+                return 'normal-event-row';
+              }}
+              onRow={(record) => ({
+                onClick: () => showEventDetail(record),
+                style: { cursor: 'pointer' },
+              })}
               pagination={{
                 ...pagination,
                 showSizeChanger: true,
+                pageSizeOptions: ['10', '20', '50', '100'],
                 showQuickJumper: true,
                 showTotal: (total, range) => 
                   <div style={{ fontSize: '13px' }}>
@@ -2345,21 +1761,118 @@ const EventsPage: React.FC = () => {
                 style: { padding: '16px 24px', margin: 0 }
               }}
               onChange={handleTableChange}
-              rowClassName={(record) => 
-                record.isAnomaly ? 'anomaly-event-row' : 'normal-event-row'
-              }
               locale={{
                 emptyText: events.length === 0 ? 
                   <div style={{ padding: '40px 0', textAlign: 'center' }}>
                     <DatabaseOutlined style={{ fontSize: '48px', color: '#d9d9d9', marginBottom: '16px' }} />
                     <div style={{ fontSize: '16px', marginBottom: '8px' }}>暂无事件数据</div>
                     <Text type="secondary">当前查询条件下未找到匹配的事件</Text>
+                    <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <Button size="small" onClick={handleReset}>清空筛选</Button>
+                      <Button size="small" type="primary" onClick={handleRestoreRecent7Days}>恢复最近7天</Button>
+                    </div>
                   </div> : undefined
               }}
             />
           </div>
         </Card>
       )}
+
+      <Modal
+        title="事件详情"
+        open={detailVisible}
+        onCancel={() => {
+          setDetailVisible(false);
+          setSelectedEventDetail(null);
+        }}
+        width={720}
+        footer={null}
+      >
+        {detailLoading || !selectedEventDetail ? (
+          <div style={{ padding: '40px 0', textAlign: 'center' }}>
+            <Text type="secondary">加载中...</Text>
+          </div>
+        ) : (
+          <div>
+            {/* 基本信息 */}
+            <Descriptions column={2} bordered size="small" style={{ marginBottom: '16px' }}>
+              <Descriptions.Item label="事件ID" span={2}>
+                <Text copyable style={{ fontFamily: 'monospace' }}>{selectedEventDetail.id}</Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="时间">
+                {selectedEventDetail.timestamp ? dayjs(selectedEventDetail.timestamp).format('YYYY-MM-DD HH:mm:ss') : '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="事件类型">
+                <Tag color="blue">{translate(EVENT_TYPE_MAP, selectedEventDetail.eventType)}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="严重程度">
+                <Tag color={getSeverity(selectedEventDetail.severity).color}>{getSeverity(selectedEventDetail.severity).label}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="状态">
+                <Tag color={getStatus(selectedEventDetail.status).color}>{getStatus(selectedEventDetail.status).label}</Tag>
+              </Descriptions.Item>
+              {selectedEventDetail.sourceIp && (
+                <Descriptions.Item label="源IP">{selectedEventDetail.sourceIp}</Descriptions.Item>
+              )}
+              {selectedEventDetail.userName && (
+                <Descriptions.Item label="用户">{selectedEventDetail.userName}</Descriptions.Item>
+              )}
+              {selectedEventDetail.hostName && (
+                <Descriptions.Item label="主机名">{selectedEventDetail.hostName}</Descriptions.Item>
+              )}
+              <Descriptions.Item label="是否异常">
+                <Tag color={selectedEventDetail.isAnomaly ? 'red' : 'green'}>
+                  {selectedEventDetail.isAnomaly ? '异常' : '正常'}
+                </Tag>
+              </Descriptions.Item>
+            </Descriptions>
+
+            {/* 事件描述 */}
+            <div style={{ 
+              padding: '12px 16px', 
+              background: '#fafafa', 
+              borderRadius: '8px',
+              marginBottom: '16px'
+            }}>
+              <Text strong style={{ display: 'block', marginBottom: '8px', fontSize: '13px' }}>事件描述</Text>
+              <Paragraph style={{ margin: 0, color: '#333' }}>
+                {getDisplayText(selectedEventDetail.normalizedMessage || selectedEventDetail.rawMessage || selectedEventDetail.description)}
+              </Paragraph>
+            </div>
+
+            {/* 异常分数（仅异常事件显示） */}
+            {selectedEventDetail.isAnomaly && (
+              <div style={{ 
+                display: 'flex', 
+                gap: '16px', 
+                padding: '12px 16px', 
+                background: '#fff2f0', 
+                borderRadius: '8px',
+                border: '1px solid #ffccc7'
+              }}>
+                {selectedEventDetail.anomalyScore !== undefined && (
+                  <div>
+                    <Text type="secondary" style={{ fontSize: '12px' }}>异常分数</Text>
+                    <div><Text strong style={{ color: '#ff4d4f' }}>{selectedEventDetail.anomalyScore}</Text></div>
+                  </div>
+                )}
+                {selectedEventDetail.aiAnomalyScore !== undefined && (
+                  <div>
+                    <Text type="secondary" style={{ fontSize: '12px' }}>AI异常分数</Text>
+                    <div><Text strong style={{ color: '#ff4d4f' }}>{(selectedEventDetail.aiAnomalyScore * 100).toFixed(1)}%</Text></div>
+                  </div>
+                )}
+                {selectedEventDetail.combinedScore !== undefined && (
+                  <div>
+                    <Text type="secondary" style={{ fontSize: '12px' }}>综合分数</Text>
+                    <div><Text strong style={{ color: '#ff4d4f' }}>{(selectedEventDetail.combinedScore * 100).toFixed(1)}%</Text></div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
 
       {/* 统计分析标签页 */}
       {activeTab === 'statistics' && renderStatisticsTab()}
@@ -2408,6 +1921,17 @@ const EventsPage: React.FC = () => {
       </div>
 
       <style>{`
+        .highlighted-event-row {
+          background: rgba(24, 144, 255, 0.12) !important;
+          border-left: 4px solid #1890ff !important;
+          box-shadow: inset 0 0 0 1px rgba(24, 144, 255, 0.3) !important;
+          animation: highlightPulse 2s ease-in-out 3;
+        }
+        @keyframes highlightPulse {
+          0%   { background: rgba(24, 144, 255, 0.25) !important; }
+          50%  { background: rgba(24, 144, 255, 0.06) !important; }
+          100% { background: rgba(24, 144, 255, 0.12) !important; }
+        }
         .anomaly-event-row {
           background: linear-gradient(90deg, rgba(255, 77, 79, 0.02) 0%, rgba(255, 255, 255, 0.1) 100%) !important;
           border-left: 4px solid #ff4d4f;

@@ -42,7 +42,7 @@ public class RealTimeSystemController {
     @Autowired
     private MetricsService metricsService;
 
-    // 存储连接和查询的模拟数据（在生产环境中应该使用数据库）
+    // 存储连接和查询的运行时数据（生产环境建议使用数据库）
     private final Map<String, Map<String, Object>> connections = new HashMap<>();
     private final Map<String, Map<String, Object>> queries = new HashMap<>();
     private final Map<String, List<Map<String, Object>>> queryResults = new HashMap<>();
@@ -230,6 +230,7 @@ public class RealTimeSystemController {
     @Operation(summary = "测试系统信息采集环境", description = "测试系统信息采集环境是否可用")
     public ResponseEntity<Map<String, Object>> testConnection(@PathVariable String connectionId) {
         try {
+            long start = System.currentTimeMillis();
             Map<String, Object> connection = connections.get(connectionId);
             if (connection == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -244,7 +245,7 @@ public class RealTimeSystemController {
             status.put("lastConnected", LocalDateTime.now());
 
             if (environmentOk) {
-                status.put("responseTime", 100 + (int)(Math.random() * 100));
+                status.put("responseTime", System.currentTimeMillis() - start);
                 status.put("errorMessage", null);
                 status.put("pythonEnvironment", "available");
                 log.info("系统信息采集环境测试成功: {}", connectionId);
@@ -394,13 +395,7 @@ public class RealTimeSystemController {
             String infoType = (String) query.getOrDefault("infoType", "system_basic");
 
             // 执行系统信息查询
-            List<Map<String, Object>> data;
-            try {
-                data = realTimeSystemService.executeSystemInfoQuery(infoType);
-            } catch (Exception e) {
-                log.warn("执行系统信息查询失败，使用模拟数据: {}", e.getMessage());
-                data = generateMockData(infoType);
-            }
+            List<Map<String, Object>> data = realTimeSystemService.executeSystemInfoQuery(infoType);
 
             // 创建查询结果
             Map<String, Object> result = new HashMap<>();
@@ -409,7 +404,7 @@ public class RealTimeSystemController {
             result.put("timestamp", LocalDateTime.now());
             result.put("data", data);
             result.put("recordCount", data.size());
-            result.put("executionTime", 100 + (int)(Math.random() * 400));
+            result.put("executionTime", 0);
             result.put("error", null);
             result.put("connectionId", connectionId);
 
@@ -438,85 +433,18 @@ public class RealTimeSystemController {
 
             queryResults.computeIfAbsent(queryId, k -> new ArrayList<>()).add(errorResult);
 
-            return ResponseEntity.ok(createSuccessResponse(errorResult, "查询执行失败"));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(createErrorResponse("查询执行失败: " + e.getMessage()));
         }
     }
 
-    // 生成模拟数据的方法
-    private List<Map<String, Object>> generateMockData(String infoType) {
-        List<Map<String, Object>> mockData = new ArrayList<>();
-
-        switch (infoType) {
-            case "system_basic":
-                Map<String, Object> system = new HashMap<>();
-                system.put("hostname", System.getProperty("user.name") + "-PC");
-                system.put("platform", System.getProperty("os.name"));
-                system.put("architecture", System.getProperty("os.arch"));
-                system.put("processor", "Intel(R) Core(TM) i7");
-                system.put("users", 1);
-                system.put("current_user", System.getProperty("user.name"));
-                system.put("boot_time_str", LocalDateTime.now().minusHours(2).toString());
-                system.put("timestamp", System.currentTimeMillis());
-                mockData.add(system);
-                break;
-
-            case "cpu_info":
-                Map<String, Object> cpu = new HashMap<>();
-                cpu.put("usage", 15.5 + Math.random() * 30);
-                cpu.put("cores", Runtime.getRuntime().availableProcessors());
-                cpu.put("frequency", 2900 + Math.random() * 600);
-                cpu.put("load_average", Arrays.asList(1.2, 1.5, 1.8));
-                cpu.put("timestamp", System.currentTimeMillis());
-                mockData.add(cpu);
-                break;
-
-            case "memory_info":
-                Map<String, Object> memory = new HashMap<>();
-                long totalMemory = 16L * 1024 * 1024 * 1024; // 16GB
-                long usedMemory = (long)(totalMemory * (0.3 + Math.random() * 0.3));
-                memory.put("usage", (usedMemory * 100.0 / totalMemory));
-                memory.put("used", usedMemory);
-                memory.put("available", totalMemory - usedMemory);
-                memory.put("total", totalMemory);
-                memory.put("timestamp", System.currentTimeMillis());
-                mockData.add(memory);
-                break;
-
-            case "disk_info":
-                Map<String, Object> disk = new HashMap<>();
-                long totalDisk = 500L * 1024 * 1024 * 1024; // 500GB
-                long usedDisk = (long)(totalDisk * (0.4 + Math.random() * 0.3));
-                disk.put("usage", (usedDisk * 100.0 / totalDisk));
-                disk.put("used", usedDisk);
-                disk.put("available", totalDisk - usedDisk);
-                disk.put("total", totalDisk);
-                disk.put("partitions", Arrays.asList("C:", "D:", "E:"));
-                disk.put("timestamp", System.currentTimeMillis());
-                mockData.add(disk);
-                break;
-
-            case "process_info":
-                for (int i = 0; i < 5; i++) {
-                    Map<String, Object> process = new HashMap<>();
-                    process.put("pid", 1000 + i);
-                    process.put("name", "process_" + i);
-                    process.put("status", i % 3 == 0 ? "running" : "sleeping");
-                    process.put("cpu", Math.random() * 10);
-                    process.put("memory", Math.random() * 5);
-                    process.put("user", System.getProperty("user.name"));
-                    mockData.add(process);
-                }
-                break;
-
-            default:
-                Map<String, Object> defaultData = new HashMap<>();
-                defaultData.put("type", infoType);
-                defaultData.put("value", "test_value");
-                defaultData.put("timestamp", System.currentTimeMillis());
-                mockData.add(defaultData);
-        }
-
-        return mockData;
+    private Map<String, Object> createRealtimeErrorData(String infoType, Exception e) {
+        Map<String, Object> error = new HashMap<>();
+        error.put("infoType", infoType);
+        error.put("error", e.getMessage());
+        error.put("timestamp", System.currentTimeMillis());
+        error.put("source", "ERROR");
+        return error;
     }
 
     // ==================== 查询结果接口 ====================
@@ -672,13 +600,7 @@ public class RealTimeSystemController {
             log.info("采集系统信息数据: hostname={}, ip={}, type={}", hostname, ipAddress, type);
 
             // 根据type参数执行不同的查询
-            List<Map<String, Object>> data;
-            try {
-                data = realTimeSystemService.executeSystemInfoQuery(type);
-            } catch (Exception e) {
-                log.warn("使用模拟数据: {}", e.getMessage());
-                data = generateMockData(type);
-            }
+            List<Map<String, Object>> data = realTimeSystemService.executeSystemInfoQuery(type);
 
             // 添加主机信息
             for (Map<String, Object> item : data) {
@@ -735,8 +657,12 @@ public class RealTimeSystemController {
             // Store metrics if dataType is performance-related
             if (isPerformanceDataType(dataType)) {
                 try {
+                    // 将request中的hostname/ipAddress注入payload，确保storeMetrics能提取到
+                    java.util.Map<String, Object> enrichedPayload = new java.util.HashMap<>(payload);
+                    enrichedPayload.putIfAbsent("hostname", request.getHostname());
+                    enrichedPayload.putIfAbsent("ip_address", request.getIpAddress());
                     com.security.ailogsystem.entity.SystemMetrics metrics = 
-                        metricsService.storeMetrics(payload);
+                        metricsService.storeMetrics(enrichedPayload);
                     log.info("存储性能指标成功: metricsId={}, dataType={}, timestamp={}", 
                         metrics.getId(), dataType, metrics.getTimestamp());
                 } catch (IllegalArgumentException e) {
@@ -1022,14 +948,8 @@ public class RealTimeSystemController {
     @Operation(summary = "获取实时系统信息", description = "获取实时系统基本信息")
     public ResponseEntity<Map<String, Object>> getRealTimeSystemInfo() {
         try {
-            // 强制使用Python脚本获取最新数据，不使用历史数据
-            List<Map<String, Object>> systemInfo;
-            try {
-                systemInfo = realTimeSystemService.executeSystemInfoQuery("system_basic");
-            } catch (Exception e) {
-                log.warn("Python脚本获取失败，使用模拟数据: {}", e.getMessage());
-                systemInfo = generateMockData("system_basic");
-            }
+            // 强制使用实时采集，不使用历史缓存数据
+            List<Map<String, Object>> systemInfo = realTimeSystemService.executeSystemInfoQuery("system_basic");
 
             if (systemInfo.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -1214,7 +1134,7 @@ public class RealTimeSystemController {
 
         SseEmitter emitter = new SseEmitter(0L);
 
-        // 模拟发送一些数据
+        // 发送初始化数据
         try {
             Map<String, Object> initData = new HashMap<>();
             initData.put("type", "init");
@@ -1280,17 +1200,13 @@ public class RealTimeSystemController {
             try {
                 realTimeStatus.put("system", realTimeSystemService.executeSystemInfoQuery("system_basic").get(0));
             } catch (Exception e) {
-                realTimeStatus.put("system", generateMockData("system_basic").get(0));
+                realTimeStatus.put("system", createRealtimeErrorData("system_basic", e));
             }
 
             try {
                 realTimeStatus.put("performance", realTimeSystemService.getSystemPerformanceMetrics());
             } catch (Exception e) {
-                Map<String, Object> mockPerf = new HashMap<>();
-                mockPerf.put("cpu_percent", 25.5);
-                mockPerf.put("memory_percent", 45.2);
-                mockPerf.put("timestamp", System.currentTimeMillis());
-                realTimeStatus.put("performance", mockPerf);
+                realTimeStatus.put("performance", createRealtimeErrorData("performance", e));
             }
 
             realTimeStatus.put("connections", connections.size());
@@ -1323,11 +1239,8 @@ public class RealTimeSystemController {
                         batchData.put(type, data.get(0));
                     }
                 } catch (Exception e) {
-                    log.warn("获取 {} 数据失败，使用模拟数据: {}", type, e.getMessage());
-                    List<Map<String, Object>> mockData = generateMockData(type);
-                    if (!mockData.isEmpty()) {
-                        batchData.put(type, mockData.get(0));
-                    }
+                    log.warn("获取 {} 数据失败: {}", type, e.getMessage());
+                    batchData.put(type, createRealtimeErrorData(type, e));
                 }
             }
 
@@ -1374,16 +1287,8 @@ public class RealTimeSystemController {
             try {
                 performanceData = realTimeSystemService.getPerformanceDataQuick();
             } catch (Exception e) {
-                log.warn("获取实时性能数据失败，使用模拟数据: {}", e.getMessage());
-                List<Map<String, Object>> cpuData = generateMockData("cpu_info");
-                List<Map<String, Object>> memData = generateMockData("memory_info");
-
-                if (!cpuData.isEmpty()) {
-                    performanceData.putAll(cpuData.get(0));
-                }
-                if (!memData.isEmpty()) {
-                    performanceData.putAll(memData.get(0));
-                }
+                log.warn("获取实时性能数据失败: {}", e.getMessage());
+                performanceData.putAll(createRealtimeErrorData("performance", e));
             }
 
             performanceData.put("timestamp", System.currentTimeMillis());
@@ -1405,13 +1310,8 @@ public class RealTimeSystemController {
             try {
                 networkData = realTimeSystemService.getNetworkStats();
             } catch (Exception e) {
-                log.warn("获取网络数据失败，使用模拟数据: {}", e.getMessage());
-                networkData.put("bytes_sent", 1024 * 1024 * 10L);
-                networkData.put("bytes_recv", 1024 * 1024 * 15L);
-                networkData.put("packets_sent", 1000);
-                networkData.put("packets_recv", 1500);
-                networkData.put("error_in", 0);
-                networkData.put("error_out", 0);
+                log.warn("获取网络数据失败: {}", e.getMessage());
+                networkData.putAll(createRealtimeErrorData("network", e));
             }
 
             networkData.put("timestamp", System.currentTimeMillis());
@@ -1488,14 +1388,11 @@ public class RealTimeSystemController {
                         allData.put(type, item);
                     }
                 } catch (Exception e) {
-                    log.warn("采集 {} 数据失败，使用模拟数据: {}", type, e.getMessage());
-                    List<Map<String, Object>> mockData = generateMockData(type);
-                    if (!mockData.isEmpty()) {
-                        Map<String, Object> item = mockData.get(0);
-                        item.put("hostname", hostname);
-                        item.put("ipAddress", ipAddress);
-                        allData.put(type, item);
-                    }
+                    log.warn("采集 {} 数据失败: {}", type, e.getMessage());
+                    Map<String, Object> item = createRealtimeErrorData(type, e);
+                    item.put("hostname", hostname);
+                    item.put("ipAddress", ipAddress);
+                    allData.put(type, item);
                 }
             }
 

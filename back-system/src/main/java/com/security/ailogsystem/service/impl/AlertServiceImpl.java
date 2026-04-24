@@ -46,6 +46,10 @@ public class AlertServiceImpl implements AlertService {
             alert.setLogEntry(logEntry);
         }
 
+        if (request.getUnifiedEventId() != null) {
+            alert.setUnifiedEventId(request.getUnifiedEventId());
+        }
+
         Alert savedAlert = alertRepository.save(alert);
         log.info("创建告警成功: ID={}, Type={}, Level={}",
                 savedAlert.getId(), savedAlert.getAlertType(), savedAlert.getAlertLevel());
@@ -100,10 +104,10 @@ public class AlertServiceImpl implements AlertService {
     }
 
     @Override
-    public Page<AlertResponse> searchAlerts(String keyword, String alertLevel,
+    public Page<AlertResponse> searchAlerts(String keyword, String alertLevel, String alertType,
                                             Boolean handled, Alert.AlertStatus status,
                                             Pageable pageable) {
-        Page<Alert> alerts = alertRepository.searchAlerts(keyword, alertLevel, handled, status, pageable);
+        Page<Alert> alerts = alertRepository.searchAlerts(keyword, alertLevel, alertType, handled, status, pageable);
         return alerts.map(AlertResponse::fromEntity);
     }
 

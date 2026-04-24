@@ -120,8 +120,8 @@ public class SecurityAnalysisServiceImpl implements SecurityAnalysisService {
             // - AbuseIPDB
             // - 或其他商业/开源威胁情报源
 
-            // 示例：模拟从云源获取威胁情报
-            List<Map<String, Object>> cloudThreats = simulateCloudThreatIntel(request);
+            // 当前未集成外部威胁情报源时，返回空集合，避免使用模拟数据
+            List<Map<String, Object>> cloudThreats = fetchCloudThreatIntel(request);
 
             for (Map<String, Object> threatData : cloudThreats) {
                 if (syncThreatIntelligence(threatData)) {
@@ -496,48 +496,9 @@ public class SecurityAnalysisServiceImpl implements SecurityAnalysisService {
         }
     }
 
-    private List<Map<String, Object>> simulateCloudThreatIntel(ThreatIntelSyncRequest request) {
-        List<Map<String, Object>> threats = new ArrayList<>();
-
-        // 根据请求过滤威胁类型
-        List<String> threatTypes = request.getThreatTypes();
-        if (threatTypes == null || threatTypes.isEmpty()) {
-            threatTypes = Arrays.asList("malware", "phishing", "vulnerability", "botnet");
-        }
-
-        // 模拟威胁数据
-        Random random = new Random();
-        int threatCount = random.nextInt(10) + 5; // 5-15个威胁
-
-        for (int i = 0; i < threatCount; i++) {
-            String type = threatTypes.get(random.nextInt(threatTypes.size()));
-            String severity = random.nextBoolean() ? "high" : "medium";
-            if (i % 5 == 0) severity = "critical";
-
-            Map<String, Object> threat = new HashMap<>();
-            threat.put("type", type);
-            threat.put("severity", severity);
-            threat.put("source", request.getSource() != null ? request.getSource() : "CloudThreatFeed");
-            threat.put("description", "检测到新的" + type + "威胁 #" + (1000 + i));
-            threat.put("confidence", 70 + random.nextInt(30));
-
-            // 模拟指标
-            List<Map<String, Object>> indicators = new ArrayList<>();
-            int indicatorCount = random.nextInt(5) + 2; // 2-7个指标
-            for (int j = 0; j < indicatorCount; j++) {
-                Map<String, Object> indicator = new HashMap<>();
-                String[] indicatorTypes = {"ip", "domain", "url", "hash", "email"};
-                String indicatorType = indicatorTypes[random.nextInt(indicatorTypes.length)];
-                indicator.put("type", indicatorType);
-                indicator.put("value", "malicious-" + type + "-" + (i * 10 + j) + ".com");
-                indicators.add(indicator);
-            }
-            threat.put("indicators", indicators);
-
-            threats.add(threat);
-        }
-
-        return threats;
+    private List<Map<String, Object>> fetchCloudThreatIntel(ThreatIntelSyncRequest request) {
+        log.warn("外部威胁情报源尚未配置，source={}, 返回空结果", request.getSource());
+        return Collections.emptyList();
     }
 
     private Map<String, Object> createErrorResponse(String taskId, Exception e) {

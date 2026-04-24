@@ -529,11 +529,27 @@ export class MemoryLogStorage extends LogStorage {
 
 // 日志数据模型工厂
 export class LogDataModelFactory {
+  private static buildStableId(data: Partial<LogDataModel>): string {
+    const base = [
+      data.timestamp || '',
+      data.eventId ?? '',
+      data.source || '',
+      data.eventType || '',
+      data.message || '',
+    ].join('|');
+    let hash = 0;
+    for (let i = 0; i < base.length; i++) {
+      hash = ((hash << 5) - hash) + base.charCodeAt(i);
+      hash |= 0;
+    }
+    return `log_${Date.now()}_${Math.abs(hash).toString(36)}`;
+  }
+
   static createLogDataModel(data: Partial<LogDataModel>): LogDataModel {
     const now = new Date().toISOString();
     
     return {
-      id: data.id || `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: data.id || this.buildStableId(data),
       timestamp: data.timestamp || now,
       eventId: data.eventId || 0,
       eventType: data.eventType || 'info',

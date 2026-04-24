@@ -26,7 +26,7 @@ public interface AlertService {
     Page<AlertResponse> getAlertsByHandled(Boolean handled, Pageable pageable);
 
     // 搜索告警
-    Page<AlertResponse> searchAlerts(String keyword, String alertLevel,
+    Page<AlertResponse> searchAlerts(String keyword, String alertLevel, String alertType,
                                      Boolean handled, Alert.AlertStatus status,
                                      Pageable pageable);
 

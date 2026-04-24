@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-// import { history } from 'umi';
 import { Layout, Menu, Typography, Avatar, Dropdown, Badge, Button, Space, Tabs } from 'antd';
 import { useNotification } from '../hooks/useNotification';
 import NotificationPanel from '../components/NotificationPanel';
@@ -7,35 +6,23 @@ import {
   DashboardOutlined,
   AlertOutlined,
   FileTextOutlined,
-  SettingOutlined,
   TeamOutlined,
   UserOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   BellOutlined,
   CheckCircleOutlined,
-  RobotOutlined,
-  BookOutlined,
   LogoutOutlined,
-  UserSwitchOutlined,
-  SyncOutlined,
   DatabaseOutlined,
   LineChartOutlined,
 } from '@ant-design/icons';
 import EnhancedDashboard from '../components/EnhancedDashboard/EnhancedDashboard';
 import WMIManagement from '../pages/wmi/index';
-import DebugRoute from '../pages/debug-route';
 import EventsPage from '../pages/events/index';
-import BatchOperationsPage from '../pages/batch-operations/index';
-// import DatabaseManagement from '../pages/database/index';
-// 新增导入
 import LogCollectorPage from '../pages/log-collector';
-// import LogsPage from '../pages/logs/index';
 import AlertsPage from '../pages/alerts/alerts';
 import SystemPage from '../pages/system';
-import initialConfig from '../pages/settings/index';
 import RulesPage from '../pages/rules/index';
-import { useModel } from '@/utils/useModel';
 
 const { Header, Content, Footer, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -46,35 +33,60 @@ export default function DefaultLayout() {
   const [notificationPanelVisible, setNotificationPanelVisible] = useState(false);
   const [currentPath, setCurrentPath] = useState('/dashboard');
   const [activeTab, setActiveTab] = useState('/dashboard');
-  // const { initialState, setInitialState } = useModel('@@initialState');
+  const [tabQuery, setTabQuery] = useState<Record<string, string>>({});
 
   // 监听URL hash变化
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash;
-      const rawPath = hash.startsWith('#') ? hash.substring(1) : hash;
-      const normalizedPath = rawPath === '/realtime' ? '/dashboard' : rawPath;
+      let hash = window.location.hash;
+      
+      // 清理错误的 URL 格式：如果 URL 中有 ? 在 # 之前，需要重新组织
+      // 例如：events?id=alert-52668#/system 应该变成 #/system
+      const searchParams = window.location.search;
+      if (searchParams && hash) {
+        // 如果同时有 search params 和 hash，说明 URL 格式混乱
+        // 清理 search params，只保留 hash
+        const cleanUrl = window.location.pathname + hash;
+        window.history.replaceState(null, '', cleanUrl);
+        hash = window.location.hash;
+      }
+      
+      const rawPath = hash.startsWith('#') ? hash.substring(1) : hash || '/dashboard';
 
-      if (normalizedPath && normalizedPath !== rawPath) {
-        window.location.hash = normalizedPath;
+      // 分离路径和 query 参数
+      const [pathPart, queryPart] = rawPath.split('?');
+      let normalizedPath = pathPart || '/dashboard';
+      
+      // 处理 /realtime 重定向到 /dashboard
+      if (normalizedPath === '/realtime') {
+        normalizedPath = '/dashboard';
       }
 
-      if (normalizedPath && normalizedPath !== currentPath) {
-        setCurrentPath(normalizedPath);
-        setActiveTab(normalizedPath);
+      // 解析 query 参数
+      const queryParams: Record<string, string> = {};
+      if (queryPart) {
+        queryPart.split('&').forEach(pair => {
+          const [k, v] = pair.split('=');
+          if (k) queryParams[decodeURIComponent(k)] = decodeURIComponent(v || '');
+        });
       }
+
+      // 如果路径被规范化了（如 /realtime -> /dashboard），更新 URL
+      if (normalizedPath && normalizedPath !== pathPart) {
+        const newHash = queryPart ? `${normalizedPath}?${queryPart}` : normalizedPath;
+        window.location.hash = newHash;
+      }
+
+      // 更新状态
+      setCurrentPath(normalizedPath);
+      setActiveTab(normalizedPath);
+      setTabQuery(queryParams);
     };
 
-    // 初始化时检查hash
     handleHashChange();
-
-    // 监听hash变化
     window.addEventListener('hashchange', handleHashChange);
-    
-    return () => {
-      window.removeEventListener('hashchange', handleHashChange);
-    };
-  }, [currentPath]);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
   
   // 通知系统
   const { unreadCount } = useNotification();
@@ -83,12 +95,12 @@ export default function DefaultLayout() {
     {
       key: '/dashboard',
       icon: <DashboardOutlined />,
-      label: '仪表盘',
+      label: '仪表盘总览',
     },
     {
       key: '/alerts',
       icon: <AlertOutlined />,
-      label: '告警管理',
+      label: '告警处置管理',
     },
     {
       key: '/events',
@@ -115,37 +127,6 @@ export default function DefaultLayout() {
       icon: <TeamOutlined />,
       label: '系统管理后台',
       access: 'admin',
-    },
-    {
-      key: '/whitelist',
-      icon: <CheckCircleOutlined />,
-      label: '白名单管理',
-    },
-    // {
-    //   key: '/logs',
-    //   icon: <FileTextOutlined />,
-    //   label: '日志查询',
-    // },
-    {
-      key: '/settings',
-      icon: <SettingOutlined />,
-      label: '系统设置',
-    },
-    // {
-    //   key: '/database',
-    //   icon: <DatabaseOutlined />,
-    //   label: '数据库管理',
-    // },
-    {
-      key: '/batch-operations',
-      icon: <SettingOutlined />,
-      label: '批量操作管理',
-      access: 'admin',
-    },
-    {
-      key: '/docs',
-      icon: <BookOutlined />,
-      label: 'API文档',
     },
   ];
 
@@ -206,40 +187,14 @@ export default function DefaultLayout() {
         return <AlertsPage />;
       case '/rules':
         return <RulesPage />;
-      case '/whitelist':
-        return (
-          <div style={{ padding: '20px' }}>
-            <h1>白名单管理页面</h1>
-            <p>白名单管理功能正在开发中...</p>
-          </div>
-        );
       case '/log-collector':
         return <LogCollectorPage />;
-      case '/settings':
-        return (
-          <div style={{ padding: '20px' }}>
-            <h1>系统设置页面</h1>
-            <p>系统设置功能正在开发中...</p>
-          </div>
-        );
       case '/wmi':
         return <WMIManagement />;
       case '/events':
-        return <EventsPage />;
-      case '/batch-operations':
-        return <BatchOperationsPage />;
-     
-      case '/debug-route':
-        return <DebugRoute />;
+        return <EventsPage initialEventId={tabQuery.eventId ? parseInt(tabQuery.eventId, 10) : undefined} />;
       case '/system':
         return <SystemPage />;
-      case '/docs':
-        return (
-          <div style={{ padding: '20px' }}>
-            <h1>API文档</h1>
-            <p>API文档功能正在开发中...</p>
-          </div>
-        );
       case '/profile':
         return (
           <div style={{ padding: '20px' }}>

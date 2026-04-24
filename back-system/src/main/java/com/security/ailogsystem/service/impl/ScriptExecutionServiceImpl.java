@@ -48,6 +48,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -169,8 +170,31 @@ public class ScriptExecutionServiceImpl implements ScriptExecutionService {
             processBuilder.redirectErrorStream(true);
 
             Process process = processBuilder.start();
-            String output = readProcessOutput(process);
-            int exitCode = process.waitFor();
+            // 异步读取输出，防止缓冲区满导致死锁
+            final StringBuilder outputBuilder = new StringBuilder();
+            Thread outputReader = new Thread(() -> {
+                try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        outputBuilder.append(line).append(System.lineSeparator());
+                    }
+                } catch (Exception e) {
+                    log.warn("读取脚本输出失败: {}", e.getMessage());
+                }
+            });
+            outputReader.setDaemon(true);
+            outputReader.start();
+
+            // 最长等待 5 分钟，防止脚本卡死阻塞调度
+            boolean finished = process.waitFor(5, TimeUnit.MINUTES);
+            if (!finished) {
+                process.destroyForcibly();
+                log.warn("脚本 {} 执行超时（5分钟），已强制终止", definition.getName());
+            }
+            outputReader.join(5000); // 等待输出读取完成
+            String output = outputBuilder.toString();
+            int exitCode = finished ? process.exitValue() : -1;
 
             record.setFinishedAt(LocalDateTime.now());
             record.setExitCode(exitCode);

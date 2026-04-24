@@ -3,6 +3,7 @@ package com.security.ailogsystem.repository;
 
 import com.security.ailogsystem.entity.SystemMetrics;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,7 +14,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface MetricsRepository extends JpaRepository<SystemMetrics, Long> {
+public interface MetricsRepository extends JpaRepository<SystemMetrics, Long>, JpaSpecificationExecutor<SystemMetrics> {
     
     /**
      * Find most recent metric for real-time queries

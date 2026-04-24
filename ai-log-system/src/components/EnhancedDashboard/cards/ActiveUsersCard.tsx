@@ -16,6 +16,7 @@ interface ActiveUsersData {
 
 interface ActiveUsersCardProps extends CardProps {
   style?: React.CSSProperties;
+  loading?: boolean;
 }
 
 const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
@@ -23,7 +24,8 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
   autoRefresh = true,
   isPaused = false,
   compact = false,
-  style
+  style,
+  loading: externalLoading,
 }) => {
   const [usersData, setUsersData] = useState<ActiveUsersData>({
     activeUsers: 0,
@@ -32,7 +34,8 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
     throughput: 0,
     lastUpdate: new Date().toISOString()
   });
-  const [loading, setLoading] = useState(false);
+  const [internalLoading, setLoading] = useState(false);
+  const loading = externalLoading !== undefined ? externalLoading : internalLoading;
   const [lastUpdated, setLastUpdated] = useState<string>('');
 
   const loadUsersData = useCallback(async () => {

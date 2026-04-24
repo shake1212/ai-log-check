@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 
-import java.security.Timestamp;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.*;
@@ -277,11 +276,13 @@ public class UnifiedEventController {
             // 1. 总事件数
             long totalEvents = eventRepository.count();
             stats.put("totalLogs", totalEvents);
+            stats.put("totalEvents", totalEvents);
 
             // 2. 今日事件数（从当天00:00:00开始）
             LocalDateTime todayStart = now.with(LocalTime.MIN);
             long todayEvents = eventRepository.countByTimestampAfter(todayStart);
             stats.put("todayLogs", todayEvents);
+            stats.put("todayEvents", todayEvents);
 
             // 3. 最近7天每日统计
             LocalDateTime weekAgo = now.minusDays(7);
@@ -310,6 +311,19 @@ public class UnifiedEventController {
                 }
             }
             stats.put("severityCounts", severityCounts);
+            stats.put("levelCounts", severityCounts);
+
+            // 6. 按威胁等级统计
+            List<Object[]> threatLevelStats = eventRepository.countByThreatLevelGroupAll();
+            Map<String, Long> threatLevelCounts = new HashMap<>();
+            if (threatLevelStats != null) {
+                for (Object[] row : threatLevelStats) {
+                    if (row[0] != null && row[1] != null) {
+                        threatLevelCounts.put(row[0].toString(), ((Number) row[1]).longValue());
+                    }
+                }
+            }
+            stats.put("threatLevelCounts", threatLevelCounts);
 
             // 6. 最后更新时间
             stats.put("lastUpdate", now.toString());
@@ -329,6 +343,186 @@ public class UnifiedEventController {
 
         } catch (Exception e) {
             log.error("获取仪表板统计信息失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/statistics/comprehensive")
+    public ResponseEntity<Map<String, Object>> getComprehensiveStatistics() {
+        try {
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime start = now.minusDays(7);
+            return ResponseEntity.ok(eventService.getStatistics(start, now));
+        } catch (Exception e) {
+            log.error("获取综合统计失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/statistics/range")
+    public ResponseEntity<Map<String, Object>> getRangeStatistics(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+        return getStatistics(startTime, endTime);
+    }
+
+    @GetMapping("/trends")
+    public ResponseEntity<List<Map<String, Object>>> getTrends(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
+            @RequestParam(defaultValue = "hour") String granularity) {
+        try {
+            LocalDateTime end = endTime != null ? endTime : LocalDateTime.now();
+            LocalDateTime start = startTime != null ? startTime : end.minusDays(1);
+            List<Object[]> rows = eventRepository.getHourlyStatisticsCompatible(start, end);
+            List<Map<String, Object>> result = rows.stream().map(row -> {
+                Map<String, Object> item = new HashMap<>();
+                item.put("time", row[0]);
+                item.put("count", row[1]);
+                item.put("granularity", granularity);
+                return item;
+            }).collect(Collectors.toList());
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("获取趋势数据失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/statistics/sources")
+    public ResponseEntity<Map<String, Long>> getSourceStatistics(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+        try {
+            LocalDateTime end = endTime != null ? endTime : LocalDateTime.now();
+            LocalDateTime start = startTime != null ? startTime : end.minusDays(7);
+            Map<String, Long> result = new HashMap<>();
+            for (Object[] row : eventRepository.countBySourceSystemGroup(start, end)) {
+                result.put(String.valueOf(row[0]), ((Number) row[1]).longValue());
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("获取来源统计失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/statistics/levels")
+    public ResponseEntity<Map<String, Long>> getLevelStatistics(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+        try {
+            LocalDateTime end = endTime != null ? endTime : LocalDateTime.now();
+            LocalDateTime start = startTime != null ? startTime : end.minusDays(7);
+            Map<String, Long> result = new HashMap<>();
+            for (Object[] row : eventRepository.countByThreatLevelGroup(start, end)) {
+                result.put(String.valueOf(row[0]), ((Number) row[1]).longValue());
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("获取级别统计失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/statistics/anomalies")
+    public ResponseEntity<Map<String, Object>> getAnomalyStatistics(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+        try {
+            LocalDateTime end = endTime != null ? endTime : LocalDateTime.now();
+            LocalDateTime start = startTime != null ? startTime : end.minusDays(7);
+            long anomaly = eventRepository.countAnomalyEvents(start, end);
+            long total = eventRepository.countByTimestampBetween(start, end);
+            Map<String, Object> result = new HashMap<>();
+            result.put("anomalyCount", anomaly);
+            result.put("totalCount", total);
+            result.put("anomalyRate", total == 0 ? 0.0 : (anomaly * 1.0 / total));
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("获取异常统计失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/statistics/top-ips")
+    public ResponseEntity<List<Map<String, Object>>> getTopIps(
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+        try {
+            LocalDateTime end = endTime != null ? endTime : LocalDateTime.now();
+            LocalDateTime start = startTime != null ? startTime : end.minusDays(7);
+            List<Object[]> rows = eventRepository.findTopSourceIps(start, end, org.springframework.data.domain.PageRequest.of(0, limit));
+            List<Map<String, Object>> result = rows.stream().map(row -> {
+                Map<String, Object> item = new HashMap<>();
+                item.put("ip", row[0]);
+                item.put("count", row[1]);
+                return item;
+            }).collect(Collectors.toList());
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("获取Top IP失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/statistics/user-activity")
+    public ResponseEntity<List<Map<String, Object>>> getUserActivity(
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+        try {
+            LocalDateTime end = endTime != null ? endTime : LocalDateTime.now();
+            LocalDateTime start = startTime != null ? startTime : end.minusDays(7);
+            List<Object[]> rows = eventRepository.findTopUsers(start, end, org.springframework.data.domain.PageRequest.of(0, limit));
+            List<Map<String, Object>> result = rows.stream().map(row -> {
+                Map<String, Object> item = new HashMap<>();
+                item.put("userId", row[0]);
+                item.put("count", row[1]);
+                return item;
+            }).collect(Collectors.toList());
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("获取用户活动统计失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    @GetMapping("/statistics/distribution")
+    public ResponseEntity<Map<String, Long>> getDistribution(
+            @RequestParam String dimension,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+        try {
+            LocalDateTime end = endTime != null ? endTime : LocalDateTime.now();
+            LocalDateTime start = startTime != null ? startTime : end.minusDays(7);
+            Map<String, Long> result = new HashMap<>();
+            List<Object[]> rows;
+            switch (dimension.toLowerCase()) {
+                case "source":
+                case "sources":
+                    rows = eventRepository.countBySourceSystemGroup(start, end);
+                    break;
+                case "level":
+                case "levels":
+                    rows = eventRepository.countByThreatLevelGroup(start, end);
+                    break;
+                case "severity":
+                    rows = eventRepository.countBySeverityGroup(start, end);
+                    break;
+                case "category":
+                    rows = eventRepository.countByCategoryGroup(start, end);
+                    break;
+                default:
+                    rows = eventRepository.countByEventTypeGroup(start, end);
+            }
+            for (Object[] row : rows) {
+                result.put(String.valueOf(row[0]), ((Number) row[1]).longValue());
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("获取分布统计失败", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

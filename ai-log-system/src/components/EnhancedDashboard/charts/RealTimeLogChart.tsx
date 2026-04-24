@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Typography, Spin, Alert } from 'antd';
-// 注释掉未定义的logApi，避免报错（后续可替换为真实API）
-// import { logApi } from '@/services/api';
+import { analysisApi } from '@/services/api';
 
 import { format } from 'date-fns';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from 'recharts';
@@ -16,22 +15,6 @@ interface RealTimeLogChartProps {
   isPaused?: boolean;
   refreshInterval?: number;
 }
-
-// TODO: REMOVE MOCK DATA - 待删除的模拟数据
-// 生成模拟数据（确保数据格式正确）
-const generateMockData = (count = 50) => {
-  const now = Date.now();
-  return Array.from({ length: count }, (_, index) => {
-    const time = now - (count - index) * 60000; // 每分钟一个点
-    const value = 30 + Math.random() * 50; // 基础值30-80
-    const isAnomaly = Math.random() > 0.9; // 10%的概率是异常点
-    return {
-      time, // 数字类型时间戳（关键）
-      value: isAnomaly ? value * 1.5 : value,
-      type: isAnomaly ? 'anomaly' : 'normal'
-    };
-  });
-};
 
 // 简化自定义工具提示（避免复杂逻辑报错）
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -89,9 +72,7 @@ const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
   isPaused = false,
   refreshInterval = 10000
 }) => {
-  // TODO: REMOVE MOCK DATA - 待删除的模拟数据初始化
-  // 强制初始化为模拟数据（确保有数据）
-  const [chartData, setChartData] = useState<any[]>(generateMockData(50));
+  const [chartData, setChartData] = useState<any[]>(initialData || []);
   const [chartLoading, setChartLoading] = useState(false); // 初始关闭loading，避免遮挡
   const [error, setError] = useState<string | null>(null);
   const [trafficStats, setTrafficStats] = useState({
@@ -102,10 +83,6 @@ const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
   });
 
   const dataRef = useRef(chartData);
-  const dataUpdateCountRef = useRef(0);
-
-  // TODO: REMOVE MOCK DATA - 待删除的模拟API请求
-  // 注释API请求，避免未定义的logApi报错
   const loadChartData = useCallback(async () => {
     if (isPaused) {
       console.log('图表更新已暂停');
@@ -116,36 +93,23 @@ const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
     setError(null);
     
     try {
-      // 模拟API请求延迟（替代真实API）
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // 生成新的模拟数据点（模拟实时更新）
+      const traffic = await analysisApi.getTrafficStats();
       const now = Date.now();
-      const newDataPoint = {
+      const currentData = dataRef.current || [];
+      const updatedData = [...currentData, {
         time: now,
-        value: 40 + Math.sin(dataUpdateCountRef.current * 0.2) * 20 + Math.random() * 10,
-        type: Math.random() > 0.9 ? 'anomaly' : 'normal'
-      };
-      
-      const currentData = dataRef.current;
-      const updatedData = [...currentData, newDataPoint].slice(-100); // 保留最新100个点
+        value: Number(traffic.currentTraffic || 0),
+        type: Number(traffic.anomalyTraffic || 0) > 0 ? 'anomaly' : 'normal'
+      }].slice(-100);
       
       setChartData(updatedData);
       dataRef.current = updatedData;
-      dataUpdateCountRef.current += 1;
-      
-      // 重新计算统计数据
-      const normalCount = updatedData.filter(d => d.type === 'normal').length;
-      const anomalyCount = updatedData.filter(d => d.type === 'anomaly').length;
-      const values = updatedData.map(d => d.value);
-      const maxValue = values.length > 0 ? Math.max(...values) : 0;
-      const avgValue = values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
       
       setTrafficStats({
-        normalTraffic: Math.round(normalCount * 1000 + avgValue * 10),
-        anomalyTraffic: Math.round(anomalyCount * 100 + avgValue * 5),
-        peakTraffic: Math.round(maxValue * 15),
-        avgLatency: Math.round(80 + Math.random() * 40)
+        normalTraffic: Number(traffic.normalTraffic || 0),
+        anomalyTraffic: Number(traffic.anomalyTraffic || 0),
+        peakTraffic: Number(traffic.peakTraffic || 0),
+        avgLatency: Number(traffic.avgLatency || 0)
       });
       
     } catch (error) {

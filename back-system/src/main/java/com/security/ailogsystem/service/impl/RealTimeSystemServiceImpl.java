@@ -331,8 +331,8 @@ public class RealTimeSystemServiceImpl implements RealTimeSystemService {
             Map<String, Object> systemInfo = systemInfoService.collectSystemInfo();
             return extractDataByType(systemInfo, dataType);
         } catch (Exception e) {
-            log.warn("系统信息采集失败，使用模拟数据: {}", e.getMessage());
-            return generateMockData(dataType);
+            log.warn("系统信息采集失败: {}", e.getMessage());
+            return "采集失败: " + e.getMessage();
         }
     }
 
@@ -390,33 +390,7 @@ public class RealTimeSystemServiceImpl implements RealTimeSystemService {
             }
         } catch (Exception e) {
             log.warn("提取特定类型数据失败: {}", e.getMessage());
-            return generateMockData(dataType);
-        }
-    }
-
-    private String generateMockData(SimpleWmiData.DataType dataType) {
-        Random random = new Random();
-
-        switch (dataType) {
-            case CPU_USAGE:
-                return String.format("%.2f%%", random.nextDouble() * 100);
-            case MEMORY_USAGE:
-                return String.format("%.2f%%", random.nextDouble() * 100);
-            case DISK_USAGE:
-                return String.format("%.2f%%", random.nextDouble() * 100);
-            case NETWORK_TRAFFIC:
-                return String.format("上行: %.2f MB/s, 下行: %.2f MB/s",
-                        random.nextDouble() * 100, random.nextDouble() * 200);
-            case PROCESS_COUNT:
-                return String.valueOf(random.nextInt(50, 200));
-            case SERVICE_STATUS:
-                return random.nextBoolean() ? "运行中" : "已停止";
-            case SYSTEM_INFO:
-                return String.format("系统: %s, 版本: %d.%d",
-                        random.nextBoolean() ? "Windows" : "Linux",
-                        random.nextInt(10, 12), random.nextInt(0, 3));
-            default:
-                return "未知数据类型";
+            return "提取失败: " + e.getMessage();
         }
     }
 
@@ -490,20 +464,6 @@ public class RealTimeSystemServiceImpl implements RealTimeSystemService {
                 .build();
 
         return saveWmiData(wmiData);
-    }
-
-    private Optional<Map<String, Object>> buildStoredResult(String infoType) {
-        return findLatestRecord(infoType).map(record -> {
-            Map<String, Object> dataPayload = extractDataPayload(record.getDataValue());
-            Map<String, Object> result = new HashMap<>();
-            result.put("infoType", infoType);
-            result.put("data", dataPayload);
-            result.put("collectionTime", record.getCollectTime().toString());
-            result.put("hostname", record.getHostname());
-            result.put("ipAddress", record.getIpAddress());
-            result.put("source", "INGEST");
-            return result;
-        });
     }
 
     private Optional<Map<String, Object>> getLatestDataPayload(String infoType) {

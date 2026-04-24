@@ -382,7 +382,13 @@ export class SecurityLogParser {
   }
 
   private generateEventId(): string {
-    return `evt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const base = `${Date.now()}_${this.config.maxMessageLength}_${this.config.strictMode}`;
+    let hash = 0;
+    for (let i = 0; i < base.length; i++) {
+      hash = ((hash << 5) - hash) + base.charCodeAt(i);
+      hash |= 0;
+    }
+    return `evt_${Date.now()}_${Math.abs(hash).toString(36)}`;
   }
 
   private normalizeTimestamp(timestamp: string): string {

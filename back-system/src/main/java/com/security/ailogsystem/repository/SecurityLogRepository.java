@@ -2,6 +2,7 @@ package com.security.ailogsystem.repository;
 
 import com.security.ailogsystem.entity.SecurityLog;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -13,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 @Repository
-public interface SecurityLogRepository extends JpaRepository<SecurityLog, Long> {
+public interface SecurityLogRepository extends JpaRepository<SecurityLog, Long>, JpaSpecificationExecutor<SecurityLog> {
 
     // 原有的方法（保持不变）
     List<SecurityLog> findByEventTimeAfterOrderByEventTimeDesc(LocalDateTime since);

@@ -1,5 +1,6 @@
 // src/pages/Alerts.tsx
 import React, { useState, useEffect, useCallback } from 'react';
+import { history } from 'umi';
 import { 
   Table, 
   Card, 
@@ -15,7 +16,6 @@ import {
   Badge,
   Empty,
   Alert,
-  Popconfirm,
   Tooltip,
   Typography,
   Statistic,
@@ -23,28 +23,19 @@ import {
   Form,
   Descriptions,
   Divider,
-  Tabs,
   Segmented,
-  Rate,
-  Dropdown
+  Rate
 } from 'antd';
 import { 
   CheckOutlined, 
   ExclamationCircleOutlined, 
   SearchOutlined,
-  ReloadOutlined,
-  SyncOutlined,
   WarningOutlined,
   DeleteOutlined,
-  EyeOutlined,
   ThunderboltOutlined,
   BarChartOutlined,
   FilterOutlined,
-  ExportOutlined,
   MoreOutlined,
-  FileExcelOutlined,
-  FilePdfOutlined,
-  CodeOutlined,
   DashboardOutlined,
   SafetyCertificateOutlined,
   LineChartOutlined,
@@ -56,8 +47,6 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
   QuestionCircleOutlined,
-  FullscreenOutlined,
-  FullscreenExitOutlined,
   ShieldOutlined,
   UserOutlined,
   CloudServerOutlined,
@@ -69,16 +58,17 @@ import type { ColumnsType } from 'antd/es/table';
 // 导入统一 API 服务
 import { api } from '@/services/api';
 import type { SecurityAlert } from '@/types/alert';
+import { getAlertSourceLabel, getAlertTypeLabel, getSeverity, getStatus, normalizeStatusValue } from '@/utils/enumLabels';
 
 const { Option } = Select;
 const { Title, Text, Paragraph } = Typography;
 const { confirm } = Modal;
-const { TabPane } = Tabs;
 
 // 类型定义（如果需要）
 interface AlertSearchParams {
   keyword?: string;
   alertLevel?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | undefined;
+  alertType?: string | undefined;
   handled?: boolean | undefined;
   status?: string | undefined;
   page?: number;
@@ -135,42 +125,52 @@ const AlertsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useState<AlertSearchParams>({
     keyword: '',
     alertLevel: undefined,
+    alertType: undefined,
     handled: undefined,
     status: undefined,
     page: 0,
-    size: 20
+    size: 10
   });
   const [pagination, setPagination] = useState({
     current: 1,
-    pageSize: 20,
+    pageSize: 10,
     total: 0
   });
-  const [activeTab, setActiveTab] = useState('all');
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [selectedAlert, setSelectedAlert] = useState<SecurityAlert | null>(null);
 
   // 加载告警数据 - 修改后的版本
-  const loadAlerts = useCallback(async (page = 1, pageSize = 20) => {
+  const loadAlerts = useCallback(async (
+    page = 1,
+    pageSize = 10,
+    overrideParams?: Partial<AlertSearchParams>
+  ) => {
     setLoading(true);
     try {
+      const effectiveSearchParams: AlertSearchParams = {
+        ...searchParams,
+        ...overrideParams,
+      };
       console.log('加载告警，参数:', {
         page: page - 1, // 后端从0开始
         size: pageSize,
-        ...searchParams
+        ...effectiveSearchParams
       });
       
-      // 构建查询参数
+      // 构建查询参数（Ant Design 清空项常为 null，需与 undefined 一并剔除，否则会干扰 Spring 绑定）
       const params: any = {
         page: page - 1, // 后端从0开始
         size: pageSize,
-        keyword: searchParams.keyword || undefined,
-        alertLevel: searchParams.alertLevel || undefined,
-        handled: searchParams.handled,
-        status: searchParams.status || undefined,
+        keyword: effectiveSearchParams.keyword || undefined,
+        alertLevel: effectiveSearchParams.alertLevel || undefined,
+        alertType: effectiveSearchParams.alertType || undefined,
+        // 不再使用 handled 参数，统一用 status
+        status: normalizeStatusValue(effectiveSearchParams.status) || undefined,
       };
-      
-      // 清理undefined值
+
       Object.keys(params).forEach(key => {
-        if (params[key] === undefined) {
+        if (params[key] === undefined || params[key] === null || params[key] === '') {
           delete params[key];
         }
       });
@@ -193,7 +193,8 @@ const AlertsPage: React.FC = () => {
         // 检查是否是 Spring Data Page 格式
         if (data.content !== undefined) {
           // Spring Data Page 格式
-          setAlertList(data.content || []);
+          const sortedContent = [...(data.content || [])].sort((a: SecurityAlert, b: SecurityAlert) => a.id - b.id);
+          setAlertList(sortedContent);
           setTotal(data.totalElements || 0);
           setPagination(prev => ({
             ...prev,
@@ -212,7 +213,8 @@ const AlertsPage: React.FC = () => {
           }
         } else if (Array.isArray(data)) {
           // 直接数组格式
-          setAlertList(data);
+          const sortedList = [...data].sort((a: SecurityAlert, b: SecurityAlert) => a.id - b.id);
+          setAlertList(sortedList);
           setTotal(data.length);
           setPagination(prev => ({
             ...prev,
@@ -226,7 +228,8 @@ const AlertsPage: React.FC = () => {
           if (data.code === 200) {
             const responseData = data.data;
             if (responseData && responseData.content !== undefined) {
-              setAlertList(responseData.content || []);
+              const sortedContent = [...(responseData.content || [])].sort((a: SecurityAlert, b: SecurityAlert) => a.id - b.id);
+              setAlertList(sortedContent);
               setTotal(responseData.totalElements || 0);
               setPagination(prev => ({
                 ...prev,
@@ -235,7 +238,8 @@ const AlertsPage: React.FC = () => {
                 total: responseData.totalElements || 0
               }));
             } else if (Array.isArray(responseData)) {
-              setAlertList(responseData);
+              const sortedList = [...responseData].sort((a: SecurityAlert, b: SecurityAlert) => a.id - b.id);
+              setAlertList(sortedList);
               setTotal(responseData.length);
               setPagination(prev => ({
                 ...prev,
@@ -270,22 +274,23 @@ const AlertsPage: React.FC = () => {
   // 搜索告警
   const handleSearch = useCallback(async () => {
     const values = searchForm.getFieldsValue();
-    
+
     // 更新搜索参数
     const newSearchParams: AlertSearchParams = {
       ...searchParams,
-      keyword: values.keyword || '',
-      alertLevel: values.alertLevel,
-      handled: values.handled,
-      status: values.status,
-      page: 0 // 搜索时重置到第一页
+      keyword: (values.keyword ?? '') as string,
+      alertLevel: values.alertLevel ?? undefined,
+      alertType: values.alertType ?? undefined,
+      handled: undefined, // 不再使用 handled，统一用 status
+      status: normalizeStatusValue(values.status) || undefined,
+      page: 0
     };
     
     setSearchParams(newSearchParams);
     setPagination(prev => ({ ...prev, current: 1 }));
     
     // 执行搜索
-    await loadAlerts(1, pagination.pageSize);
+    await loadAlerts(1, pagination.pageSize, newSearchParams);
   }, [searchForm, searchParams, pagination.pageSize, loadAlerts]);
 
   // 重置搜索
@@ -294,17 +299,18 @@ const AlertsPage: React.FC = () => {
     const resetParams: AlertSearchParams = {
       keyword: '',
       alertLevel: undefined,
+      alertType: undefined,
       handled: undefined,
       status: undefined,
       page: 0,
-      size: 20
+      size: 10
     };
     
     setSearchParams(resetParams);
     setPagination(prev => ({ ...prev, current: 1 }));
     
     // 重置后重新加载
-    setTimeout(() => loadAlerts(1, pagination.pageSize), 100);
+    loadAlerts(1, pagination.pageSize, resetParams);
   }, [searchForm, loadAlerts, pagination.pageSize]);
 
   // 标记告警为已处理 - 修改后的版本
@@ -312,7 +318,7 @@ const AlertsPage: React.FC = () => {
     confirm({
       title: '确认处理',
       icon: <ExclamationCircleOutlined />,
-      content: `确定要将警报 "${alert.alertType}" 标记为已处理吗？`,
+      content: `确定要将警报 "${getAlertTypeLabel(alert.alertType)}" 标记为已处理吗？`,
       okText: '确认',
       cancelText: '取消',
       onOk: async () => {
@@ -338,7 +344,7 @@ const AlertsPage: React.FC = () => {
           console.log('更新状态响应:', response);
           
           // 如果响应是空的（204 No Content）或者请求成功
-          if (response === undefined || response === null || 
+          if (response === undefined || response === null || response === '' ||
               (typeof response === 'object' && Object.keys(response).length === 0)) {
             message.success('告警已标记为已处理');
             // 更新本地状态
@@ -378,7 +384,7 @@ const AlertsPage: React.FC = () => {
     confirm({
       title: '确认删除',
       icon: <ExclamationCircleOutlined />,
-      content: `确定要删除警报 "${alert.alertType}" 吗？此操作不可恢复。`,
+      content: `确定要删除警报 "${getAlertTypeLabel(alert.alertType)}" 吗？此操作不可恢复。`,
       okText: '删除',
       okType: 'danger',
       cancelText: '取消',
@@ -399,7 +405,7 @@ const AlertsPage: React.FC = () => {
           console.log('删除响应:', response);
           
           // 如果响应是空的（204 No Content）或者请求成功
-          if (response === undefined || response === null || 
+          if (response === undefined || response === null || response === '' ||
               (typeof response === 'object' && Object.keys(response).length === 0)) {
             message.success('告警已删除');
             // 从列表中移除
@@ -429,6 +435,7 @@ const AlertsPage: React.FC = () => {
   // 查看告警详情 - 修改后的版本
   const showAlertDetail = useCallback(async (alert: SecurityAlert) => {
     try {
+      setDetailLoading(true);
       // 使用统一 API 服务
       const response = await withTimeout(
         api.alert.getAlertById(alert.id.toString()),
@@ -456,65 +463,16 @@ const AlertsPage: React.FC = () => {
       }
       
       if (alertData) {
-        Modal.info({
-          title: '告警详情',
-          width: '60%',
-          content: (
-            <div>
-              <Descriptions column={1} bordered>
-                <Descriptions.Item label="ID">{alertData.id}</Descriptions.Item>
-                <Descriptions.Item label="告警ID">{alertData.alertId || '-'}</Descriptions.Item>
-                <Descriptions.Item label="来源">{alertData.source || '-'}</Descriptions.Item>
-                <Descriptions.Item label="类型">{alertData.alertType || '-'}</Descriptions.Item>
-                <Descriptions.Item label="级别">
-                  <Tag color={
-                    alertData.alertLevel === 'CRITICAL' ? 'purple' : 
-                    alertData.alertLevel === 'HIGH' ? 'red' : 
-                    alertData.alertLevel === 'MEDIUM' ? 'orange' : 'green'
-                  }>
-                    {alertData.alertLevel}
-                  </Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="描述">{alertData.description || '-'}</Descriptions.Item>
-                <Descriptions.Item label="处理状态">
-                  <Tag color={alertData.handled ? 'green' : 'red'}>
-                    {alertData.handled ? '已处理' : '未处理'}
-                  </Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="AI置信度">
-                  {alertData.aiConfidence ? `${(alertData.aiConfidence * 100).toFixed(1)}%` : 'N/A'}
-                </Descriptions.Item>
-                <Descriptions.Item label="创建时间">
-                  {dayjs(alertData.createdTime).format('YYYY-MM-DD HH:mm:ss')}
-                </Descriptions.Item>
-                {alertData.assignee && (
-                  <Descriptions.Item label="处理人">{alertData.assignee}</Descriptions.Item>
-                )}
-                {alertData.resolution && (
-                  <Descriptions.Item label="处理结果">{alertData.resolution}</Descriptions.Item>
-                )}
-              </Descriptions>
-              
-              {alertData.details && (
-                <>
-                  <Divider>详细信息</Divider>
-                  <Paragraph style={{ maxHeight: 320, overflow: 'auto', background: '#f6f8fa', padding: 12 }}>
-                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
-                      {JSON.stringify(alertData.details, null, 2)}
-                    </pre>
-                  </Paragraph>
-                </>
-              )}
-            </div>
-          ),
-          onOk() {},
-        });
+        setSelectedAlert(alertData as SecurityAlert);
+        setDetailVisible(true);
       } else {
         message.error('获取告警详情失败');
       }
     } catch (error) {
       console.error('获取告警详情错误:', error);
       message.error('获取告警详情失败');
+    } finally {
+      setDetailLoading(false);
     }
   }, []);
 
@@ -573,11 +531,16 @@ const AlertsPage: React.FC = () => {
     }
   }, []);
 
-  // 表格分页处理
+  // 表格分页处理：必须带上当前筛选条件，否则闭包里的 searchParams 可能与表单不一致导致「翻页后筛选失效」
   const handleTableChange = (newPagination: any) => {
-    setPagination(newPagination);
-    // 分页改变时重新加载数据
-    loadAlerts(newPagination.current, newPagination.pageSize);
+    if (!newPagination || newPagination.current == null) return;
+    setPagination((prev) => ({
+      ...prev,
+      current: newPagination.current,
+      pageSize: newPagination.pageSize ?? prev.pageSize,
+      total: newPagination.total ?? prev.total,
+    }));
+    loadAlerts(newPagination.current, newPagination.pageSize ?? pagination.pageSize, searchParams);
   };
 
   // 组件加载时获取数据
@@ -589,7 +552,7 @@ const AlertsPage: React.FC = () => {
         searchForm.setFieldsValue({
           keyword: searchParams.keyword,
           alertLevel: searchParams.alertLevel,
-          handled: searchParams.handled,
+          alertType: searchParams.alertType,
           status: searchParams.status
         });
 
@@ -645,15 +608,14 @@ const AlertsPage: React.FC = () => {
       title: 'ID',
       dataIndex: 'id',
       key: 'id',
-      width: 80,
+      width: 70,
       sorter: (a, b) => a.id - b.id,
-      fixed: 'left' as const,
     },
     {
       title: '告警级别',
       dataIndex: 'alertLevel',
       key: 'alertLevel',
-      width: 120,
+      width: 100,
       render: (level: SecurityAlert['alertLevel']) => {
         const colorMap = {
           CRITICAL: '#ff4d4f',
@@ -677,15 +639,15 @@ const AlertsPage: React.FC = () => {
               boxShadow: `0 0 8px ${colorMap[level] || '#1890ff'}`
             }} />
             {iconMap[level]}
-            <span style={{ fontWeight: 500 }}>{level}</span>
+            <span style={{ fontWeight: 500 }}>{getSeverity(level).label}</span>
           </div>
         );
       },
       filters: [
         { text: '严重', value: 'CRITICAL' },
-        { text: '高', value: 'HIGH' },
-        { text: '中', value: 'MEDIUM' },
-        { text: '低', value: 'LOW' },
+        { text: '高危', value: 'HIGH' },
+        { text: '中危', value: 'MEDIUM' },
+        { text: '低危', value: 'LOW' },
       ],
       onFilter: (value, record) => record.alertLevel === value,
     },
@@ -693,15 +655,15 @@ const AlertsPage: React.FC = () => {
       title: '告警类型',
       dataIndex: 'alertType',
       key: 'alertType',
-      width: 180,
-      render: (text: string) => <Text strong style={{ fontSize: '13px' }}>{text}</Text>
+      width: 150,
+      render: (text: string) => <Text strong style={{ fontSize: '13px' }}>{getAlertTypeLabel(text)}</Text>
     },
     {
       title: '描述',
       dataIndex: 'description',
       key: 'description',
       ellipsis: true,
-      width: 250,
+      width: 220,
       render: (text) => (
         <Tooltip title={text}>
           <span style={{ fontSize: '12px' }}>{text && text.length > 60 ? `${text.substring(0, 60)}...` : text}</span>
@@ -712,16 +674,17 @@ const AlertsPage: React.FC = () => {
       title: '来源',
       dataIndex: 'source',
       key: 'source',
-      width: 140,
+      width: 120,
+      align: 'left',
       render: (text: string) => (
-        <Tag style={{ fontSize: '11px', padding: '2px 8px' }}>{text}</Tag>
+        <Tag style={{ fontSize: '11px', padding: '1px', margin: 0, marginLeft: '-2px' }}>{getAlertSourceLabel(text)}</Tag>
       )
     },
     {
       title: '创建时间',
       dataIndex: 'createdTime',
       key: 'createdTime',
-      width: 180,
+      width: 150,
       render: (time: string) => time ? (
         <div>
           <div style={{ fontSize: '12px', fontWeight: 500 }}>
@@ -738,7 +701,7 @@ const AlertsPage: React.FC = () => {
       title: '状态',
       dataIndex: 'handled',
       key: 'handled',
-      width: 120,
+      width: 100,
       render: (handled: boolean, record: SecurityAlert) => (
         <Space>
           <div style={{
@@ -772,53 +735,22 @@ const AlertsPage: React.FC = () => {
       onFilter: (value, record) => record.handled === value,
     },
     {
-      title: '操作',
-      key: 'actions',
-      width: 200,
-      fixed: 'right' as const,
-      render: (_, record: SecurityAlert) => (
-        <Space>
-          <Button
-            type="link"
-            icon={<EyeOutlined />}
-            onClick={() => showAlertDetail(record)}
-            size="small"
-            style={{ fontSize: '12px' }}
-          >
-            详情
-          </Button>
-          {!record.handled && (
-            <Button
-              type="primary"
-              icon={<CheckOutlined />}
-              onClick={() => handleMarkAsHandled(record)}
-              size="small"
-              style={{ fontSize: '12px' }}
-              disabled={loading}
-            >
-              处理
-            </Button>
-          )}
-          <Popconfirm
-            title="确定要删除吗？"
-            onConfirm={() => handleDeleteAlert(record)}
-            okText="删除"
-            cancelText="取消"
-            okType="danger"
-          >
-            <Button
-              type="link"
-              danger
-              icon={<DeleteOutlined />}
-              size="small"
-              style={{ fontSize: '12px' }}
-              disabled={loading}
-            >
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+      title: '关联事件',
+      key: 'unifiedEventId',
+      width: 100,
+      render: (_: any, record: SecurityAlert) => record.unifiedEventId ? (
+        <Button
+          type="link"
+          size="small"
+          style={{ padding: 0, fontSize: '12px' }}
+          onClick={(e) => {
+            e.stopPropagation();
+            window.location.hash = `/events?eventId=${record.unifiedEventId}`;
+          }}
+        >
+          事件 #{record.unifiedEventId}
+        </Button>
+      ) : <span style={{ color: '#ccc', fontSize: '12px' }}>-</span>,
     },
   ];
 
@@ -827,17 +759,65 @@ const AlertsPage: React.FC = () => {
     ? ((displayStats.totalAlerts - displayStats.unhandledAlerts) / displayStats.totalAlerts * 100).toFixed(1)
     : 0;
 
+  const todayAddedCount = alertList.filter((alert) => dayjs(alert.createdTime).isSame(dayjs(), 'day')).length;
+  const yesterdayAddedCount = alertList.filter((alert) =>
+    dayjs(alert.createdTime).isSame(dayjs().subtract(1, 'day'), 'day')
+  ).length;
+  const dayChangePercent = yesterdayAddedCount > 0
+    ? (((todayAddedCount - yesterdayAddedCount) / yesterdayAddedCount) * 100).toFixed(1)
+    : (todayAddedCount > 0 ? '100.0' : '0.0');
+
+  const resolvedDurations = alertList
+    .filter((alert) => alert.handled && alert.updatedTime && alert.createdTime)
+    .map((alert) => dayjs(alert.updatedTime).diff(dayjs(alert.createdTime), 'minute'))
+    .filter((minutes) => minutes >= 0);
+  const avgHandleMinutes = resolvedDurations.length > 0
+    ? Math.round(resolvedDurations.reduce((sum, value) => sum + value, 0) / resolvedDurations.length)
+    : 0;
+
+  const escalationRate = displayStats.totalAlerts > 0
+    ? ((displayStats.alertsByLevel.CRITICAL / displayStats.totalAlerts) * 100).toFixed(1)
+    : '0.0';
+
+  const activeFilterItems = [
+    searchParams.keyword ? `关键词: ${searchParams.keyword}` : null,
+    searchParams.alertLevel ? `级别: ${getSeverity(searchParams.alertLevel).label}` : null,
+    searchParams.alertType ? `类型: ${getAlertTypeLabel(searchParams.alertType)}` : null,
+    searchParams.status ? `状态: ${getStatus(normalizeStatusValue(searchParams.status) || '').label}` : null,
+  ].filter(Boolean) as string[];
+
+  const applyFilterAndReload = useCallback(async (partial: Partial<AlertSearchParams>) => {
+    const merged: AlertSearchParams = {
+      ...searchParams,
+      ...partial,
+      handled: undefined, // 不再使用 handled
+      page: 0,
+    };
+    setSearchParams(merged);
+    setPagination(prev => ({ ...prev, current: 1 }));
+    
+    // 同步更新表单字段
+    searchForm.setFieldsValue({
+      keyword: merged.keyword || '',
+      alertLevel: merged.alertLevel || undefined,
+      alertType: merged.alertType || undefined,
+      status: merged.status || undefined,
+    });
+    
+    await loadAlerts(1, pagination.pageSize, merged);
+  }, [searchParams, pagination.pageSize, searchForm, loadAlerts]);
+
   // 渲染顶部标题
   const renderDashboardHeader = () => (
     <div style={{
-      marginBottom: '32px',
-      padding: '32px',
+      marginBottom: '16px',
+      padding: '18px 20px',
       background: 'linear-gradient(135deg, #1a2980 0%, #26d0ce 100%)',
-      borderRadius: '20px',
+      borderRadius: '14px',
       color: 'white',
       position: 'relative',
       overflow: 'hidden',
-      boxShadow: '0 10px 30px rgba(26, 41, 128, 0.2)'
+      boxShadow: '0 6px 20px rgba(26, 41, 128, 0.18)'
     }}>
       <div style={{
         position: 'absolute',
@@ -858,42 +838,42 @@ const AlertsPage: React.FC = () => {
         borderRadius: '50%'
       }} />
       
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
-            width: '80px',
-            height: '80px',
+            width: '52px',
+            height: '52px',
             background: 'rgba(255,255,255,0.2)',
-            borderRadius: '20px',
+            borderRadius: '12px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             backdropFilter: 'blur(10px)'
           }}>
-            <SecurityScanOutlined style={{ fontSize: '40px' }} />
+            <SecurityScanOutlined style={{ fontSize: '24px' }} />
           </div>
           <div>
-            <Title level={2} style={{ margin: 0, color: 'white' }}>
-              安全告警管理中心
+            <Title level={3} style={{ margin: 0, color: 'white' }}>
+              安全告警处置中心
             </Title>
             <Paragraph style={{ 
-              margin: '8px 0 0 0', 
+              margin: '4px 0 0 0', 
               color: 'rgba(255,255,255,0.9)',
-              fontSize: '16px',
+              fontSize: '13px',
               maxWidth: '600px'
             }}>
-              实时监控、智能分析、快速响应企业安全威胁
+              聚焦告警分拣与处置闭环，提供筛选、处理与追踪能力
             </Paragraph>
           </div>
         </div>
         <div style={{
           background: 'rgba(255,255,255,0.1)',
           backdropFilter: 'blur(10px)',
-          padding: '16px 24px',
-          borderRadius: '16px',
+          padding: '10px 14px',
+          borderRadius: '10px',
           border: '1px solid rgba(255,255,255,0.2)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{
               width: '12px',
               height: '12px',
@@ -901,10 +881,10 @@ const AlertsPage: React.FC = () => {
               background: unhandledCount > 0 ? '#ff4d4f' : '#52c41a',
               boxShadow: `0 0 10px ${unhandledCount > 0 ? '#ff4d4f' : '#52c41a'}`
             }} />
-            <Text style={{ color: 'white', fontSize: '14px', fontWeight: 500 }}>
+            <Text style={{ color: 'white', fontSize: '13px', fontWeight: 500 }}>
               {unhandledCount > 0 ? `${unhandledCount} 个未处理告警` : '所有告警已处理'}
             </Text>
-            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: '12px' }}>
+            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: '11px' }}>
               • 最后更新: {new Date().toLocaleTimeString()}
             </Text>
           </div>
@@ -913,450 +893,52 @@ const AlertsPage: React.FC = () => {
     </div>
   );
 
-  // 渲染操作栏
-  const renderControlBar = () => (
-    <Card 
-      style={{ 
-        marginBottom: '32px',
-        borderRadius: '16px',
-        background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-        border: '1px solid rgba(0,0,0,0.06)'
-      }}
-      bodyStyle={{ padding: '20px' }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
-        <div>
-          <Tabs 
-            activeKey={activeTab}
-            onChange={setActiveTab}
-            size="large"
-            style={{ minWidth: '300px' }}
-          >
-            <TabPane 
-              tab={
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <SecurityScanOutlined />
-                  所有告警
-                  <Badge count={displayStats.totalAlerts} style={{ backgroundColor: '#1890ff' }} />
-                </span>
-              } 
-              key="all" 
-            />
-            <TabPane 
-              tab={
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <WarningOutlined />
-                  未处理告警
-                  <Badge count={displayStats.unhandledAlerts} style={{ backgroundColor: '#ff4d4f' }} />
-                </span>
-              } 
-              key="unhandled" 
-            />
-            <TabPane 
-              tab={
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <ExclamationCircleOutlined />
-                  严重告警
-                  <Badge count={displayStats.alertsByLevel.CRITICAL} style={{ backgroundColor: '#cf1322' }} />
-                </span>
-              } 
-              key="critical" 
-            />
-          </Tabs>
-        </div>
-        <div>
-          <Space size="large" wrap>
-            <Dropdown
-              menu={{
-                items: [
-                  { key: 'excel', icon: <FileExcelOutlined />, label: '导出Excel报告' },
-                  { key: 'pdf', icon: <FilePdfOutlined />, label: '导出PDF报告' },
-                  { key: 'json', icon: <CodeOutlined />, label: '导出JSON数据' },
-                ],
-                onClick: ({ key }) => console.log('导出:', key),
-              }}
-              placement="bottomRight"
-            >
-              <Button 
-                icon={<ExportOutlined />}
-                shape="round"
-                size="large"
-                style={{ 
-                  background: 'linear-gradient(135deg, #722ed1 0%, #531dab 100%)',
-                  border: 'none',
-                  color: 'white',
-                  height: '44px',
-                  padding: '0 20px'
-                }}
-              >
-                数据导出
-              </Button>
-            </Dropdown>
-
-            <Button
-              icon={<SyncOutlined spin={loading} />}
-              onClick={() => loadAlerts(pagination.current, pagination.pageSize)}
-              shape="round"
-              size="large"
-              style={{ height: '44px', padding: '0 20px' }}
-            >
-              刷新数据
-            </Button>
-            
-            <Button
-              icon={<FullscreenOutlined />}
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              shape="round"
-              size="large"
-              style={{ height: '44px', padding: '0 20px' }}
-            >
-              全屏
-            </Button>
-          </Space>
-        </div>
-      </div>
-    </Card>
-  );
-
   // 渲染核心指标卡片
   const renderCoreMetrics = () => (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '24px', marginBottom: '32px' }}>
-      {/* 总告警数卡片 */}
-      <Card 
-        hoverable
-        style={{ 
-          borderRadius: '16px',
-          overflow: 'hidden',
-          border: 'none',
-          background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-          boxShadow: '0 6px 16px rgba(0,0,0,0.08)'
-        }}
-        bodyStyle={{ 
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          marginBottom: '20px'
-        }}>
-          <div>
-            <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
-              总告警数
-            </Text>
-            <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#096dd9' }}>
-              {displayStats.totalAlerts}
-            </Title>
-          </div>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <ThunderboltOutlined style={{ fontSize: '28px', color: 'white' }} />
-          </div>
-        </div>
-        
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '8px',
-          margin: '12px 0'
-        }}>
-          <ArrowUpOutlined style={{ color: '#52c41a' }} />
-          <Text strong style={{ fontSize: '14px', color: '#389e0d' }}>
-            今日新增: {Math.round(displayStats.totalAlerts * 0.1)} 条
-          </Text>
-          <Tag color="success" style={{ marginLeft: 'auto' }}>+5%</Tag>
-        </div>
-        
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          marginTop: 'auto'
-        }}>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>处理率</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>{handleRate}%</Text>
-          </div>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>平均响应</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>15min</Text>
-          </div>
-        </div>
-      </Card>
-
-      {/* 未处理告警卡片 */}
-      <Card 
-        hoverable
-        style={{ 
-          borderRadius: '16px',
-          overflow: 'hidden',
-          border: 'none',
-          background: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)',
-          boxShadow: '0 6px 16px rgba(250, 140, 22, 0.12)'
-        }}
-        bodyStyle={{ 
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          marginBottom: '20px'
-        }}>
-          <div>
-            <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
-              未处理告警
-            </Text>
-            <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#d46b08' }}>
-              {displayStats.unhandledAlerts}
-            </Title>
-          </div>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #fa8c16 0%, #d46b08 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <WarningOutlined style={{ fontSize: '28px', color: 'white' }} />
-          </div>
-        </div>
-        
-        <Progress 
-          percent={displayStats.totalAlerts > 0 ? (displayStats.unhandledAlerts / displayStats.totalAlerts * 100) : 0}
-          strokeColor="#fa8c16"
-          strokeWidth={6}
-          style={{ margin: '12px 0' }}
-        />
-        
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          marginTop: 'auto'
-        }}>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>严重</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block', color: '#ff4d4f' }}>
-              {displayStats.alertsByLevel.CRITICAL}
-            </Text>
-          </div>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>高危</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block', color: '#fa8c16' }}>
-              {displayStats.alertsByLevel.HIGH}
-            </Text>
-          </div>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>中危</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block', color: '#faad14' }}>
-              {displayStats.alertsByLevel.MEDIUM}
-            </Text>
-          </div>
-        </div>
-      </Card>
-
-      {/* 处理率卡片 */}
-      <Card 
-        hoverable
-        style={{ 
-          borderRadius: '16px',
-          overflow: 'hidden',
-          border: 'none',
-          background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
-          boxShadow: '0 6px 16px rgba(82, 196, 26, 0.12)'
-        }}
-        bodyStyle={{ 
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          marginBottom: '20px'
-        }}>
-          <div>
-            <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
-              处理效率
-            </Text>
-            <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#389e0d' }}>
-              {handleRate}%
-            </Title>
-          </div>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <BarChartOutlined style={{ fontSize: '28px', color: 'white' }} />
-          </div>
-        </div>
-        
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '8px',
-          margin: '12px 0'
-        }}>
-          <ArrowUpOutlined style={{ color: '#52c41a' }} />
-          <Text strong style={{ fontSize: '14px', color: '#389e0d' }}>
-            较昨日 +3.2%
-          </Text>
-          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-            <Text style={{ fontSize: '12px', color: '#666' }}>目标</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>95%</Text>
-          </div>
-        </div>
-        
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          marginTop: 'auto'
-        }}>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>平均处理</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>25min</Text>
-          </div>
-          <div>
-            <Text style={{ fontSize: '12px', color: '#666' }}>升级率</Text>
-            <Text strong style={{ fontSize: '16px', display: 'block' }}>2.5%</Text>
-          </div>
-        </div>
-      </Card>
-
-      {/* 告警分布卡片 */}
-      <Card 
-        hoverable
-        style={{ 
-          borderRadius: '16px',
-          overflow: 'hidden',
-          border: 'none',
-          background: 'linear-gradient(135deg, #f0f5ff 0%, #d6e4ff 100%)',
-          boxShadow: '0 6px 16px rgba(24, 144, 255, 0.12)'
-        }}
-        bodyStyle={{ 
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          marginBottom: '20px'
-        }}>
-          <div>
-            <Text type="secondary" style={{ fontSize: '14px', fontWeight: 500 }}>
-              告警分布
-            </Text>
-            <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#096dd9' }}>
-              4级
-            </Title>
-          </div>
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <SafetyCertificateOutlined style={{ fontSize: '28px', color: 'white' }} />
-          </div>
-        </div>
-        
-        <div style={{ margin: '12px 0' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <div style={{ 
-              background: 'rgba(255, 77, 79, 0.1)',
-              padding: '8px',
-              borderRadius: '8px',
-              textAlign: 'center'
-            }}>
-              <Text strong style={{ color: '#ff4d4f', fontSize: '18px' }}>
-                {displayStats.alertsByLevel.CRITICAL || 0}
-              </Text>
-              <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
-                严重
-              </div>
-            </div>
-            <div style={{ 
-              background: 'rgba(250, 140, 22, 0.1)',
-              padding: '8px',
-              borderRadius: '8px',
-              textAlign: 'center'
-            }}>
-              <Text strong style={{ color: '#fa8c16', fontSize: '18px' }}>
-                {displayStats.alertsByLevel.HIGH || 0}
-              </Text>
-              <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
-                高危
-              </div>
-            </div>
-            <div style={{ 
-              background: 'rgba(250, 173, 20, 0.1)',
-              padding: '8px',
-              borderRadius: '8px',
-              textAlign: 'center'
-            }}>
-              <Text strong style={{ color: '#faad14', fontSize: '18px' }}>
-                {displayStats.alertsByLevel.MEDIUM || 0}
-              </Text>
-              <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
-                中危
-              </div>
-            </div>
-            <div style={{ 
-              background: 'rgba(82, 196, 26, 0.1)',
-              padding: '8px',
-              borderRadius: '8px',
-              textAlign: 'center'
-            }}>
-              <Text strong style={{ color: '#52c41a', fontSize: '18px' }}>
-                {displayStats.alertsByLevel.LOW || 0}
-              </Text>
-              <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
-                低危
-              </div>
-            </div>
-          </div>
-        </div>
-      </Card>
+    <div style={{ marginBottom: '16px' }}>
+      <Row gutter={16}>
+        <Col span={4}>
+          <Statistic title="总告警" value={displayStats.totalAlerts} valueStyle={{ color: '#1890ff' }} />
+        </Col>
+        <Col span={4}>
+          <Statistic title="未处理" value={displayStats.unhandledAlerts} valueStyle={{ color: '#fa8c16' }} />
+        </Col>
+        <Col span={4}>
+          <Statistic title="处理率" value={handleRate} suffix="%" valueStyle={{ color: '#52c41a' }} />
+        </Col>
+        <Col span={4}>
+          <Statistic title="平均响应" value={avgHandleMinutes} suffix="min" />
+        </Col>
+        <Col span={4}>
+          <Statistic title="今日新增" value={todayAddedCount} />
+        </Col>
+        <Col span={4}>
+          <Statistic
+            title="日变化"
+            value={dayChangePercent}
+            suffix="%"
+            prefix={Number(dayChangePercent) >= 0 ? '+' : ''}
+            valueStyle={{ color: Number(dayChangePercent) >= 0 ? '#52c41a' : '#ff4d4f' }}
+          />
+        </Col>
+      </Row>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <Tag color="#722ed1">严重 {displayStats.alertsByLevel.CRITICAL || 0}</Tag>
+        <Tag color="#ff4d4f">高危 {displayStats.alertsByLevel.HIGH || 0}</Tag>
+        <Tag color="#fa8c16">中危 {displayStats.alertsByLevel.MEDIUM || 0}</Tag>
+        <Tag color="#52c41a">低危 {displayStats.alertsByLevel.LOW || 0}</Tag>
+      </div>
     </div>
   );
 
   return (
     <div style={{ 
-      padding: '32px',
+      padding: '16px',
       maxWidth: '1600px',
       margin: '0 auto',
       position: 'relative'
     }}>
       {renderDashboardHeader()}
-      {renderControlBar()}
       
       {/* 警告提示 */}
       {displayStats.unhandledAlerts > 10 && (
@@ -1372,14 +954,11 @@ const AlertsPage: React.FC = () => {
                   其中包含 {displayStats.alertsByLevel.CRITICAL} 个严重告警，建议优先处理
                 </div>
               </div>
-              <Button type="primary" danger size="middle">
-                立即处理
-              </Button>
             </div>
           }
           style={{ 
-            marginBottom: '24px', 
-            borderRadius: '12px',
+            marginBottom: '12px', 
+            borderRadius: '10px',
             border: 'none',
             background: 'linear-gradient(135deg, rgba(255, 251, 230, 0.9) 0%, rgba(255, 241, 204, 0.9) 100%)',
             boxShadow: '0 4px 20px rgba(250, 140, 22, 0.15)'
@@ -1418,123 +997,212 @@ const AlertsPage: React.FC = () => {
           </div>
         }
         style={{ 
-          borderRadius: '16px',
-          marginBottom: '32px',
+          borderRadius: '12px',
+          marginBottom: '16px',
           boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
         }}
-        bodyStyle={{ padding: '20px' }}
+        bodyStyle={{ padding: '14px' }}
       >
-        <Form form={searchForm} layout="vertical">
+        <div>
+          {/* 统计数字区 */}
           <div style={{ 
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '16px',
-            marginBottom: '16px'
+            marginBottom: '12px',
+            padding: '10px 16px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '24px',
+            flexWrap: 'wrap'
           }}>
-            <div>
-              <Text strong style={{ fontSize: '13px', marginBottom: '8px', display: 'block' }}>关键词</Text>
-              <Form.Item name="keyword" label={null}>
-                <Input
-                  placeholder="告警类型、描述、来源..."
-                  prefix={<SearchOutlined style={{ color: '#666' }} />}
-                  onPressEnter={handleSearch}
-                  style={{ height: '40px' }}
-                />
-              </Form.Item>
-            </div>
-            <div>
-              <Text strong style={{ fontSize: '13px', marginBottom: '8px', display: 'block' }}>告警级别</Text>
-              <Form.Item name="alertLevel" label={null}>
-                <Select
-                  placeholder="全部级别"
-                  style={{ width: '100%', height: '40px' }}
-                  allowClear
-                >
-                  <Option value="LOW">低</Option>
-                  <Option value="MEDIUM">中</Option>
-                  <Option value="HIGH">高</Option>
-                  <Option value="CRITICAL">严重</Option>
-                </Select>
-              </Form.Item>
-            </div>
-            <div>
-              <Text strong style={{ fontSize: '13px', marginBottom: '8px', display: 'block' }}>处理状态</Text>
-              <Form.Item name="handled" label={null}>
-                <Select
-                  placeholder="全部状态"
-                  style={{ width: '100%', height: '40px' }}
-                  allowClear
-                >
-                  <Option value={false}>未处理</Option>
-                  <Option value={true}>已处理</Option>
-                </Select>
-              </Form.Item>
-            </div>
-            <div>
-              <Text strong style={{ fontSize: '13px', marginBottom: '8px', display: 'block' }}>详细状态</Text>
-              <Form.Item name="status" label={null}>
-                <Select
-                  placeholder="状态筛选"
-                  style={{ width: '100%', height: '40px' }}
-                  allowClear
-                >
-                  <Option value="PENDING">待处理</Option>
-                  <Option value="PROCESSING">处理中</Option>
-                  <Option value="RESOLVED">已解决</Option>
-                  <Option value="FALSE_POSITIVE">误报</Option>
-                </Select>
-              </Form.Item>
+            <Text style={{ fontSize: '13px' }}>总告警: <Text strong>{displayStats.totalAlerts}</Text></Text>
+            <Text style={{ fontSize: '13px' }}>匹配: <Text strong>{pagination.total}</Text></Text>
+            <Text style={{ fontSize: '13px' }}>未处理: <Text strong style={{ color: '#ff4d4f' }}>{displayStats.unhandledAlerts}</Text></Text>
+            <Text style={{ fontSize: '13px' }}>严重: <Text strong style={{ color: '#cf1322' }}>{displayStats.alertsByLevel.CRITICAL}</Text></Text>
+            <Text style={{ fontSize: '13px' }}>处理率: <Text strong>{handleRate}%</Text></Text>
+          </div>
+
+          {/* 筛选区 */}
+          <div style={{ 
+            border: '1px solid #e8e8e8', 
+            borderRadius: '16px', 
+            padding: '16px', 
+            background: '#fafafa',
+            marginBottom: '12px'
+          }}>
+            <Form form={searchForm} layout="vertical">
+              {/* 第一行：关键词 */}
+              <div style={{ marginBottom: '12px' }}>
+                <Form.Item name="keyword" style={{ marginBottom: 0 }}>
+                  <Input
+                    placeholder="搜索关键词（描述、来源等）..."
+                    prefix={<SearchOutlined style={{ color: '#999' }} />}
+                    onPressEnter={handleSearch}
+                    style={{ height: '36px', borderRadius: '18px' }}
+                    allowClear
+                  />
+                </Form.Item>
+              </div>
+              
+              {/* 第二行：下拉框 */}
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <Form.Item name="alertLevel" style={{ marginBottom: 0, flex: '1 1 150px', minWidth: '120px' }}>
+                  <Select 
+                    placeholder="告警级别" 
+                    style={{ width: '100%', borderRadius: '8px' }} 
+                    allowClear 
+                    onChange={() => setTimeout(() => handleSearch(), 0)}
+                  >
+                    <Option value="CRITICAL">严重</Option>
+                    <Option value="HIGH">高危</Option>
+                    <Option value="MEDIUM">中危</Option>
+                    <Option value="LOW">低危</Option>
+                  </Select>
+                </Form.Item>
+                <Form.Item name="alertType" style={{ marginBottom: 0, flex: '1 1 180px', minWidth: '140px' }}>
+                  <Select 
+                    placeholder="告警类型" 
+                    style={{ width: '100%', borderRadius: '8px' }} 
+                    allowClear 
+                    onChange={() => setTimeout(() => handleSearch(), 0)}
+                  >
+                    <Option value="LOGIN_FAILURE">登录失败</Option>
+                    <Option value="LOGIN_SUCCESS">登录成功</Option>
+                    <Option value="BRUTE_FORCE">暴力破解</Option>
+                    <Option value="SUSPICIOUS_IP">可疑IP访问</Option>
+                    <Option value="SUSPICIOUS_PROCESS">可疑进程</Option>
+                    <Option value="UNAUTHORIZED_ACCESS">未授权访问</Option>
+                    <Option value="PRIVILEGE_ESCALATION">权限提升</Option>
+                    <Option value="SECURITY_ANOMALY">安全异常</Option>
+                    <Option value="SYSTEM_ANOMALY">系统异常</Option>
+                    <Option value="CPU_USAGE_HIGH">CPU使用率过高</Option>
+                    <Option value="MEMORY_USAGE_HIGH">内存使用率过高</Option>
+                    <Option value="DISK_USAGE_HIGH">磁盘使用率过高</Option>
+                    <Option value="NETWORK_TRAFFIC_HIGH">网络流量异常</Option>
+                    <Option value="HIGH_RESOURCE_PROCESS">进程资源过高</Option>
+                    <Option value="THREAT_SIGNATURE_MATCH">威胁规则匹配</Option>
+                  </Select>
+                </Form.Item>
+                <Form.Item name="status" style={{ marginBottom: 0, flex: '1 1 150px', minWidth: '120px' }}>
+                  <Select 
+                    placeholder="处理状态" 
+                    style={{ width: '100%', borderRadius: '8px' }} 
+                    allowClear 
+                    onChange={() => setTimeout(() => handleSearch(), 0)}
+                  >
+                    <Option value="PENDING">待处理</Option>
+                    <Option value="PROCESSING">处理中</Option>
+                    <Option value="RESOLVED">已解决</Option>
+                    <Option value="FALSE_POSITIVE">误报</Option>
+                  </Select>
+                </Form.Item>
+              </div>
+              
+              {/* 第三行：快捷标签 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <Text type="secondary" style={{ fontSize: '12px' }}>快捷:</Text>
+                <Tag 
+                  style={{ 
+                    margin: 0, 
+                    padding: '2px 12px', 
+                    borderRadius: '12px', 
+                    cursor: 'pointer',
+                    background: '#fff',
+                    border: '1px solid #d9d9d9'
+                  }} 
+                  onClick={() => applyFilterAndReload({ status: 'PENDING' })}
+                >待处理</Tag>
+                <Tag 
+                  style={{ 
+                    margin: 0, 
+                    padding: '2px 12px', 
+                    borderRadius: '12px', 
+                    cursor: 'pointer',
+                    background: '#fff',
+                    border: '1px solid #ff4d4f',
+                    color: '#ff4d4f'
+                  }} 
+                  onClick={() => applyFilterAndReload({ alertLevel: 'CRITICAL' })}
+                >严重</Tag>
+                <Tag 
+                  style={{ 
+                    margin: 0, 
+                    padding: '2px 12px', 
+                    borderRadius: '12px', 
+                    cursor: 'pointer',
+                    background: '#fff',
+                    border: '1px solid #fa8c16',
+                    color: '#fa8c16'
+                  }} 
+                  onClick={() => applyFilterAndReload({ alertLevel: 'HIGH' })}
+                >高危</Tag>
+                <div style={{ flex: 1 }} />
+                <Button 
+                  size="small" 
+                  type="text" 
+                  style={{ color: '#999' }}
+                  onClick={() => applyFilterAndReload({ alertLevel: undefined, alertType: undefined, status: undefined, keyword: '' })}
+                >清空筛选</Button>
+              </div>
+            </Form>
+          </div>
+          
+          <div style={{ minWidth: 0 }}>
+
+            {/* 告警表格 */}
+            <div style={{ 
+              borderRadius: '12px',
+              overflow: 'hidden',
+              border: '1px solid #f0f0f0'
+            }}>
+              <Table
+                columns={columns}
+                dataSource={alertList}
+                rowKey="id"
+                loading={loading}
+                size="small"
+                onRow={(record) => ({
+                  onClick: () => showAlertDetail(record),
+                  style: { cursor: 'pointer' },
+                })}
+                pagination={{
+                  ...pagination,
+                  showSizeChanger: true,
+                  pageSizeOptions: ['10', '20', '50', '100'],
+                  showQuickJumper: true,
+                  showTotal: (total, range) => 
+                    <div style={{ fontSize: '13px' }}>
+                      显示第 <Text strong>{range[0]}</Text> 到 <Text strong>{range[1]}</Text> 条，共 <Text strong>{total}</Text> 条告警
+                    </div>,
+                  style: { padding: '16px 24px', margin: 0 }
+                }}
+                onChange={handleTableChange}
+                rowClassName={(record) => 
+                  !record.handled ? 'unhandled-alert-row' : 'handled-alert-row'
+                }
+                locale={{
+                  emptyText: alertList.length === 0 ? 
+                    <Empty 
+                      description={
+                        <div>
+                          <div style={{ fontSize: '16px', marginBottom: '8px' }}>暂无告警数据</div>
+                          <Text type="secondary">系统运行良好，未检测到安全威胁</Text>
+                        </div>
+                      } 
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      style={{ padding: '40px 0' }}
+                    /> : undefined
+                }}
+              />
             </div>
           </div>
-        </Form>
-
-        {/* 告警表格 */}
-        <div style={{ 
-          borderRadius: '12px',
-          overflow: 'hidden',
-          border: '1px solid #f0f0f0'
-        }}>
-          <Table
-            columns={columns}
-            dataSource={alertList}
-            rowKey="id"
-            loading={loading}
-            scroll={{ x: 1300 }}
-            pagination={{
-              ...pagination,
-              showSizeChanger: true,
-              showQuickJumper: true,
-              showTotal: (total, range) => 
-                <div style={{ fontSize: '13px' }}>
-                  显示第 <Text strong>{range[0]}</Text> 到 <Text strong>{range[1]}</Text> 条，共 <Text strong>{total}</Text> 条告警
-                </div>,
-              style: { padding: '16px 24px', margin: 0 }
-            }}
-            onChange={handleTableChange}
-            rowClassName={(record) => 
-              !record.handled ? 'unhandled-alert-row' : 'handled-alert-row'
-            }
-            locale={{
-              emptyText: alertList.length === 0 ? 
-                <Empty 
-                  description={
-                    <div>
-                      <div style={{ fontSize: '16px', marginBottom: '8px' }}>暂无告警数据</div>
-                      <Text type="secondary">系统运行良好，未检测到安全威胁</Text>
-                    </div>
-                  } 
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  style={{ padding: '40px 0' }}
-                /> : undefined
-            }}
-          />
         </div>
       </Card>
 
       {/* 底部信息栏 */}
       <div style={{ 
-        marginTop: '32px', 
-        padding: '20px',
+        marginTop: '16px', 
+        padding: '12px',
         textAlign: 'center', 
         color: '#666',
         fontSize: '12px',
@@ -1571,6 +1239,102 @@ const AlertsPage: React.FC = () => {
         </div>
       </div>
 
+      <Modal
+        title="告警详情"
+        open={detailVisible}
+        onCancel={() => {
+          setDetailVisible(false);
+          setSelectedAlert(null);
+        }}
+        width={980}
+        footer={[
+          <Button
+            key="handle"
+            type="primary"
+            icon={<CheckOutlined />}
+            disabled={!selectedAlert || selectedAlert.handled || loading}
+            onClick={() => {
+              if (!selectedAlert) return;
+              handleMarkAsHandled(selectedAlert);
+              setDetailVisible(false);
+            }}
+          >
+            标记已处理
+          </Button>,
+          <Button
+            key="delete"
+            danger
+            icon={<DeleteOutlined />}
+            disabled={!selectedAlert || loading}
+            onClick={() => {
+              if (!selectedAlert) return;
+              handleDeleteAlert(selectedAlert);
+              setDetailVisible(false);
+            }}
+          >
+            删除告警
+          </Button>,
+          <Button key="close" onClick={() => setDetailVisible(false)}>
+            关闭
+          </Button>,
+        ]}
+      >
+        {detailLoading || !selectedAlert ? (
+          <div style={{ padding: '24px 0', textAlign: 'center' }}>加载中...</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <Descriptions column={1} bordered size="small">
+              <Descriptions.Item label="ID">{selectedAlert.id}</Descriptions.Item>
+              <Descriptions.Item label="告警ID">{selectedAlert.alertId || '-'}</Descriptions.Item>
+              <Descriptions.Item label="来源">{getAlertSourceLabel(selectedAlert.source)}</Descriptions.Item>
+              <Descriptions.Item label="类型">{getAlertTypeLabel(selectedAlert.alertType)}</Descriptions.Item>
+              <Descriptions.Item label="级别">{getSeverity(selectedAlert.alertLevel).label}</Descriptions.Item>
+              <Descriptions.Item label="处理状态">
+                <Tag color={selectedAlert.handled ? 'green' : 'red'}>
+                  {selectedAlert.handled ? '已处理' : '未处理'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="AI置信度">
+                {selectedAlert.aiConfidence ? `${(selectedAlert.aiConfidence * 100).toFixed(1)}%` : 'N/A'}
+              </Descriptions.Item>
+              <Descriptions.Item label="创建时间">
+                {dayjs(selectedAlert.createdTime).format('YYYY-MM-DD HH:mm:ss')}
+              </Descriptions.Item>
+              {selectedAlert.unifiedEventId && (
+                <Descriptions.Item label="关联事件">
+                  <span
+                    style={{ color: '#1890ff', cursor: 'pointer', textDecoration: 'underline' }}
+                    onClick={() => {
+                      setDetailVisible(false);
+                      window.location.hash = `/events?eventId=${selectedAlert.unifiedEventId}`;
+                    }}
+                  >
+                    事件 #{selectedAlert.unifiedEventId} →
+                  </span>
+                </Descriptions.Item>
+              )}
+            </Descriptions>
+
+            <div style={{ border: '1px solid #f0f0f0', borderRadius: '8px', padding: '10px' }}>
+              <Text strong style={{ display: 'block', marginBottom: '6px' }}>描述</Text>
+              <Paragraph style={{ marginBottom: '10px' }}>{selectedAlert.description || '-'}</Paragraph>
+              {selectedAlert.assignee && <Text style={{ display: 'block' }}>处理人：{selectedAlert.assignee}</Text>}
+              {selectedAlert.resolution && <Text style={{ display: 'block', marginTop: '6px' }}>处理结果：{selectedAlert.resolution}</Text>}
+              {(selectedAlert as any).details && (
+                <>
+                  <Divider style={{ margin: '10px 0' }}>详细信息</Divider>
+                  <Paragraph style={{ maxHeight: 260, overflow: 'auto', background: '#f6f8fa', padding: 10, marginBottom: 0 }}>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
+                      {JSON.stringify((selectedAlert as any).details, null, 2)}
+                    </pre>
+                  </Paragraph>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <style>{`
         .unhandled-alert-row {
           background: linear-gradient(90deg, rgba(255, 77, 79, 0.02) 0%, rgba(255, 255, 255, 0.1) 100%) !important;
@@ -1589,7 +1353,7 @@ const AlertsPage: React.FC = () => {
           border-bottom: 2px solid #f0f0f0 !important;
         }
         .ant-table-tbody > tr > td {
-          padding: 16px !important;
+          padding: 10px 8px !important;
           font-size: 12px !important;
         }
         .ant-progress-circle .ant-progress-text {

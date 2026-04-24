@@ -50,9 +50,13 @@ public class MetricsServiceImpl implements MetricsService {
             LocalDateTime timestamp = extractTimestamp(collectorData);
             metrics.setTimestamp(timestamp);
             
-            // Extract hostname and IP
-            metrics.setHostname(extractString(collectorData, "hostname"));
-            metrics.setIpAddress(extractString(collectorData, "ip_address"));
+            // Extract hostname and IP (兼容 hostname/host, ip_address/ip)
+            String hostname = extractString(collectorData, "hostname");
+            if (hostname == null) hostname = extractString(collectorData, "host");
+            metrics.setHostname(hostname);
+            String ipAddress = extractString(collectorData, "ip_address");
+            if (ipAddress == null) ipAddress = extractString(collectorData, "ip");
+            metrics.setIpAddress(ipAddress);
             
             // Extract CPU metrics
             extractCpuMetrics(collectorData, metrics);
@@ -273,59 +277,94 @@ public class MetricsServiceImpl implements MetricsService {
     }
 
     private void extractCpuMetrics(Map<String, Object> data, SystemMetrics metrics) {
-        // Try different possible key names for CPU metrics
-        metrics.setCpuUsage(extractDouble(data, "cpu_usage"));
-        if (metrics.getCpuUsage() == null) {
-            metrics.setCpuUsage(extractDouble(data, "cpuUsage"));
+        // 先尝试从嵌套的 data 子对象提取（Python system_info_collector_v2 的结构）
+        Map<String, Object> innerData = extractInnerData(data);
+
+        // performance 类型: cpu_percent
+        // cpu_info 类型: usage
+        // 兼容所有可能的 key 名
+        for (Map<String, Object> src : new java.util.ArrayList<>(java.util.Arrays.asList(innerData, data))) {
+            if (metrics.getCpuUsage() == null) metrics.setCpuUsage(extractDouble(src, "cpu_percent"));
+            if (metrics.getCpuUsage() == null) metrics.setCpuUsage(extractDouble(src, "usage"));
+            if (metrics.getCpuUsage() == null) metrics.setCpuUsage(extractDouble(src, "cpu_usage"));
+            if (metrics.getCpuUsage() == null) metrics.setCpuUsage(extractDouble(src, "cpuUsage"));
         }
-        
-        metrics.setCpuCores(extractInteger(data, "cpu_cores"));
-        if (metrics.getCpuCores() == null) {
-            metrics.setCpuCores(extractInteger(data, "cpuCores"));
+
+        for (Map<String, Object> src : new java.util.ArrayList<>(java.util.Arrays.asList(innerData, data))) {
+            if (metrics.getCpuCores() == null) metrics.setCpuCores(extractInteger(src, "cores"));
+            if (metrics.getCpuCores() == null) metrics.setCpuCores(extractInteger(src, "cpu_count"));
+            if (metrics.getCpuCores() == null) metrics.setCpuCores(extractInteger(src, "cpu_cores"));
+            if (metrics.getCpuCores() == null) metrics.setCpuCores(extractInteger(src, "cpuCores"));
         }
-        
-        metrics.setCpuFrequency(extractDouble(data, "cpu_frequency"));
-        if (metrics.getCpuFrequency() == null) {
-            metrics.setCpuFrequency(extractDouble(data, "cpuFrequency"));
+
+        for (Map<String, Object> src : new java.util.ArrayList<>(java.util.Arrays.asList(innerData, data))) {
+            if (metrics.getCpuFrequency() == null) metrics.setCpuFrequency(extractDouble(src, "frequency"));
+            if (metrics.getCpuFrequency() == null) metrics.setCpuFrequency(extractDouble(src, "cpu_frequency"));
+            if (metrics.getCpuFrequency() == null) metrics.setCpuFrequency(extractDouble(src, "cpuFrequency"));
         }
     }
 
     private void extractMemoryMetrics(Map<String, Object> data, SystemMetrics metrics) {
-        metrics.setMemoryUsage(extractDouble(data, "memory_usage"));
-        if (metrics.getMemoryUsage() == null) {
-            metrics.setMemoryUsage(extractDouble(data, "memoryUsage"));
+        Map<String, Object> innerData = extractInnerData(data);
+
+        // performance 类型: memory_percent / memory_used / memory_available / memory_total
+        // memory_info 类型: usage / used / available / total
+        for (Map<String, Object> src : new java.util.ArrayList<>(java.util.Arrays.asList(innerData, data))) {
+            if (metrics.getMemoryUsage() == null) metrics.setMemoryUsage(extractDouble(src, "memory_percent"));
+            if (metrics.getMemoryUsage() == null) metrics.setMemoryUsage(extractDouble(src, "usage"));
+            if (metrics.getMemoryUsage() == null) metrics.setMemoryUsage(extractDouble(src, "memory_usage"));
+            if (metrics.getMemoryUsage() == null) metrics.setMemoryUsage(extractDouble(src, "memoryUsage"));
         }
-        
-        metrics.setMemoryUsed(extractLong(data, "memory_used"));
-        if (metrics.getMemoryUsed() == null) {
-            metrics.setMemoryUsed(extractLong(data, "memoryUsed"));
+
+        for (Map<String, Object> src : new java.util.ArrayList<>(java.util.Arrays.asList(innerData, data))) {
+            if (metrics.getMemoryUsed() == null) metrics.setMemoryUsed(extractLong(src, "memory_used"));
+            if (metrics.getMemoryUsed() == null) metrics.setMemoryUsed(extractLong(src, "used"));
+            if (metrics.getMemoryUsed() == null) metrics.setMemoryUsed(extractLong(src, "memoryUsed"));
         }
-        
-        metrics.setMemoryTotal(extractLong(data, "memory_total"));
-        if (metrics.getMemoryTotal() == null) {
-            metrics.setMemoryTotal(extractLong(data, "memoryTotal"));
+
+        for (Map<String, Object> src : new java.util.ArrayList<>(java.util.Arrays.asList(innerData, data))) {
+            if (metrics.getMemoryTotal() == null) metrics.setMemoryTotal(extractLong(src, "memory_total"));
+            if (metrics.getMemoryTotal() == null) metrics.setMemoryTotal(extractLong(src, "total"));
+            if (metrics.getMemoryTotal() == null) metrics.setMemoryTotal(extractLong(src, "memoryTotal"));
         }
-        
-        metrics.setMemoryAvailable(extractLong(data, "memory_available"));
-        if (metrics.getMemoryAvailable() == null) {
-            metrics.setMemoryAvailable(extractLong(data, "memoryAvailable"));
+
+        for (Map<String, Object> src : new java.util.ArrayList<>(java.util.Arrays.asList(innerData, data))) {
+            if (metrics.getMemoryAvailable() == null) metrics.setMemoryAvailable(extractLong(src, "memory_available"));
+            if (metrics.getMemoryAvailable() == null) metrics.setMemoryAvailable(extractLong(src, "available"));
+            if (metrics.getMemoryAvailable() == null) metrics.setMemoryAvailable(extractLong(src, "memoryAvailable"));
         }
     }
 
+    /**
+     * 从 enriched_payload 的嵌套 data 子对象提取，兼容 Python system_info_collector_v2 的结构：
+     * { "collector": "...", "host": "...", "data": { "cpu_percent": 45.2, ... } }
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractInnerData(Map<String, Object> data) {
+        Object inner = data.get("data");
+        if (inner instanceof Map) {
+            return (Map<String, Object>) inner;
+        }
+        return java.util.Collections.emptyMap();
+    }
+
     private void extractDiskMetrics(Map<String, Object> data, SystemMetrics metrics) {
-        metrics.setDiskUsage(extractDouble(data, "disk_usage"));
-        if (metrics.getDiskUsage() == null) {
-            metrics.setDiskUsage(extractDouble(data, "diskUsage"));
+        Map<String, Object> innerData = extractInnerData(data);
+        // disk_info 类型: usage / used / available / total
+        for (Map<String, Object> src : new java.util.ArrayList<>(java.util.Arrays.asList(innerData, data))) {
+            if (metrics.getDiskUsage() == null) metrics.setDiskUsage(extractDouble(src, "usage"));
+            if (metrics.getDiskUsage() == null) metrics.setDiskUsage(extractDouble(src, "disk_usage"));
+            if (metrics.getDiskUsage() == null) metrics.setDiskUsage(extractDouble(src, "diskUsage"));
         }
-        
-        metrics.setDiskUsed(extractLong(data, "disk_used"));
-        if (metrics.getDiskUsed() == null) {
-            metrics.setDiskUsed(extractLong(data, "diskUsed"));
+        for (Map<String, Object> src : new java.util.ArrayList<>(java.util.Arrays.asList(innerData, data))) {
+            if (metrics.getDiskUsed() == null) metrics.setDiskUsed(extractLong(src, "used"));
+            if (metrics.getDiskUsed() == null) metrics.setDiskUsed(extractLong(src, "disk_used"));
+            if (metrics.getDiskUsed() == null) metrics.setDiskUsed(extractLong(src, "diskUsed"));
         }
-        
-        metrics.setDiskTotal(extractLong(data, "disk_total"));
-        if (metrics.getDiskTotal() == null) {
-            metrics.setDiskTotal(extractLong(data, "diskTotal"));
+        for (Map<String, Object> src : new java.util.ArrayList<>(java.util.Arrays.asList(innerData, data))) {
+            if (metrics.getDiskTotal() == null) metrics.setDiskTotal(extractLong(src, "total"));
+            if (metrics.getDiskTotal() == null) metrics.setDiskTotal(extractLong(src, "disk_total"));
+            if (metrics.getDiskTotal() == null) metrics.setDiskTotal(extractLong(src, "diskTotal"));
         }
     }
 

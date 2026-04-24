@@ -25,33 +25,7 @@ const AnalysisPage: React.FC<AnalysisPageProps> = ({ isPaused }) => {
       setSecurityAnalysisData(data as SecurityAnalysisItem[]);
     } catch (error) {
       console.error('加载安全分析数据失败', error);
-      // 模拟数据
-      setSecurityAnalysisData([
-        {
-          id: '1',
-          category: 'anomaly_detection',
-          name: '异常登录检测',
-          description: '检测异常登录行为，包括时间、地点、设备异常',
-          riskScore: 85,
-          findings: ['发现3个异常登录IP', '检测到2个未知设备登录'],
-          recommendations: ['加强密码策略', '启用多因素认证'],
-          lastRun: new Date().toISOString(),
-          nextRun: new Date(Date.now() + 3600000).toISOString(),
-          status: 'completed'
-        },
-        {
-          id: '2',
-          category: 'threat_hunting',
-          name: '内部威胁检测',
-          description: '检测内部人员的异常行为和潜在威胁',
-          riskScore: 62,
-          findings: ['发现1个内部账号异常操作'],
-          recommendations: ['加强权限管理', '审计关键操作'],
-          lastRun: new Date().toISOString(),
-          nextRun: new Date(Date.now() + 7200000).toISOString(),
-          status: 'running'
-        }
-      ]);
+      setSecurityAnalysisData([]);
     } finally {
       setLoading(false);
     }

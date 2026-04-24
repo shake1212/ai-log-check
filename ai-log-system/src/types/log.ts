@@ -28,9 +28,34 @@ export interface SecurityAlert {
   source?: string; // 添加 source 字段
 }
 
+/**
+ * 推送消息 type 字段。
+ * - 规范类型：与 normalizeMessageType 输出及后端主要 JSON 一致。
+ * - 遗留别名：仅表示「原始可能值」，便于类型收窄；运行时应经归一化后再分支。
+ */
 export interface WebSocketMessage {
-  type: 'NEW_LOGS' | 'SECURITY_ALERT' | 'STATISTICS' | 'SYSTEM_NOTIFICATION';
+  type:
+    | 'LOGS_BATCH'
+    | 'LOG_SINGLE'
+    | 'ALERT_SECURITY'
+    | 'STATS_UPDATE'
+    | 'NOTIFY_SYSTEM'
+    | 'HEARTBEAT'
+    | 'CUSTOM'
+    | 'TEST_MESSAGE'
+    | 'SYSTEM_INFO'
+    | 'SYSTEM_ERROR'
+    /* 遗留别名（与规范类型并存，便于兼容旧客户端/文档） */
+    | 'SYSTEM_NOTIFICATION'
+    | 'SECURITY_ALERT'
+    | 'STATISTICS'
+    | 'STATISTICS_UPDATE'
+    | 'NEW_LOGS'
+    | 'SINGLE_LOG'
+    | 'PING'
+    | 'PONG';
   data?: any;
+  legacyType?: string;
   count?: number;
   logs?: SecurityLog[];
   level?: string;

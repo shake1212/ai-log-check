@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.security.ailogsystem.entity.LogCollectorConfig;
 import com.security.ailogsystem.service.AlertService;
 import com.security.ailogsystem.service.LogCollectorConfigService;
-import com.security.ailogsystem.service.MetricsService;
 import com.security.ailogsystem.service.SecurityLogCollectorService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,9 +43,6 @@ class RuleEngineConfigApiTest {
 
     @MockBean
     private LogCollectorConfigService configService;
-
-    @MockBean
-    private MetricsService metricsService;
 
     @MockBean
     private AlertService alertService;

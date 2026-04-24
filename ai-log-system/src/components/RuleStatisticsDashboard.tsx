@@ -10,7 +10,7 @@ import {
 } from '@ant-design/icons';
 import ruleEngineApi, { RuleStatistics } from '@/services/ruleEngineApi';
 import './RuleStatisticsDashboard.less';
-import { SEVERITY_MAP } from '@/utils/enumLabels';
+import { SEVERITY_MAP, getThreatCategory } from '@/utils/enumLabels';
 
 interface RuleStatisticsDashboardProps {
   autoRefresh?: boolean;
@@ -81,7 +81,7 @@ const RuleStatisticsDashboard: React.FC<RuleStatisticsDashboardProps> = ({
   const categoryChartConfig = {
     data: statistics
       ? Object.entries(statistics.categoryStats).map(([category, count]) => ({
-          category,
+          category: getThreatCategory(category),
           count,
         }))
       : [],
@@ -254,7 +254,7 @@ const RuleStatisticsDashboard: React.FC<RuleStatisticsDashboardProps> = ({
                           borderBottom: '1px solid #f0f0f0',
                         }}
                       >
-                        <Tag color="blue">{category}</Tag>
+                        <Tag color="blue">{getThreatCategory(category)}</Tag>
                         <span style={{ fontWeight: 'bold' }}>{count} 条</span>
                       </div>
                     ))}

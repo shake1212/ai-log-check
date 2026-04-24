@@ -70,9 +70,11 @@ export class DatabasePool {
     }
 
     try {
-      // 模拟连接池初始化
-      // 在实际项目中，这里应该使用真实的MySQL连接池库（如mysql2、mysql等）
-      this.pool = this.createMockPool();
+      const health = await this.healthCheck();
+      if (!health.healthy) {
+        throw new Error(health.message);
+      }
+      this.pool = { initializedAt: new Date().toISOString() };
       
       this.isInitialized = true;
       this.reconnectAttempts = 0;
@@ -85,7 +87,7 @@ export class DatabasePool {
       console.log('数据库连接池初始化成功');
       
       // 触发连接事件
-      this.emit('connection', this.createMockConnection());
+      this.emit('connection', this.createBackendConnection());
       
     } catch (error) {
       console.error('数据库连接池初始化失败:', error);
@@ -94,74 +96,72 @@ export class DatabasePool {
   }
 
   /**
-   * 创建模拟连接池
-   * TODO: REMOVE MOCK DATA - 待删除的模拟数据
+   * 调用后端数据库网关
    */
-  private createMockPool(): any {
-    return {
-      config: this.config,
-      poolConfig: this.poolConfig,
-      connections: [],
-      queue: [],
-      stats: {
-        totalConnections: 0,
-        activeConnections: 0,
-        idleConnections: 0,
-        waitingConnections: 0
-      }
-    };
+  private async callDatabaseApi<T = any>(path: string, method: string = 'GET', body?: any): Promise<T> {
+    const response = await fetch(`/api/database/${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined
+    });
+    if (!response.ok) {
+      throw new Error(`数据库接口调用失败: ${response.status} ${response.statusText}`);
+    }
+    return response.json();
   }
 
   /**
-   * 创建模拟连接
-   * TODO: REMOVE MOCK DATA - 待删除的模拟数据
+   * 创建后端代理连接
    */
-  private createMockConnection(): Connection {
+  private createBackendConnection(): Connection {
     return {
       query: async <T = any>(sql: string, params?: any[]): Promise<QueryResult<T>> => {
-        // 模拟查询延迟
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 100 + 50));
-        
-        // 模拟查询结果
+        const start = Date.now();
+        const raw = await this.callDatabaseApi<any>('query', 'POST', { sql, params: params || [] });
         const result: QueryResult<T> = {
-          rows: [] as T[],
-          fields: [],
-          affectedRows: Math.floor(Math.random() * 10),
-          insertId: Math.floor(Math.random() * 1000),
-          changedRows: Math.floor(Math.random() * 5),
-          message: 'Query OK'
+          rows: (raw.rows || []) as T[],
+          fields: raw.fields || [],
+          affectedRows: raw.affectedRows || 0,
+          insertId: raw.insertId || 0,
+          changedRows: raw.changedRows || 0,
+          message: raw.message || 'Query OK'
         };
 
         // 更新统计信息
         this.statsCollector.incrementQueryCount();
-        this.statsCollector.updateAverageQueryTime(Math.random() * 100 + 50);
+        this.statsCollector.updateAverageQueryTime(Date.now() - start);
 
         return result;
       },
 
       release: () => {
-        // 模拟连接释放
-        console.log('连接已释放');
+        this.emit('release', this.createBackendConnection());
       },
 
       beginTransaction: async (): Promise<Transaction> => {
-        return this.createMockTransaction();
+        return this.createBackendTransaction();
       },
 
       ping: async (): Promise<boolean> => {
-        // 模拟ping测试
-        await new Promise(resolve => setTimeout(resolve, 10));
-        return true;
+        try {
+          const result = await this.callDatabaseApi<any>('test-connection');
+          return !!result.connected;
+        } catch {
+          return false;
+        }
       }
     };
   }
 
   /**
-   * 创建模拟事务
-   * TODO: REMOVE MOCK DATA - 待删除的模拟数据
+   * 创建后端代理事务
    */
-  private createMockTransaction(): Transaction {
+  private createBackendTransaction(): Transaction {
     let isActive = false;
+    const queuedQueries: Array<{ sql: string; params?: any[] }> = [];
 
     return {
       begin: async (): Promise<void> => {
@@ -173,8 +173,8 @@ export class DatabasePool {
         if (!isActive) {
           throw new Error('事务未开始');
         }
+        await this.callDatabaseApi('transaction', 'POST', { queries: queuedQueries });
         isActive = false;
-        await new Promise(resolve => setTimeout(resolve, 10));
       },
 
       rollback: async (): Promise<void> => {
@@ -182,7 +182,7 @@ export class DatabasePool {
           throw new Error('事务未开始');
         }
         isActive = false;
-        await new Promise(resolve => setTimeout(resolve, 10));
+        queuedQueries.length = 0;
       },
 
       query: async <T = any>(sql: string, params?: any[]): Promise<QueryResult<T>> => {
@@ -190,16 +190,14 @@ export class DatabasePool {
           throw new Error('事务未开始');
         }
         
-        // 模拟事务查询
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 50 + 25));
-        
+        queuedQueries.push({ sql, params });
         return {
           rows: [] as T[],
           fields: [],
-          affectedRows: Math.floor(Math.random() * 5),
-          insertId: Math.floor(Math.random() * 500),
-          changedRows: Math.floor(Math.random() * 3),
-          message: 'Query OK'
+          affectedRows: 0,
+          insertId: 0,
+          changedRows: 0,
+          message: 'QUEUED'
         };
       }
     };
@@ -214,7 +212,7 @@ export class DatabasePool {
     }
 
     try {
-      const connection = this.createMockConnection();
+      const connection = this.createBackendConnection();
       
       // 更新统计信息
       this.statsCollector.updateConnectionStats(
@@ -378,7 +376,6 @@ export class DatabasePool {
    */
   async close(): Promise<void> {
     if (this.pool) {
-      // 模拟关闭连接池
       this.pool = null;
       this.isInitialized = false;
       console.log('数据库连接池已关闭');

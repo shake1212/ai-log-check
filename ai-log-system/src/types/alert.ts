@@ -14,6 +14,7 @@ export interface SecurityAlert {
   assignee?: string;
   resolution?: string;
   logEntryId?: number;
+  unifiedEventId?: number;
 }
 
 export interface AlertResponse {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Card, 
   Row, 
@@ -37,6 +37,7 @@ import {
   InfoCircleOutlined,
   WarningOutlined
 } from '@ant-design/icons';
+import { analysisApi, logApi, scriptApi } from '@/services/api';
 
 const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
@@ -75,72 +76,14 @@ interface WMIEnvironmentStatus {
 }
 
 const WMIEnvironment: React.FC = () => {
-  const [connections, setConnections] = useState<WMIConnection[]>([
-    {
-      id: '1',
-      name: '本地服务器',
-      host: 'localhost',
-      username: 'Administrator',
-      domain: 'WORKGROUP',
-      status: 'connected',
-      lastConnected: '2024-01-15 14:30:25',
-      responseTime: 45
-    },
-    {
-      id: '2',
-      name: '测试服务器',
-      host: '192.168.1.100',
-      username: 'admin',
-      domain: 'DOMAIN',
-      status: 'disconnected',
-      lastConnected: '2024-01-15 13:45:10',
-      responseTime: 0,
-      errorMessage: '连接超时'
-    }
-  ]);
-
-  const [queries, setQueries] = useState<WMIQuery[]>([
-    {
-      id: '1',
-      name: '系统进程监控',
-      namespace: 'root\\cimv2',
-      query: 'SELECT * FROM Win32_Process',
-      description: '监控系统运行进程',
-      enabled: true,
-      interval: 30,
-      lastRun: '2024-01-15 14:30:25',
-      resultCount: 156
-    },
-    {
-      id: '2',
-      name: '服务状态检查',
-      namespace: 'root\\cimv2',
-      query: 'SELECT * FROM Win32_Service WHERE State = "Running"',
-      description: '检查运行中的服务',
-      enabled: true,
-      interval: 60,
-      lastRun: '2024-01-15 14:29:45',
-      resultCount: 89
-    },
-    {
-      id: '3',
-      name: '事件日志监控',
-      namespace: 'root\\cimv2',
-      query: 'SELECT * FROM Win32_NTLogEvent WHERE EventType = 1',
-      description: '监控错误事件日志',
-      enabled: false,
-      interval: 300,
-      lastRun: '2024-01-15 14:25:10',
-      resultCount: 23
-    }
-  ]);
-
+  const [connections, setConnections] = useState<WMIConnection[]>([]);
+  const [queries, setQueries] = useState<WMIQuery[]>([]);
   const [environmentStatus, setEnvironmentStatus] = useState<WMIEnvironmentStatus>({
-    totalConnections: 2,
-    activeConnections: 1,
-    totalQueries: 3,
-    runningQueries: 2,
-    dataPoints: 268,
+    totalConnections: 0,
+    activeConnections: 0,
+    totalQueries: 0,
+    runningQueries: 0,
+    dataPoints: 0,
     systemHealth: 'healthy'
   });
 
@@ -332,32 +275,94 @@ const WMIEnvironment: React.FC = () => {
     },
   ];
 
+  const loadEnvironmentData = useCallback(async () => {
+    try {
+      const [scheduledResp, historyResp, trafficResp] = await Promise.all([
+        scriptApi.getScheduledTasks(),
+        scriptApi.getHistory(),
+        analysisApi.getTrafficStats(),
+      ]);
+
+      const scheduled = Array.isArray((scheduledResp as any)?.data) ? (scheduledResp as any).data : (Array.isArray(scheduledResp) ? scheduledResp : []);
+      const history = Array.isArray((historyResp as any)?.data) ? (historyResp as any).data : (Array.isArray(historyResp) ? historyResp : []);
+      const traffic = (trafficResp as any)?.data || trafficResp || {};
+
+      const nextConnections: WMIConnection[] = scheduled.map((task: any, index: number) => ({
+        id: String(task.taskName || index),
+        name: task.taskName || `任务${index + 1}`,
+        host: 'localhost',
+        username: 'system',
+        domain: 'WORKGROUP',
+        status: task.status === 'RUNNING' ? 'connected' : task.status === 'FAILED' ? 'error' : 'disconnected',
+        lastConnected: task.lastRunTime || '-',
+        responseTime: Number(traffic.avgLatency || 0),
+        errorMessage: task.lastError || undefined,
+      }));
+      setConnections(nextConnections);
+
+      const historyByScript = history.reduce((acc: Record<string, any[]>, item: any) => {
+        const key = item.scriptKey || 'unknown';
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(item);
+        return acc;
+      }, {});
+
+      const nextQueries: WMIQuery[] = Object.keys(historyByScript).map((scriptKey, index) => {
+        const latest = historyByScript[scriptKey][0] || {};
+        return {
+          id: `${scriptKey}-${index}`,
+          name: latest.scriptName || scriptKey,
+          namespace: 'root\\cimv2',
+          query: `script:${scriptKey}`,
+          description: '基于后端脚本执行历史生成',
+          enabled: latest.status === 'RUNNING',
+          interval: 60,
+          lastRun: latest.startedAt || '-',
+          resultCount: historyByScript[scriptKey].length,
+        };
+      });
+      setQueries(nextQueries);
+
+      setEnvironmentStatus({
+        totalConnections: nextConnections.length,
+        activeConnections: nextConnections.filter(c => c.status === 'connected').length,
+        totalQueries: nextQueries.length,
+        runningQueries: nextQueries.filter(q => q.enabled).length,
+        dataPoints: Number(traffic.currentTraffic || 0),
+        systemHealth: Number(traffic.avgLatency || 0) > 200 ? 'warning' : 'healthy',
+      });
+    } catch (error) {
+      console.error('加载WMI环境数据失败:', error);
+      message.error('加载WMI环境数据失败');
+    }
+  }, []);
+
   const handleTestConnection = async (connection: WMIConnection) => {
-    message.loading('正在测试连接...', 2);
-    
-    // 模拟连接测试
-    setTimeout(() => {
-      const isSuccess = Math.random() > 0.3;
-      if (isSuccess) {
-        setConnections(prev => 
-          prev.map(conn => 
-            conn.id === connection.id 
-              ? { ...conn, status: 'connected', responseTime: Math.floor(Math.random() * 100) + 20 }
-              : conn
-          )
-        );
-        message.success('连接测试成功');
-      } else {
-        setConnections(prev => 
-          prev.map(conn => 
-            conn.id === connection.id 
-              ? { ...conn, status: 'error', errorMessage: '连接失败' }
-              : conn
-          )
-        );
-        message.error('连接测试失败');
-      }
-    }, 2000);
+    try {
+      const trafficResp = await analysisApi.getTrafficStats();
+      const traffic = (trafficResp as any)?.data || trafficResp || {};
+      setConnections(prev =>
+        prev.map(conn =>
+          conn.id === connection.id
+            ? {
+                ...conn,
+                status: 'connected',
+                responseTime: Number(traffic.avgLatency || conn.responseTime || 0),
+                lastConnected: new Date().toLocaleString(),
+                errorMessage: undefined,
+              }
+            : conn
+        )
+      );
+      message.success('连接测试成功');
+    } catch (error) {
+      setConnections(prev =>
+        prev.map(conn =>
+          conn.id === connection.id ? { ...conn, status: 'error', errorMessage: '连接测试失败' } : conn
+        )
+      );
+      message.error('连接测试失败');
+    }
   };
 
   const handleReconnect = async (connection: WMIConnection) => {
@@ -369,29 +374,7 @@ const WMIEnvironment: React.FC = () => {
       )
     );
     
-    message.loading('正在重新连接...', 2);
-    
-    setTimeout(() => {
-      const isSuccess = Math.random() > 0.4;
-      setConnections(prev => 
-        prev.map(conn => 
-          conn.id === connection.id 
-            ? { 
-                ...conn, 
-                status: isSuccess ? 'connected' : 'error',
-                responseTime: isSuccess ? Math.floor(Math.random() * 100) + 20 : 0,
-                errorMessage: isSuccess ? undefined : '重连失败'
-              }
-            : conn
-        )
-      );
-      
-      if (isSuccess) {
-        message.success('重连成功');
-      } else {
-        message.error('重连失败');
-      }
-    }, 3000);
+    await handleTestConnection(connection);
   };
 
   const handleEditConnection = (connection: WMIConnection) => {
@@ -413,49 +396,33 @@ const WMIEnvironment: React.FC = () => {
   };
 
   const handleRunQuery = async (query: WMIQuery) => {
-    message.loading('正在执行查询...', 2);
-    
-    setTimeout(() => {
-      setQueries(prev => 
-        prev.map(q => 
-          q.id === query.id 
-            ? { 
-                ...q, 
+    try {
+      const response = await logApi.getRecentLogs(100);
+      const logs = (response as any)?.data || response || [];
+      const count = Array.isArray(logs) ? logs.length : 0;
+      setQueries(prev =>
+        prev.map(q =>
+          q.id === query.id
+            ? {
+                ...q,
                 lastRun: new Date().toLocaleString(),
-                resultCount: Math.floor(Math.random() * 200) + 50
+                resultCount: count,
               }
             : q
         )
       );
       message.success('查询执行完成');
-    }, 2000);
+    } catch (error) {
+      message.error('查询执行失败');
+    }
   };
 
-  // 模拟实时更新
   useEffect(() => {
-    const interval = setInterval(() => {
-      // 更新环境状态
-      setEnvironmentStatus(prev => ({
-        ...prev,
-        dataPoints: prev.dataPoints + Math.floor(Math.random() * 10)
-      }));
-      
-      // 更新查询结果
-      setQueries(prev => 
-        prev.map(query => 
-          query.enabled 
-            ? {
-                ...query,
-                resultCount: query.resultCount + Math.floor(Math.random() * 5),
-                lastRun: new Date().toLocaleString()
-              }
-            : query
-        )
-      );
-    }, 5000);
+    loadEnvironmentData();
+    const interval = setInterval(loadEnvironmentData, 10000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [loadEnvironmentData]);
 
   return (
     <div style={{ padding: '20px' }}>

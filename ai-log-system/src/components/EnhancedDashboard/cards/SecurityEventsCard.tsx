@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Typography, Tag, Progress, Badge, Tooltip } from 'antd';
 import { FireOutlined, SyncOutlined } from '@ant-design/icons';
-import { logApi, alertApi } from '@/services/api';
+import { logApi, alertApi, eventApi } from '@/services/api';
 import { CardProps, formatNumber, LEVEL_GRADIENTS } from '../types/dashboard';
 
 const { Text, Title } = Typography;
@@ -20,6 +20,8 @@ interface SecurityEventsData {
 interface SecurityEventsCardProps extends CardProps {
   compact?: boolean;
   style?: React.CSSProperties;
+  loading?: boolean;
+  hasCritical?: boolean;
 }
 
 const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
@@ -27,7 +29,9 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
   autoRefresh = true,
   isPaused = false,
   compact = false,
-  style
+  style,
+  loading: externalLoading,
+  hasCritical = false,
 }) => {
   const [eventsData, setEventsData] = useState<SecurityEventsData>({
     anomalyCount: 0,
@@ -39,7 +43,8 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
     investigatingCount: 0,
     lastUpdate: new Date().toISOString()
   });
-  const [loading, setLoading] = useState(false);
+  const [internalLoading, setLoading] = useState(false);
+  const loading = externalLoading !== undefined ? externalLoading : internalLoading;
   const [lastUpdated, setLastUpdated] = useState<string>('');
 
   const loadEventsData = useCallback(async () => {
@@ -47,23 +52,30 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
     
     setLoading(true);
     try {
-      const [statsRes, alertsRes] = await Promise.all([
+      const [statsRes, alertsRes, dashboardRes] = await Promise.all([
         logApi.getStatistics(),
-        alertApi.getUnhandledAlerts()
+        alertApi.getUnhandledAlerts(),
+        eventApi.getDashboardStats(),
       ]);
 
       const stats = statsRes?.data;
       const alerts = alertsRes?.data || [];
+      const dashboardStats = dashboardRes?.data || dashboardRes || {};
+      const severityCounts = dashboardStats?.severityCounts || dashboardStats?.levelCounts || {};
 
-      const anomalyCount = stats?.securityEvents || 
-                          stats?.anomalyCount || 
-                          (stats?.threatLevels ? 
-                            (stats.threatLevels.HIGH || 0) + (stats.threatLevels.CRITICAL || 0) : 0);
+      // 统一口径：优先使用 /events/dashboard-stats 的 severityCounts；
+      // WARN 归入中风险，ERROR 归入高风险，避免“有日志但异常全为0”的展示偏差。
+      const criticalCount = severityCounts.CRITICAL || 0;
+      const highCount = (severityCounts.HIGH || 0) + (severityCounts.ERROR || 0);
+      const mediumCount = (severityCounts.MEDIUM || 0) + (severityCounts.WARN || 0);
+      const lowCount = (severityCounts.LOW || 0) + (severityCounts.INFO || 0) + (severityCounts.DEBUG || 0);
+
+      const anomalyCount = dashboardStats?.anomalyCount ??
+                          stats?.securityEvents ??
+                          stats?.anomalyCount ??
+                          (criticalCount + highCount + mediumCount);
       
-      const criticalCount = stats?.threatLevels?.CRITICAL || 0;
-      const highCount = stats?.threatLevels?.HIGH || 0;
-      const mediumCount = stats?.threatLevels?.MEDIUM || 0;
-      const lowCount = stats?.threatLevels?.LOW || 0;
+      const fallbackUnhandled = stats?.unhandledAlerts || alerts.length;
 
       setEventsData({
         anomalyCount,
@@ -71,7 +83,7 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
         highCount,
         mediumCount,
         lowCount,
-        unhandledAlerts: stats?.unhandledAlerts || alerts.length,
+        unhandledAlerts: fallbackUnhandled,
         investigatingCount: alerts.filter((a: any) => !a.handled).length,
         lastUpdate: new Date().toISOString()
       });
@@ -149,9 +161,9 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
       style={{ 
         borderRadius: '16px',
         overflow: 'hidden',
-        border: 'none',
+        border: hasCritical ? '2px solid #ff4d4f' : 'none',
         background: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)',
-        boxShadow: '0 6px 16px rgba(250, 140, 22, 0.12)',
+        boxShadow: hasCritical ? '0 6px 16px rgba(255, 77, 79, 0.2)' : '0 6px 16px rgba(250, 140, 22, 0.12)',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',

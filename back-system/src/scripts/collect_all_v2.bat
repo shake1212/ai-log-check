@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 REM ============================================
 REM 日志采集脚本 v2.0 - 使用相对路径
 REM ============================================
@@ -41,14 +42,17 @@ if not exist "%LOG_DIR%" (
     mkdir "%LOG_DIR%"
 )
 
-REM 执行系统信息采集
+REM 执行系统信息采集（v2版本，支持多种数据类型）
 echo.
 echo [%date% %time%] 开始采集系统信息...
-"%VENV_PYTHON%" "%SCRIPT_DIR%system_info_collector.py" >> "%LOG_DIR%\system_info.log" 2>&1
-if %ERRORLEVEL% EQU 0 (
-    echo [成功] 系统信息采集完成
-) else (
-    echo [失败] 系统信息采集失败,错误代码: %ERRORLEVEL%
+for %%T in (performance cpu_info system_basic memory_info disk_info process_info) do (
+    echo   采集 %%T ...
+    "%VENV_PYTHON%" "%SCRIPT_DIR%system_info_collector_v2.py" %%T >> "%LOG_DIR%\system_info.log" 2>&1
+    if !ERRORLEVEL! EQU 0 (
+        echo   [成功] %%T 采集完成
+    ) else (
+        echo   [失败] %%T 采集失败
+    )
 )
 
 REM 执行安全日志采集

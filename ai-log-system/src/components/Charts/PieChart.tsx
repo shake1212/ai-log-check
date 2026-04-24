@@ -81,7 +81,7 @@ const PieChart: React.FC<PieChartProps> = ({ data, title = '数据分布', heigh
         })),
         animationType: 'scale',
         animationEasing: 'elasticOut',
-        animationDelay: (idx: number) => Math.random() * 200
+        animationDelay: (idx: number) => idx * 40
       }
     ],
     animation: true,

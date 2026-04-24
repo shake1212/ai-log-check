@@ -19,32 +19,27 @@ describe('Pool Usage Calculator - Property-Based Tests', () => {
   it('Property 1: should correctly determine warning status based on 80% threshold', () => {
     fc.assert(
       fc.property(
-        // 生成总连接数：1 到 100 之间的整数
-        fc.integer({ min: 1, max: 100 }),
-        // 生成活跃连接数：0 到总连接数之间的整数
-        (totalConnections) => {
-          return fc.integer({ min: 0, max: totalConnections }).map(activeConnections => ({
-            activeConnections,
-            totalConnections
-          }));
+        // 生成总连接数：1 到 100 之间的整数，以及活跃连接数（0 到总连接数）
+        fc.integer({ min: 1, max: 100 }).chain(totalConnections =>
+          fc.tuple(fc.integer({ min: 0, max: totalConnections }), fc.constant(totalConnections))
+        ),
+        ([activeConnections, totalConnections]) => {
+          const result = calculatePoolUsage(activeConnections, totalConnections);
+          
+          // 计算实际使用率
+          const actualUsagePercent = (activeConnections / totalConnections) * 100;
+          
+          // 验证使用率计算正确（允许四舍五入误差）
+          expect(result.usagePercent).toBe(Math.round(actualUsagePercent));
+          
+          // 验证警告状态：使用率 > 80% 时应该警告
+          if (actualUsagePercent > 80) {
+            expect(result.isWarning).toBe(true);
+          } else {
+            expect(result.isWarning).toBe(false);
+          }
         }
-      ).chain(gen => gen),
-      ({ activeConnections, totalConnections }) => {
-        const result = calculatePoolUsage(activeConnections, totalConnections);
-        
-        // 计算实际使用率
-        const actualUsagePercent = (activeConnections / totalConnections) * 100;
-        
-        // 验证使用率计算正确（允许四舍五入误差）
-        expect(result.usagePercent).toBe(Math.round(actualUsagePercent));
-        
-        // 验证警告状态：使用率 > 80% 时应该警告
-        if (actualUsagePercent > 80) {
-          expect(result.isWarning).toBe(true);
-        } else {
-          expect(result.isWarning).toBe(false);
-        }
-      },
+      ),
       { numRuns: 100 } // 运行 100 次测试
     );
   });

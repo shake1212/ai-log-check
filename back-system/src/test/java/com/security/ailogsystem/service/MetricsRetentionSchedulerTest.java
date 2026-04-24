@@ -172,7 +172,7 @@ class MetricsRetentionSchedulerTest {
 
         // Execute the scheduled cleanup method
         // Note: This tests the scheduler method directly, not the actual scheduling
-        metricsRetentionScheduler.cleanupOldMetrics();
+        metricsRetentionScheduler.cleanupOldData();
 
         // Verify old metrics were deleted (default retention is 30 days)
         assertTrue(metricsRepository.count() <= 12);

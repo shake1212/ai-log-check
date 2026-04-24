@@ -27,6 +27,7 @@ public class AlertResponse {
     private String resolution;
     private BigDecimal aiConfidence;
     private Long logEntryId;
+    private Long unifiedEventId;
     private LocalDateTime createdTime;
     private LocalDateTime updatedTime;
     private Boolean handled;
@@ -45,6 +46,7 @@ public class AlertResponse {
                 .resolution(alert.getResolution())
                 .aiConfidence(alert.getAiConfidence())
                 .logEntryId(alert.getLogEntry() != null ? alert.getLogEntry().getId() : null)
+                .unifiedEventId(alert.getUnifiedEventId())
                 .createdTime(alert.getCreatedTime())
                 .updatedTime(alert.getUpdatedTime())
                 .handled(alert.getHandled())

@@ -4,10 +4,12 @@ import com.security.ailogsystem.service.PythonIntegrationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Instant;
 import java.util.*;
 
 @Service
@@ -26,8 +28,8 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
     @Override
     public Map<String, Object> runThreatAnalysis() {
         if (!pythonCollectorEnabled) {
-            log.warn("Python收集器已禁用，返回模拟数据");
-            return createMockThreatAnalysisResult();
+            log.warn("Python收集器已禁用，返回错误状态");
+            return createUnavailableResult("threat_hunting", "Python collector is disabled");
         }
 
         String url = pythonCollectorUrl + "/api/analysis/threat";
@@ -35,8 +37,8 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
         try {
             // 测试连接
             if (!testPythonCollectorConnection()) {
-                log.warn("Python收集器连接失败，返回模拟数据");
-                return createMockThreatAnalysisResult();
+                log.warn("Python收集器连接失败，返回错误状态");
+                return createUnavailableResult("threat_hunting", "Python collector connection failed");
             }
 
             // 创建请求
@@ -54,40 +56,41 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
             // 发送请求到Python收集器
-            ResponseEntity<Map> response = restTemplate.exchange(
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
                     url,
                     HttpMethod.POST,
                     entity,
-                    Map.class
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
             );
 
-            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                log.info("Python威胁分析成功，返回 {} 个结果", response.getBody().size());
-                return response.getBody();
+            Map<String, Object> body = response.getBody();
+            if (response.getStatusCode() == HttpStatus.OK && body != null) {
+                log.info("Python威胁分析成功，返回 {} 个结果", body.size());
+                return body;
             } else {
                 log.warn("Python收集器响应异常: {}", response.getStatusCode());
-                return createMockThreatAnalysisResult();
+                return createUnavailableResult("threat_hunting", "Python collector returned non-OK status");
             }
 
         } catch (Exception e) {
             log.error("调用Python威胁分析失败: {}", e.getMessage(), e);
-            return createMockThreatAnalysisResult();
+            return createUnavailableResult("threat_hunting", e.getMessage());
         }
     }
 
     @Override
     public Map<String, Object> runComplianceScan() {
         if (!pythonCollectorEnabled) {
-            log.warn("Python收集器已禁用，返回模拟数据");
-            return createMockComplianceResult();
+            log.warn("Python收集器已禁用，返回错误状态");
+            return createUnavailableResult("compliance", "Python collector is disabled");
         }
 
         String url = pythonCollectorUrl + "/api/analysis/compliance";
 
         try {
             if (!testPythonCollectorConnection()) {
-                log.warn("Python收集器连接失败，返回模拟数据");
-                return createMockComplianceResult();
+                log.warn("Python收集器连接失败，返回错误状态");
+                return createUnavailableResult("compliance", "Python collector connection failed");
             }
 
             Map<String, Object> request = new HashMap<>();
@@ -101,11 +104,11 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
-            ResponseEntity<Map> response = restTemplate.exchange(
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
                     url,
                     HttpMethod.POST,
                     entity,
-                    Map.class
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
             );
 
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
@@ -113,28 +116,28 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
                 return response.getBody();
             } else {
                 log.warn("Python收集器响应异常: {}", response.getStatusCode());
-                return createMockComplianceResult();
+                return createUnavailableResult("compliance", "Python collector returned non-OK status");
             }
 
         } catch (Exception e) {
             log.error("调用Python合规扫描失败: {}", e.getMessage(), e);
-            return createMockComplianceResult();
+            return createUnavailableResult("compliance", e.getMessage());
         }
     }
 
     @Override
     public Map<String, Object> runAnomalyDetection() {
         if (!pythonCollectorEnabled) {
-            log.warn("Python收集器已禁用，返回模拟数据");
-            return createMockAnomalyResult();
+            log.warn("Python收集器已禁用，返回错误状态");
+            return createUnavailableResult("anomaly_detection", "Python collector is disabled");
         }
 
         String url = pythonCollectorUrl + "/api/analysis/anomaly";
 
         try {
             if (!testPythonCollectorConnection()) {
-                log.warn("Python收集器连接失败，返回模拟数据");
-                return createMockAnomalyResult();
+                log.warn("Python收集器连接失败，返回错误状态");
+                return createUnavailableResult("anomaly_detection", "Python collector connection failed");
             }
 
             Map<String, Object> request = new HashMap<>();
@@ -148,11 +151,11 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
-            ResponseEntity<Map> response = restTemplate.exchange(
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
                     url,
                     HttpMethod.POST,
                     entity,
-                    Map.class
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
             );
 
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
@@ -160,12 +163,12 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
                 return response.getBody();
             } else {
                 log.warn("Python收集器响应异常: {}", response.getStatusCode());
-                return createMockAnomalyResult();
+                return createUnavailableResult("anomaly_detection", "Python collector returned non-OK status");
             }
 
         } catch (Exception e) {
             log.error("调用Python异常检测失败: {}", e.getMessage(), e);
-            return createMockAnomalyResult();
+            return createUnavailableResult("anomaly_detection", e.getMessage());
         }
     }
 
@@ -199,7 +202,12 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
             if (connected) {
                 try {
                     String infoUrl = pythonCollectorUrl + "/api/status";
-                    ResponseEntity<Map> response = restTemplate.getForEntity(infoUrl, Map.class);
+                    ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                            infoUrl,
+                            HttpMethod.GET,
+                            HttpEntity.EMPTY,
+                            new ParameterizedTypeReference<Map<String, Object>>() {}
+                    );
                     if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                         status.putAll(response.getBody());
                     }
@@ -261,139 +269,13 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
         }
     }
 
-    // ========== 模拟数据方法（开发阶段使用） ==========
-
-    private Map<String, Object> createMockThreatAnalysisResult() {
-        Random random = new Random();
+    private Map<String, Object> createUnavailableResult(String analysisType, String reason) {
         Map<String, Object> result = new HashMap<>();
-
-        int suspiciousCount = random.nextInt(10) + 1;
-        int criticalFindings = random.nextInt(3);
-
-        result.put("analysis_type", "threat_hunting");
-        result.put("status", "completed");
-        result.put("suspicious_count", suspiciousCount);
-        result.put("critical_findings", criticalFindings);
-        result.put("threat_count", suspiciousCount + criticalFindings);
-        result.put("confidence", 70 + random.nextInt(30));
-        result.put("scan_duration_seconds", 45 + random.nextInt(30));
-        result.put("timestamp", new Date().toString());
-
-        // 模拟发现
-        List<String> findings = new ArrayList<>();
-        if (suspiciousCount > 0) {
-            findings.add("检测到 " + suspiciousCount + " 个可疑进程");
-            findings.add("发现异常网络连接模式");
-        }
-        if (criticalFindings > 0) {
-            findings.add("识别到 " + criticalFindings + " 个关键威胁");
-            findings.add("检测到潜在恶意软件活动");
-        }
-        findings.add("系统安全状态评估完成");
-        result.put("findings", findings);
-
-        // 模拟威胁详情
-        List<Map<String, Object>> threats = new ArrayList<>();
-        for (int i = 0; i < Math.min(suspiciousCount, 5); i++) {
-            Map<String, Object> threat = new HashMap<>();
-            threat.put("id", "threat_" + i);
-            threat.put("type", random.nextBoolean() ? "suspicious_process" : "network_anomaly");
-            threat.put("severity", i == 0 ? "critical" : "high");
-            threat.put("description", "可疑活动 #" + (1000 + i));
-            threat.put("confidence", 60 + random.nextInt(35));
-            threats.add(threat);
-        }
-        result.put("threat_details", threats);
-
-        return result;
-    }
-
-    private Map<String, Object> createMockComplianceResult() {
-        Random random = new Random();
-        Map<String, Object> result = new HashMap<>();
-
-        int totalChecks = 50;
-        int passed = 42 - random.nextInt(5);
-        int failed = totalChecks - passed;
-        int violations = failed;
-
-        result.put("scan_type", "compliance");
-        result.put("status", "completed");
-        result.put("total_checks", totalChecks);
-        result.put("passed", passed);
-        result.put("failed", failed);
-        result.put("violations", violations);
-        result.put("compliance_score", (int)((passed * 100.0) / totalChecks));
-        result.put("scan_duration_seconds", 30 + random.nextInt(30));
-        result.put("timestamp", new Date().toString());
-
-        // 模拟检查结果
-        List<Map<String, Object>> checks = new ArrayList<>();
-        String[] checkTypes = {"password_policy", "log_retention", "firewall", "encryption", "authentication"};
-
-        for (int i = 0; i < 10; i++) {
-            Map<String, Object> check = new HashMap<>();
-            String checkType = checkTypes[i % checkTypes.length];
-            boolean compliant = random.nextDouble() > 0.3; // 70%通过率
-
-            check.put("check_id", "check_" + (i + 1));
-            check.put("category", checkType);
-            check.put("description", checkType + " 合规性检查");
-            check.put("compliant", compliant);
-            check.put("details", compliant ? "符合要求" : "不符合要求，需要修复");
-
-            if (!compliant) {
-                check.put("recommendation", "建议修复 " + checkType + " 配置");
-            }
-
-            checks.add(check);
-        }
-        result.put("check_details", checks);
-
-        return result;
-    }
-
-    private Map<String, Object> createMockAnomalyResult() {
-        Random random = new Random();
-        Map<String, Object> result = new HashMap<>();
-
-        int anomalyScore = random.nextInt(100);
-        int anomaliesDetected = anomalyScore > 50 ? random.nextInt(5) + 1 : 0;
-
-        result.put("detection_type", "behavioral");
-        result.put("status", "completed");
-        result.put("anomaly_score", anomalyScore);
-        result.put("anomalies_detected", anomaliesDetected);
-        result.put("confidence", 65 + random.nextInt(30));
-        result.put("analysis_duration_seconds", 60 + random.nextInt(60));
-        result.put("timestamp", new Date().toString());
-
-        // 模拟异常详情
-        List<Map<String, Object>> anomalies = new ArrayList<>();
-        if (anomaliesDetected > 0) {
-            String[] anomalyTypes = {
-                    "unusual_login_time",
-                    "failed_login_attempts",
-                    "high_cpu_usage",
-                    "suspicious_process"
-            };
-
-            for (int i = 0; i < anomaliesDetected; i++) {
-                Map<String, Object> anomaly = new HashMap<>();
-                String anomalyType = anomalyTypes[i % anomalyTypes.length];
-
-                anomaly.put("id", "anomaly_" + i);
-                anomaly.put("type", anomalyType);
-                anomaly.put("severity", anomalyScore > 70 ? "high" : "medium");
-                anomaly.put("description", "检测到 " + anomalyType + " 异常");
-                anomaly.put("confidence", 60 + random.nextInt(35));
-                anomaly.put("timestamp", new Date(System.currentTimeMillis() - random.nextInt(3600000)).toString());
-
-                anomalies.add(anomaly);
-            }
-        }
-        result.put("anomaly_details", anomalies);
-
+        result.put("analysis_type", analysisType);
+        result.put("status", "failed");
+        result.put("error", reason);
+        result.put("timestamp", Instant.now().toString());
+        result.put("available", false);
         return result;
     }
 }

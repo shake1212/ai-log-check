@@ -8,6 +8,7 @@ const { Text, Title } = Typography;
 
 interface TotalLogsCardProps extends CardProps {
   style?: React.CSSProperties;
+  loading?: boolean;
 }
 
 const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
@@ -15,7 +16,8 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
   autoRefresh = true,
   isPaused = false,
   compact = false,
-  style
+  style,
+  loading: externalLoading,
 }) => {
   const [stats, setStats] = useState({
     totalLogs: 0,
@@ -25,29 +27,23 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
     storageTotal: 0,
     lastUpdate: new Date().toISOString()
   });
-  const [loading, setLoading] = useState(false);
+  const [internalLoading, setLoading] = useState(false);
+  const loading = externalLoading !== undefined ? externalLoading : internalLoading;
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   const loadLogsData = useCallback(async () => {
-    console.log('开始加载数据，isPaused:', isPaused);
     if (isPaused) return;
     
     setLoading(true);
     setError(null);
     
     try {
-      console.log('发送API请求...');
       const [statsRes, metricsRes] = await Promise.all([
         eventApi.getDashboardStats(),
         analysisApi.getSystemMetrics()
       ]);
 
-      console.log('事件统计响应:', statsRes);
-      console.log('系统指标响应:', metricsRes);
-
-      // 注意：根据你的日志，API直接返回数据对象，而不是 {data: ...}
-      // 所以不需要 .data
       const statsData = statsRes || {};
       const metricsData = metricsRes || {};
       
@@ -59,31 +55,23 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
         storageTotalFromAPI: metricsData.storageTotal
       });
 
-      // 使用实际API返回的数据
       const totalLogs = statsData.totalLogs || 0;
       const todayLogs = statsData.todayLogs || 0;
       
-      // 吞吐量：使用 normal 吞吐量
       const throughput = metricsData.throughput?.normal || 0;
       
-      // 存储：注意单位是GB，需要转换为TB显示
       const storageUsedGB = metricsData.storageUsed || 0;
       const storageTotalGB = metricsData.storageTotal || 0;
       
-      // 转换为TB (1TB = 1024GB)
-      const storageUsed = storageUsedGB / 1024;
-      const storageTotal = storageTotalGB / 1024;
-
       const newStats = {
         totalLogs,
         todayLogs,
         throughput,
-        storageUsed,
-        storageTotal,
+        storageUsed: storageUsedGB / 1024,
+        storageTotal: storageTotalGB / 1024,
         lastUpdate: statsData.lastUpdate || metricsData.lastUpdate || new Date().toISOString()
       };
 
-      console.log('设置新状态:', newStats);
       setStats(newStats);
       setLastUpdated(new Date().toLocaleTimeString('zh-CN', { 
         hour12: false,
@@ -107,26 +95,21 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
       });
       setLastUpdated(new Date().toLocaleTimeString());
     } finally {
-      console.log('加载完成');
       setLoading(false);
     }
   }, [isPaused]);
 
   useEffect(() => {
-    console.log('useEffect 执行，autoRefresh:', autoRefresh, 'isPaused:', isPaused);
     loadLogsData();
     
     if (autoRefresh && !isPaused) {
-      console.log('设置自动刷新间隔:', refreshInterval);
       const interval = setInterval(loadLogsData, refreshInterval);
       return () => {
-        console.log('清除间隔');
         clearInterval(interval);
       };
     }
   }, [loadLogsData, autoRefresh, refreshInterval, isPaused]);
 
-  // 添加调试组件，显示当前状态
   if (process.env.NODE_ENV === 'development') {
     console.log('组件渲染状态:', { stats, loading, lastUpdated, error });
   }

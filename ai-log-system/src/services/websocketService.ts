@@ -434,9 +434,7 @@ class WebSocketService {
 
 // 创建默认的WebSocket服务实例
 const defaultConfig: WebSocketConfig = {
-  url: process.env.NODE_ENV === 'development' 
-    ? 'http://localhost:8080/api/ws' 
-    : `${window.location.origin}/api/ws`,
+  url: `${window.location.origin}/api/ws`,
 };
 
 export const websocketService = new WebSocketService(defaultConfig);

@@ -56,29 +56,30 @@ export interface LogQuery {
   keyword?: string;
 }
 
-// 预警相关类型
+// 预警相关类型（与后端 AlertResponse 对齐）
 export interface Alert {
-  id: string;
-  logEntryId: string;
-  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  status: 'PENDING' | 'RESOLVED' | 'IGNORED';
-  title: string;
-  description?: string;
-  detectedAt: string;
-  resolvedAt?: string;
-  modelId?: string;
-  confidence?: number;
-  falsePositive?: boolean;
-  resolutionNotes?: string;
-  createdAt: string;
-  updatedAt: string;
+  id: number;
+  alertId: string;
+  source: string;
+  alertType: string;
+  alertLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  description: string;
+  status: 'PENDING' | 'PROCESSING' | 'RESOLVED' | 'FALSE_POSITIVE';
+  assignee?: string;
+  resolution?: string;
+  aiConfidence?: number;
+  logEntryId?: number;
+  unifiedEventId?: number;
+  handled: boolean;
+  createdTime: string;
+  updatedTime?: string;
 }
 
 export interface AlertQuery {
   page?: number;
   size?: number;
   status?: string;
-  severity?: string;
+  alertLevel?: string;
   startTime?: string;
   endTime?: string;
 }
@@ -287,9 +288,29 @@ export interface Statistics {
   bruteForceAlerts?: number;
 }
 
+/** 与 `types/log.ts` 中 WebSocketMessage 一致；遗留别名单独标注。 */
 export interface WebSocketMessage {
-  type: 'NEW_LOGS' | 'SECURITY_ALERT' | 'STATISTICS' | 'SYSTEM_NOTIFICATION';
+  type:
+    | 'LOGS_BATCH'
+    | 'LOG_SINGLE'
+    | 'ALERT_SECURITY'
+    | 'STATS_UPDATE'
+    | 'NOTIFY_SYSTEM'
+    | 'HEARTBEAT'
+    | 'CUSTOM'
+    | 'TEST_MESSAGE'
+    | 'SYSTEM_INFO'
+    | 'SYSTEM_ERROR'
+    | 'SYSTEM_NOTIFICATION'
+    | 'SECURITY_ALERT'
+    | 'STATISTICS'
+    | 'STATISTICS_UPDATE'
+    | 'NEW_LOGS'
+    | 'SINGLE_LOG'
+    | 'PING'
+    | 'PONG';
   data?: any;
+  legacyType?: string;
   count?: number;
   logs?: SecurityLog[];
   level?: string;

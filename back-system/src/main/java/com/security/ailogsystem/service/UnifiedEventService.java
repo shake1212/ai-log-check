@@ -98,14 +98,22 @@ public class UnifiedEventService {
     private void runRuleEngine(UnifiedSecurityEvent event) {
         // 1. 定义安全事件类型白名单（只匹配这些类型）
         List<String> securityEventTypes = Arrays.asList(
-                "LOGIN_FAILED", "LOGIN_SUCCESS", "LOGON_FAILED", "LOGON_SUCCESS",
-                "PROCESS_CREATION", "SUSPICIOUS_PROCESS", "PRIVILEGED_PROCESS",
-                "SUSPICIOUS_CONNECTION", "NETWORK_CONNECTION", "FIREWALL_EVENT",
-                "FILE_ACCESS", "PRIVILEGE_ESCALATION", "USER_CREATED",
-                "USER_DELETED", "GROUP_CHANGED", "SCHEDULED_TASK_CREATED",
-                "SERVICE_INSTALLED", "KERBEROS_TICKET_REQUEST",
-                "WINDOWS_EVENT_4624", "WINDOWS_EVENT_4625", "WINDOWS_EVENT_4688",
-                "SSH_SESSION", "SUDO_USAGE"
+                // 标准类型（与数据库枚举对齐）
+                "LOGIN_SUCCESS", "LOGIN_FAILURE", "LOGOUT",
+                "PERMISSION_DENIED", "FILE_ACCESS", "NETWORK_CONNECTION",
+                "SYSTEM_STARTUP", "SYSTEM_SHUTDOWN",
+                "PROCESS_CREATION", "PROCESS_TERMINATION",
+                "SERVICE_START", "SERVICE_STOP",
+                "CONFIGURATION_CHANGE", "SECURITY_POLICY_CHANGE",
+                "MALWARE_DETECTED", "SUSPICIOUS_ACTIVITY",
+                "DATA_ACCESS", "PRIVILEGE_ESCALATION", "BRUTE_FORCE_ATTACK",
+                // 兼容旧类型
+                "LOGIN_FAILED", "LOGON_FAILED", "LOGON_SUCCESS",
+                "SUSPICIOUS_PROCESS", "PRIVILEGED_PROCESS",
+                "SUSPICIOUS_CONNECTION", "FIREWALL_EVENT",
+                "USER_CREATED", "USER_DELETED", "GROUP_CHANGED",
+                "SCHEDULED_TASK_CREATED", "SERVICE_INSTALLED",
+                "KERBEROS_TICKET_REQUEST", "SSH_SESSION", "SUDO_USAGE"
         );
 
         // 2. 如果不是安全事件，直接返回（不调用规则引擎）
@@ -143,6 +151,7 @@ public class UnifiedEventService {
                                     matched.getRuleName(),
                                     event.getNormalizedMessage() != null ? event.getNormalizedMessage() : event.getRawMessage()))
                             .aiConfidence(BigDecimal.valueOf(matched.getConfidence() != null ? matched.getConfidence() : 0.9))
+                            .unifiedEventId(event.getId())
                             .build();
 
                     alertService.createAlert(alertRequest);
@@ -487,6 +496,9 @@ public class UnifiedEventService {
                 ));
             }
 
+            if (predicates.isEmpty()) {
+                return cb.conjunction();
+            }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
     }

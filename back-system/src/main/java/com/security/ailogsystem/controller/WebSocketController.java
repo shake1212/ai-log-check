@@ -50,7 +50,7 @@ public class WebSocketController {
             @Parameter(description = "消息类型") @RequestParam(defaultValue = "SYSTEM_INFO") String messageType) {
 
         try {
-            WebSocketMessage.MessageType type = WebSocketMessage.MessageType.valueOf(messageType);
+            WebSocketMessage.MessageType type = WebSocketMessage.MessageType.fromValue(messageType);
             WebSocketMessage message = WebSocketMessage.builder()
                     .type(type)
                     .content(content)
@@ -91,7 +91,7 @@ public class WebSocketController {
             @Parameter(description = "消息类型") @RequestParam(defaultValue = "CUSTOM") String messageType) {
 
         try {
-            WebSocketMessage.MessageType type = WebSocketMessage.MessageType.valueOf(messageType);
+            WebSocketMessage.MessageType type = WebSocketMessage.MessageType.fromValue(messageType);
             WebSocketMessage message = WebSocketMessage.builder()
                     .type(type)
                     .content(content)

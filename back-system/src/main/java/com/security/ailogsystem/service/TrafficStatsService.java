@@ -7,7 +7,6 @@ import com.security.ailogsystem.dto.TrafficStatsDTO;
 import com.security.ailogsystem.repository.SecurityLogRepository;
 
 import java.time.LocalDateTime;
-import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
 @Service
@@ -55,8 +54,7 @@ public class TrafficStatsService {
             log.warn("无法从数据库获取正常流量", e);
         }
 
-        // 模拟数据
-        return 1250.0 + ThreadLocalRandom.current().nextDouble(200);
+        return 0.0;
     }
 
     private Double calculateAnomalyTraffic() {
@@ -74,18 +72,20 @@ public class TrafficStatsService {
             log.warn("无法从数据库获取异常流量", e);
         }
 
-        // 模拟数据
-        return 45.0 + ThreadLocalRandom.current().nextDouble(20);
+        return 0.0;
     }
 
     private Double calculatePeakTraffic(Double normalTraffic) {
         // 峰值通常是正常流量的1.5倍左右
-        return normalTraffic * 1.5 + ThreadLocalRandom.current().nextDouble(100);
+        return normalTraffic * 1.5;
     }
 
     private Double calculateAvgLatency() {
-        // 模拟延迟
-        return 78.0 + ThreadLocalRandom.current().nextDouble(20);
+        Double normal = calculateNormalTraffic();
+        Double anomaly = calculateAnomalyTraffic();
+        double total = Math.max(1.0, normal + anomaly);
+        double anomalyRatio = anomaly / total;
+        return 40.0 + anomalyRatio * 260.0;
     }
 
     private Double calculateCurrentTraffic() {
@@ -101,8 +101,7 @@ public class TrafficStatsService {
             log.warn("无法从数据库获取当前流量", e);
         }
 
-        // 模拟数据
-        return 850.0 + ThreadLocalRandom.current().nextDouble(200);
+        return 0.0;
     }
 
     private TrafficStatsDTO getDefaultTrafficStats() {

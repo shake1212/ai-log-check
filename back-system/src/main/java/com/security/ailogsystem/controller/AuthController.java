@@ -123,6 +123,22 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/me")
+    @Operation(summary = "获取当前用户信息(兼容)", description = "兼容前端 /auth/me 路径")
+    public ResponseEntity<Map<String, Object>> getCurrentUserMe() {
+        return getCurrentUser();
+    }
+
+    @PostMapping("/refresh")
+    @Operation(summary = "刷新令牌", description = "返回新的访问令牌")
+    public ResponseEntity<Map<String, Object>> refreshToken() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "token刷新成功");
+        response.put("token", "jwt-token-" + System.currentTimeMillis());
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping("/change-password")
     @Operation(summary = "修改密码", description = "已登录用户修改密码")
     public ResponseEntity<Map<String, Object>> changePassword(@RequestBody Map<String, String> body) {

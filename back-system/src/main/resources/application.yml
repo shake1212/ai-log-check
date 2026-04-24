@@ -160,27 +160,27 @@ log:
     # 安全日志采集配置
     collector:
       enabled: true
-      default-interval-minutes: 5
-      auto-start: false
+      default-interval-minutes: 10
+      auto-start: true
       max-retries: 3
       retry-delay-seconds: 30
 
 scripts:
   base-path: "src/scripts"
   python:
-    executable: "back-system/.venv/Scripts/python.exe"
+    executable: ".venv/Scripts/python.exe"
   allowed:
     unified_log_collector:
       name: "安全日志采集脚本"
       description: "聚合Windows/网络/进程日志并推送至Java分析端"
       file: "unified_log_collector.py"
-      cooldown-seconds: 300
+      cooldown-seconds: 30
       allow-manual-trigger: true
     system_info_collector:
       name: "系统信息采集脚本"
       description: "采集主机性能与进程信息"
       file: "system_info_collector.py"
-      cooldown-seconds: 300
+      cooldown-seconds: 30
       allow-manual-trigger: true
 
 alert:

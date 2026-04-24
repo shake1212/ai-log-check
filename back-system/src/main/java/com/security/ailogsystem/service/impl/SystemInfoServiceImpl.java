@@ -1,6 +1,5 @@
 package com.security.ailogsystem.service.impl;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.security.ailogsystem.config.ScriptProperties;
 import com.security.ailogsystem.service.SystemInfoService;
@@ -82,19 +81,36 @@ public class SystemInfoServiceImpl implements SystemInfoService {
 
             // 构建进程命令
             List<String> command = new ArrayList<>();
-            command.add("D:/projects/ai-log-check/back-system/.venv/Scripts/python.exe");
+            command.add(resolvePythonExecutable());
             command.add(scriptPath);
             command.add(infoType);
 
             ProcessBuilder processBuilder = new ProcessBuilder(command);
             processBuilder.directory(scriptFile.getParentFile());
-            processBuilder.redirectErrorStream(true);
+            // 不合并 stderr 到 stdout，避免非 JSON 输出污染解析
+            processBuilder.redirectErrorStream(false);
 
             log.info("执行Python命令: {}", String.join(" ", command));
 
             Process process = processBuilder.start();
 
-            // 读取输出
+            // 异步读取 stderr，防止缓冲区满导致死锁
+            final StringBuilder stderrBuilder = new StringBuilder();
+            Thread stderrReader = new Thread(() -> {
+                try (BufferedReader errReader = new BufferedReader(
+                        new InputStreamReader(process.getErrorStream()))) {
+                    String line;
+                    while ((line = errReader.readLine()) != null) {
+                        stderrBuilder.append(line).append(System.lineSeparator());
+                    }
+                } catch (Exception e) {
+                    log.warn("读取脚本stderr失败: {}", e.getMessage());
+                }
+            });
+            stderrReader.setDaemon(true);
+            stderrReader.start();
+
+            // 读取 stdout
             BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream()));
 
@@ -104,15 +120,33 @@ public class SystemInfoServiceImpl implements SystemInfoService {
                 output.append(line);
             }
 
-            int exitCode = process.waitFor();
+            // 等待进程结束，最多 30 秒
+            boolean finished = process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                log.warn("Python脚本执行超时（30秒），类型: {}，已强制终止", infoType);
+                return createErrorResponse("Python脚本执行超时（30秒）");
+            }
+            stderrReader.join(3000);
+
+            int exitCode = process.exitValue();
 
             if (exitCode == 0) {
-                log.info("Python脚本执行成功，类型: {}, 输出: {}", infoType, output.toString());
-                Map<String, Object> result = objectMapper.readValue(output.toString(), Map.class);
+                String outputStr = output.toString().trim();
+                // 只取第一行 JSON，忽略后续非 JSON 输出
+                String jsonLine = outputStr.contains("\n") ? outputStr.substring(0, outputStr.indexOf('\n')).trim() : outputStr;
+                log.debug("Python脚本执行成功，类型: {}, 输出长度: {}", infoType, jsonLine.length());
+                if (!stderrBuilder.isEmpty()) {
+                    log.debug("Python脚本stderr: {}", stderrBuilder.toString().trim());
+                }
+                Map<String, Object> result = objectMapper.readValue(
+                        jsonLine,
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
+                );
                 result.put("collection_timestamp", System.currentTimeMillis());
                 return result;
             } else {
-                log.error("Python脚本执行失败，类型: {}, 退出码: {}, 输出: {}", infoType, exitCode, output.toString());
+                log.error("Python脚本执行失败，类型: {}, 退出码: {}, stderr: {}", infoType, exitCode, stderrBuilder.toString().trim());
                 return createErrorResponse("Python脚本执行失败，退出码: " + exitCode);
             }
 
@@ -235,7 +269,7 @@ public class SystemInfoServiceImpl implements SystemInfoService {
             return extractMetricsFromPerformanceData(performanceData);
         } catch (Exception e) {
             log.error("提取性能指标失败: {}", e.getMessage(), e);
-            return generateDefaultPerformanceMetrics();
+            return buildUnavailablePerformanceMetrics(e.getMessage());
         }
     }
 
@@ -244,9 +278,13 @@ public class SystemInfoServiceImpl implements SystemInfoService {
         // 使用缓存避免频繁调用
         if (System.currentTimeMillis() - lastCollectionTime < CACHE_EXPIRY_MS) {
             Object cached = realTimeCache.get("performance");
-            if (cached instanceof Map) {
+            if (cached instanceof Map<?, ?> cachedMap) {
                 log.debug("使用缓存的性能数据");
-                return (Map<String, Object>) cached;
+                Map<String, Object> normalized = new HashMap<>();
+                for (Map.Entry<?, ?> entry : cachedMap.entrySet()) {
+                    normalized.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
+                return normalized;
             }
         }
 
@@ -256,8 +294,8 @@ public class SystemInfoServiceImpl implements SystemInfoService {
             lastCollectionTime = System.currentTimeMillis();
             return result;
         } catch (Exception e) {
-            log.warn("快速性能数据采集失败，使用模拟数据: {}", e.getMessage());
-            return generateQuickPerformanceData();
+            log.warn("快速性能数据采集失败: {}", e.getMessage());
+            return createErrorResponse("快速性能数据采集失败: " + e.getMessage());
         }
     }
 
@@ -280,7 +318,7 @@ public class SystemInfoServiceImpl implements SystemInfoService {
             return result;
         } catch (Exception e) {
             log.warn("快速进程信息采集失败: {}", e.getMessage());
-            return generateQuickProcessInfo(limit);
+            return createErrorResponse("快速进程信息采集失败: " + e.getMessage());
         }
     }
 
@@ -292,7 +330,7 @@ public class SystemInfoServiceImpl implements SystemInfoService {
             return collectSpecificInfo("network");
         } catch (Exception e) {
             log.warn("网络统计信息采集失败: {}", e.getMessage());
-            return generateNetworkStats();
+            return createErrorResponse("网络统计信息采集失败: " + e.getMessage());
         }
     }
 
@@ -304,7 +342,7 @@ public class SystemInfoServiceImpl implements SystemInfoService {
             return collectSpecificInfo("system_basic");
         } catch (Exception e) {
             log.warn("系统指标采集失败: {}", e.getMessage());
-            return generateSystemMetrics();
+            return createErrorResponse("系统指标采集失败: " + e.getMessage());
         }
     }
 
@@ -389,10 +427,19 @@ public class SystemInfoServiceImpl implements SystemInfoService {
             return scriptPath.toString();
         }
 
-        // 最后回退到默认路径
-        String defaultPath = "D:/projects/ai-log-check/back-system/src/scripts/system_info_collector.py";
-        log.info("使用默认Python脚本路径: {}", defaultPath);
-        return defaultPath;
+        // 最后回退到默认路径（基于脚本基础路径）
+        Path fallbackPath = resolveScriptDirectory().resolve("system_info_collector.py").normalize();
+        log.info("使用默认Python脚本路径: {}", fallbackPath);
+        return fallbackPath.toString();
+    }
+
+    private String resolvePythonExecutable() {
+        try {
+            return scriptProperties.getResolvedPythonExecutable();
+        } catch (Exception e) {
+            log.warn("无法从配置解析Python路径，使用系统python: {}", e.getMessage());
+            return "python";
+        }
     }
 
     private Path resolveScriptDirectory() {
@@ -434,101 +481,26 @@ public class SystemInfoServiceImpl implements SystemInfoService {
 
             } else {
                 log.warn("性能数据包含错误，使用默认指标");
-                metrics.putAll(generateDefaultPerformanceMetrics());
+                metrics.putAll(buildUnavailablePerformanceMetrics("性能数据不可用"));
             }
 
         } catch (Exception e) {
             log.warn("提取性能指标失败: {}", e.getMessage());
-            metrics.putAll(generateDefaultPerformanceMetrics());
+            metrics.putAll(buildUnavailablePerformanceMetrics(e.getMessage()));
         }
 
         return metrics;
     }
 
-    // ================ 模拟数据生成方法 ================
-
-    private Map<String, Object> generateDefaultPerformanceMetrics() {
+    private Map<String, Object> buildUnavailablePerformanceMetrics(String reason) {
         Map<String, Object> metrics = new HashMap<>();
-        Random random = new Random();
-
-        metrics.put("cpu_usage", random.nextDouble() * 100);
-        metrics.put("memory_usage", random.nextDouble() * 100);
-        metrics.put("collection_rate", 85.0 + random.nextDouble() * 15);
+        metrics.put("cpu_usage", null);
+        metrics.put("memory_usage", null);
+        metrics.put("collection_rate", 0.0);
         metrics.put("data_freshness", System.currentTimeMillis());
-        metrics.put("active_sources", random.nextInt(3) + 1);
-
-        return metrics;
-    }
-
-    private Map<String, Object> generateQuickPerformanceData() {
-        Map<String, Object> performance = new HashMap<>();
-        Random random = new Random();
-
-        performance.put("cpu_percent", random.nextDouble() * 100);
-        performance.put("memory_percent", random.nextDouble() * 100);
-        performance.put("memory_used", 8000000000L + random.nextLong() % 2000000000L);
-        performance.put("memory_available", 2000000000L + random.nextLong() % 1000000000L);
-        performance.put("timestamp", System.currentTimeMillis());
-
-        return performance;
-    }
-
-    private Map<String, Object> generateQuickProcessInfo(int limit) {
-        Map<String, Object> processInfo = new HashMap<>();
-        List<Map<String, Object>> processes = new ArrayList<>();
-        Random random = new Random();
-
-        String[] processNames = {
-                "System", "svchost.exe", "python.exe", "chrome.exe",
-                "code.exe", "explorer.exe", "java.exe", "mysqld.exe"
-        };
-
-        for (int i = 0; i < Math.min(limit, processNames.length); i++) {
-            Map<String, Object> process = new HashMap<>();
-            process.put("pid", 1000 + i);
-            process.put("name", processNames[i]);
-            process.put("cpu", random.nextDouble() * 5);
-            process.put("memory", random.nextDouble() * 100);
-            process.put("status", i % 3 == 0 ? "running" : "sleeping");
-            process.put("user", "SYSTEM");
-            processes.add(process);
-        }
-
-        processInfo.put("processes", processes);
-        processInfo.put("total", 150 + random.nextInt(50));
-        processInfo.put("running", 50 + random.nextInt(30));
-        processInfo.put("sleeping", 100 + random.nextInt(50));
-        processInfo.put("timestamp", System.currentTimeMillis());
-
-        return processInfo;
-    }
-
-    private Map<String, Object> generateNetworkStats() {
-        Map<String, Object> networkStats = new HashMap<>();
-        Random random = new Random();
-
-        networkStats.put("bytes_sent", 1000000000L + random.nextLong() % 1000000000L);
-        networkStats.put("bytes_recv", 2000000000L + random.nextLong() % 1000000000L);
-        networkStats.put("bytes_sent_rate", random.nextDouble() * 1000000);
-        networkStats.put("bytes_recv_rate", random.nextDouble() * 1500000);
-        networkStats.put("timestamp", System.currentTimeMillis());
-
-        return networkStats;
-    }
-
-    private Map<String, Object> generateSystemMetrics() {
-        Map<String, Object> metrics = new HashMap<>();
-        Random random = new Random();
-
-        metrics.put("hostname", "localhost");
-        metrics.put("platform", System.getProperty("os.name"));
-        metrics.put("platform_version", System.getProperty("os.version"));
-        metrics.put("architecture", System.getProperty("os.arch"));
-        metrics.put("processor", "Intel(R) Core(TM) i7-8700K");
-        metrics.put("boot_time", System.currentTimeMillis() / 1000 - 7200);
-        metrics.put("users", random.nextInt(3) + 1);
-        metrics.put("current_user", System.getProperty("user.name"));
-        metrics.put("timestamp", System.currentTimeMillis());
+        metrics.put("active_sources", 0);
+        metrics.put("status", "error");
+        metrics.put("error", reason);
 
         return metrics;
     }

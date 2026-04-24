@@ -9,6 +9,10 @@ export const SEVERITY_MAP: Record<string, { label: string; color: string }> = {
   HIGH:     { label: '高危', color: 'orange' },
   MEDIUM:   { label: '中危', color: 'gold' },
   LOW:      { label: '低危', color: 'green' },
+  INFO:     { label: '信息', color: 'blue' },
+  WARN:     { label: '警告', color: 'gold' },
+  ERROR:    { label: '错误', color: 'red' },
+  DEBUG:    { label: '调试', color: 'default' },
   critical: { label: '严重', color: 'red' },
   high:     { label: '高危', color: 'orange' },
   medium:   { label: '中危', color: 'gold' },
@@ -20,6 +24,7 @@ export const SEVERITY_MAP: Record<string, { label: string; color: string }> = {
 export const THREAT_TYPE_MAP: Record<string, string> = {
   // 检测引擎输出（大写）
   BRUTE_FORCE_ATTACK:    '暴力破解攻击',
+  BRUTE_FORCE:           '暴力破解',
   PRIVILEGED_OPERATION:  '特权账户操作',
   OFF_HOURS_LOGIN:       '非工作时间登录',
   AUTH_FAILURE:          '认证失败',
@@ -39,6 +44,7 @@ export const THREAT_TYPE_MAP: Record<string, string> = {
   INJECTION:             '注入攻击',
   SQL_INJECTION:         'SQL注入',
   XSS:                   '跨站脚本攻击',
+  XSS_ATTACK:           '跨站脚本攻击',
   CSRF:                  '跨站请求伪造',
   DDOS:                  'DDoS攻击',
   PORT_SCAN:             '端口扫描',
@@ -47,6 +53,31 @@ export const THREAT_TYPE_MAP: Record<string, string> = {
   SYSTEM_ANOMALY:        '系统异常',
   SECURITY_ANOMALY:      '安全异常',
   APT:                   '高级持续性威胁',
+  // 数据库中实际使用的 threatType 值
+  COMMAND_INJECTION:     '命令注入',
+  PATH_TRAVERSAL:        '路径遍历',
+  SUSPICIOUS_LOGIN:      '可疑登录',
+  ACCOUNT_LOCKOUT:       '账户锁定',
+  CRYPTO_MINING:         '加密货币挖矿',
+  WEBSHELL:              'Webshell',
+  HACKING_TOOL:          '黑客工具',
+  CREDENTIAL_THEFT:      '凭据窃取',
+  UAC_BYPASS:            'UAC绕过',
+  POWERSHELL_ABUSE:      'PowerShell滥用',
+  SCANNING:              '扫描探测',
+  INFORMATION_GATHERING: '信息收集',
+  ACCOUNT_MANAGEMENT:    '账户管理',
+  SUSPICIOUS_CONNECTION: '可疑连接',
+  ABNORMAL_BEHAVIOR:     '异常行为',
+  DNS_TUNNELING:         'DNS隧道',
+  REMOTE_ACCESS:         '远程访问',
+  SUSPICIOUS_FILE:       '可疑文件',
+  PROCESS_INJECTION:     '进程注入',
+  SUSPICIOUS_SERVICE:    '可疑服务',
+  SUSPICIOUS_TASK:       '可疑计划任务',
+  PERSISTENCE:           '持久化',
+  SENSITIVE_ACCESS:      '敏感数据访问',
+  MALICIOUS_UPLOAD:      '恶意文件上传',
   // 威胁情报类型（小写）
   malware:               '恶意软件',
   phishing:              '网络钓鱼',
@@ -64,7 +95,20 @@ export const THREAT_TYPE_MAP: Record<string, string> = {
 
 // 威胁分类（规则引擎的 category 字段）
 export const THREAT_CATEGORY_MAP: Record<string, string> = {
+  // 数据库中实际使用的值
+  KEYWORD:               '关键词检测',
+  EVENT_ID:              '事件ID检测',
+  PORT:                  '端口检测',
+  BEHAVIOR:              '行为分析',
   AUTHENTICATION:        '认证安全',
+  NETWORK_SECURITY:      '网络安全',
+  MALWARE:               '恶意软件',
+  ACCESS_CONTROL:        '访问控制',
+  DATA_EXFILTRATION:     '数据渗出',
+  SYSTEM_BEHAVIOR:       '系统行为',
+  RECONNAISSANCE:        '侦察探测',
+  WEB_ATTACK:            'Web攻击',
+  // 其他可能使用的值
   AUTHORIZATION:         '授权安全',
   NETWORK:               '网络安全',
   ENDPOINT:              '终端安全',
@@ -73,11 +117,21 @@ export const THREAT_CATEGORY_MAP: Record<string, string> = {
   COMPLIANCE:            '合规检查',
   ANOMALY:               '异常行为',
   THREAT_INTEL:          '威胁情报',
-  MALWARE:               '恶意软件',
   INTRUSION:             '入侵检测',
   VULNERABILITY:         '漏洞管理',
   // 小写兼容
+  keyword:               '关键词检测',
+  event_id:              '事件ID检测',
+  port:                  '端口检测',
+  behavior:              '行为分析',
   authentication:        '认证安全',
+  network_security:      '网络安全',
+  malware:               '恶意软件',
+  access_control:        '访问控制',
+  data_exfiltration:     '数据渗出',
+  system_behavior:       '系统行为',
+  reconnaissance:        '侦察探测',
+  web_attack:            'Web攻击',
   authorization:         '授权安全',
   network:               '网络安全',
   endpoint:              '终端安全',
@@ -93,6 +147,17 @@ export const ALERT_TYPE_MAP: Record<string, string> = {
   SECURITY_ANOMALY:       '安全异常',
   BRUTE_FORCE:            '暴力破解',
   BRUTE_FORCE_ATTACK:     '暴力破解攻击',
+  CRITICAL_EVENT:         '关键安全事件',
+  UNUSUAL_TIME_LOGIN:     '异常时间登录',
+  SUSPICIOUS_IP:          '可疑IP访问',
+  LOGIN_FAILURE:          '登录失败',
+  LOGIN_SUCCESS:          '登录成功',
+  MEMORY_USAGE_HIGH:      '内存使用率过高',
+  MEMORY_USAGE_CRITICAL:  '内存使用率严重过高',
+  CPU_USAGE_HIGH:         'CPU使用率过高',
+  CPU_USAGE_CRITICAL:     'CPU使用率严重过高',
+  DISK_USAGE_HIGH:        '磁盘使用率过高',
+  NETWORK_TRAFFIC_HIGH:   '网络流量异常',
   PRIVILEGE_ESCALATION:   '权限提升',
   PRIVILEGED_OPERATION:   '特权账户操作',
   DATA_EXFILTRATION:      '数据渗出',
@@ -112,8 +177,10 @@ export const ALERT_TYPE_MAP: Record<string, string> = {
 
 // 处理状态
 export const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  OPEN:           { label: '待处理', color: 'red' },
   NEW:            { label: '新建',   color: 'blue' },
   IN_PROGRESS:    { label: '处理中', color: 'processing' },
+  PROCESSING:     { label: '处理中', color: 'processing' },
   RESOLVED:       { label: '已解决', color: 'success' },
   FALSE_POSITIVE: { label: '误报',   color: 'default' },
   ESCALATED:      { label: '已升级', color: 'warning' },
@@ -129,6 +196,24 @@ export const STATUS_MAP: Record<string, { label: string; color: string }> = {
   mitigated:      { label: '已缓解', color: 'green' },
   MITIGATED:      { label: '已缓解', color: 'green' },
 };
+
+/** 统一状态值，兼容中英文和别名 */
+export function normalizeStatusValue(value?: string): string | undefined {
+  if (!value) return undefined;
+  const raw = value.trim();
+  const upper = raw.toUpperCase();
+  const aliases: Record<string, string> = {
+    '待处理': 'PENDING',
+    '处理中': 'PROCESSING',
+    '已解决': 'RESOLVED',
+    '误报': 'FALSE_POSITIVE',
+    '已关闭': 'CLOSED',
+    NEW: 'PENDING',
+    OPEN: 'PENDING',
+    IN_PROGRESS: 'PROCESSING',
+  };
+  return aliases[raw] ?? aliases[upper] ?? upper;
+}
 
 // 事件类型
 export const EVENT_TYPE_MAP: Record<string, string> = {
@@ -150,8 +235,19 @@ export const EVENT_TYPE_MAP: Record<string, string> = {
   SUSPICIOUS_ACTIVITY:   '可疑活动',
   DATA_ACCESS:           '数据访问',
   PRIVILEGE_ESCALATION:  '权限提升',
-  BRUTE_FORCE_ATTACK:    '暴力破解',
-  UNKNOWN:               '未知',
+  BRUTE_FORCE_ATTACK:        '暴力破解',
+  MEMORY_USAGE:              '内存使用',
+  SCRIPT_EXECUTION_RESULT:   '脚本采集结果',
+  SCRIPT_EXECUTION_FAILURE:  '脚本执行失败',
+  SCRIPT:                    '脚本执行',
+  // Python脚本系统信息 eventType
+  SYSTEM_PERFORMANCE:        '系统性能',
+  SYSTEM_CPU_INFO:           'CPU信息',
+  SYSTEM_MEMORY_INFO:        '内存信息',
+  SYSTEM_DISK_INFO:          '磁盘信息',
+  SYSTEM_PROCESS_INFO:       '进程信息',
+  SYSTEM_SYSTEM_BASIC:       '系统基础信息',
+  UNKNOWN:                   '未知',
 };
 
 // 事件分类
@@ -186,6 +282,8 @@ export const PATTERN_TYPE_MAP: Record<string, string> = {
   CONDITION: '条件匹配',
   EVENT_ID:  '事件ID',
   PORT:      '端口检测',
+  EXACT:     '精确匹配',
+  PORT_LIST: '端口列表',
 };
 
 // WMI数据类型
@@ -200,6 +298,15 @@ export const WMI_DATA_TYPE_MAP: Record<string, string> = {
   SYSTEM_PERFORMANCE: '系统性能',
   CPU_INFO:           'CPU信息',
   SYSTEM_BASIC:       '系统基础信息',
+  MEMORY_INFO:        '内存信息',
+  DISK_INFO:          '磁盘信息',
+  PROCESS_INFO:       '进程信息',
+  // Python脚本 eventType: SYSTEM_{data_type.upper()}
+  SYSTEM_CPU_INFO:    'CPU信息',
+  SYSTEM_MEMORY_INFO: '内存信息',
+  SYSTEM_DISK_INFO:   '磁盘信息',
+  SYSTEM_PROCESS_INFO:'进程信息',
+  SYSTEM_SYSTEM_BASIC:'系统基础信息',
   // 小写（查询管理 infoType 字段）
   cpu:                'CPU信息',
   memory:             '内存信息',
@@ -207,6 +314,13 @@ export const WMI_DATA_TYPE_MAP: Record<string, string> = {
   network:            '网络信息',
   process:            '进程信息',
   system:             '系统信息',
+  // 小写下划线（Python data_type 字段）
+  cpu_info:           'CPU信息',
+  memory_info:        '内存信息',
+  disk_info:          '磁盘信息',
+  process_info:       '进程信息',
+  system_basic:       '系统基础信息',
+  performance:        '系统性能',
 };
 
 // 数据源类型（日志采集器）
@@ -225,6 +339,35 @@ export const DATA_SOURCE_MAP: Record<string, { label: string; description: strin
 export const DATA_SOURCE_CATEGORY_MAP: Record<string, string> = {
   'event-log':   'Windows事件日志',
   'performance': '系统性能指标',
+};
+
+// 告警来源
+export const ALERT_SOURCE_MAP: Record<string, string> = {
+  PERFORMANCE_MONITOR: '性能监控',
+  performance_monitor: '性能监控',
+  THREAT_DETECTION: '威胁检测引擎',
+  threat_detection: '威胁检测引擎',
+  SECURITY_LOG_COLLECTOR: '安全日志采集器',
+  security_log_collector: '安全日志采集器',
+  SYSTEM_MONITOR: '系统监控',
+  system_monitor: '系统监控',
+  // 日志来源
+  SecurityLog: '安全日志',
+  security_log: '安全日志',
+  SECURITY_LOG: '安全日志',
+  SystemLog: '系统日志',
+  system_log: '系统日志',
+  SYSTEM_LOG: '系统日志',
+  ApplicationLog: '应用日志',
+  application_log: '应用日志',
+  APPLICATION_LOG: '应用日志',
+  // 其他常见来源
+  RULE_ENGINE: '规则引擎',
+  rule_engine: '规则引擎',
+  AI_DETECTION: 'AI检测',
+  ai_detection: 'AI检测',
+  MANUAL: '手动创建',
+  manual: '手动创建',
 };
 
 // 用户角色
@@ -293,7 +436,30 @@ export function getAlertCategory(value: string): string {
 
 /** 获取告警类型中文名（alertType 字段） */
 export function getAlertTypeLabel(value: string): string {
-  return ALERT_TYPE_MAP[value] ?? ALERT_TYPE_MAP[value?.toUpperCase()] ?? value ?? '-';
+  if (!value) return '-';
+  const raw = String(value);
+  const trimmed = raw.trim();
+  const upper = trimmed.toUpperCase();
+  const normalized = upper.replace(/[\s-]+/g, '_');
+  const aliases: Record<string, string> = {
+    CRITICAL_EVENT_ALERT: 'CRITICAL_EVENT',
+    UNUSUAL_LOGIN_TIME: 'UNUSUAL_TIME_LOGIN',
+    SUSPICIOUS_IP_ACCESS: 'SUSPICIOUS_IP',
+  };
+  const aliasKey = aliases[normalized];
+  return ALERT_TYPE_MAP[trimmed]
+    ?? ALERT_TYPE_MAP[upper]
+    ?? ALERT_TYPE_MAP[normalized]
+    ?? (aliasKey ? ALERT_TYPE_MAP[aliasKey] : undefined)
+    ?? trimmed;
+}
+
+/** 获取告警来源中文名 */
+export function getAlertSourceLabel(value: string): string {
+  if (!value) return '-';
+  const raw = String(value).trim();
+  const upper = raw.toUpperCase();
+  return ALERT_SOURCE_MAP[raw] ?? ALERT_SOURCE_MAP[upper] ?? raw;
 }
 
 /** 获取数据源描述 */

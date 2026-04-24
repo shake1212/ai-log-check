@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Card, 
   Row, 
@@ -45,6 +45,7 @@ import {
   FilterOutlined,
   SearchOutlined
 } from '@ant-design/icons';
+import { analysisApi, logApi, scriptApi } from '@/services/api';
 
 const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
@@ -85,148 +86,83 @@ interface LogEntry {
 }
 
 const WMIDataFlow: React.FC = () => {
-  const [dataSources, setDataSources] = useState<WMIDataSource[]>([
-    {
-      id: '1',
-      name: '系统事件日志',
-      type: 'event_log',
-      namespace: 'root\\cimv2',
-      query: 'SELECT * FROM Win32_NTLogEvent WHERE EventType = 1 OR EventType = 2',
-      status: 'active',
-      lastUpdate: '2024-01-15 14:30:25',
-      dataCount: 1256,
-      errorCount: 12,
-      description: '采集系统错误和警告事件'
-    },
-    {
-      id: '2',
-      name: '系统信息监控',
-      type: 'system_info',
-      namespace: 'root\\cimv2',
-      query: 'SELECT * FROM Win32_ComputerSystem',
-      status: 'active',
-      lastUpdate: '2024-01-15 14:30:20',
-      dataCount: 89,
-      errorCount: 0,
-      description: '监控系统基本信息'
-    },
-    {
-      id: '3',
-      name: '进程监控',
-      type: 'process_monitor',
-      namespace: 'root\\cimv2',
-      query: 'SELECT * FROM Win32_Process WHERE ProcessId > 0',
-      status: 'active',
-      lastUpdate: '2024-01-15 14:30:15',
-      dataCount: 234,
-      errorCount: 2,
-      description: '监控系统运行进程'
-    },
-    {
-      id: '4',
-      name: '服务状态检查',
-      type: 'service_status',
-      namespace: 'root\\cimv2',
-      query: 'SELECT * FROM Win32_Service',
-      status: 'inactive',
-      lastUpdate: '2024-01-15 14:25:10',
-      dataCount: 67,
-      errorCount: 5,
-      description: '检查系统服务状态'
-    }
-  ]);
+  const [dataSources, setDataSources] = useState<WMIDataSource[]>([]);
+  const [dataFlowSteps, setDataFlowSteps] = useState<DataFlowStep[]>([]);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const loadDataFlowData = useCallback(async () => {
+    try {
+      const [historyResp, trafficResp, logsResp] = await Promise.all([
+        scriptApi.getHistory(),
+        analysisApi.getTrafficStats(),
+        logApi.getRecentLogs(20),
+      ]);
 
-  const [dataFlowSteps, setDataFlowSteps] = useState<DataFlowStep[]>([
-    {
-      id: '1',
-      name: '数据采集',
-      type: 'collect',
-      status: 'running',
-      inputData: 0,
-      outputData: 1646,
-      processingTime: 120,
-      errorRate: 0.5
-    },
-    {
-      id: '2',
-      name: '数据预处理',
-      type: 'process',
-      status: 'running',
-      inputData: 1646,
-      outputData: 1580,
-      processingTime: 85,
-      errorRate: 1.2
-    },
-    {
-      id: '3',
-      name: '数据转换',
-      type: 'transform',
-      status: 'running',
-      inputData: 1580,
-      outputData: 1580,
-      processingTime: 45,
-      errorRate: 0.8
-    },
-    {
-      id: '4',
-      name: '数据存储',
-      type: 'store',
-      status: 'running',
-      inputData: 1580,
-      outputData: 1580,
-      processingTime: 200,
-      errorRate: 0.2
-    },
-    {
-      id: '5',
-      name: '数据分析',
-      type: 'analyze',
-      status: 'running',
-      inputData: 1580,
-      outputData: 156,
-      processingTime: 300,
-      errorRate: 0.1
-    }
-  ]);
+      const history = Array.isArray((historyResp as any)?.data) ? (historyResp as any).data : (Array.isArray(historyResp) ? historyResp : []);
+      const traffic = (trafficResp as any)?.data || trafficResp || {};
+      const logs = (logsResp as any)?.data || logsResp || [];
+      const safeLogs = Array.isArray(logs) ? logs : [];
 
-  const [logEntries, setLogEntries] = useState<LogEntry[]>([
-    {
-      id: '1',
-      timestamp: '2024-01-15 14:30:25',
-      level: 'info',
-      source: 'WMI采集器',
-      message: '成功采集系统事件日志数据',
-      details: '采集到1256条事件记录',
-      category: '数据采集'
-    },
-    {
-      id: '2',
-      timestamp: '2024-01-15 14:30:20',
-      level: 'warning',
-      source: '数据处理引擎',
-      message: '检测到异常数据格式',
-      details: '12条记录格式不正确，已跳过',
-      category: '数据处理'
-    },
-    {
-      id: '3',
-      timestamp: '2024-01-15 14:30:15',
-      level: 'info',
-      source: '存储服务',
-      message: '数据存储完成',
-      details: '成功存储1580条记录到数据库',
-      category: '数据存储'
-    },
-    {
-      id: '4',
-      timestamp: '2024-01-15 14:30:10',
-      level: 'error',
-      source: 'WMI连接器',
-      message: '连接远程服务器失败',
-      details: '192.168.1.100:135 连接超时',
-      category: '连接管理'
+      const historyByScript = history.reduce((acc: Record<string, any[]>, item: any) => {
+        const key = item.scriptKey || 'unknown';
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(item);
+        return acc;
+      }, {});
+
+      const sourceTypes: WMIDataSource['type'][] = ['event_log', 'system_info', 'process_monitor', 'service_status', 'performance'];
+      const nextSources: WMIDataSource[] = Object.keys(historyByScript).map((scriptKey, index) => {
+        const items = historyByScript[scriptKey];
+        const latest = items[0] || {};
+        const failedCount = items.filter((i: any) => i.status === 'FAILED').length;
+        return {
+          id: scriptKey,
+          name: latest.scriptName || scriptKey,
+          type: sourceTypes[index % sourceTypes.length] || 'event_log',
+          namespace: 'root\\cimv2',
+          query: `script:${scriptKey}`,
+          status: latest.status === 'FAILED' ? 'error' : latest.status === 'RUNNING' ? 'active' : 'inactive',
+          lastUpdate: latest.startedAt || '-',
+          dataCount: items.length,
+          errorCount: failedCount,
+          description: '由后端脚本执行记录生成的数据源状态',
+        };
+      });
+      setDataSources(nextSources);
+
+      const current = Number(traffic.currentTraffic || 0);
+      const normal = Number(traffic.normalTraffic || 0);
+      const anomaly = Number(traffic.anomalyTraffic || 0);
+      const peak = Number(traffic.peakTraffic || 0);
+      const latency = Number(traffic.avgLatency || 0);
+      setDataFlowSteps([
+        { id: '1', name: '数据采集', type: 'collect', status: 'running', inputData: 0, outputData: current, processingTime: latency, errorRate: peak > 0 ? (anomaly / peak) * 100 : 0 },
+        { id: '2', name: '数据预处理', type: 'process', status: 'running', inputData: current, outputData: normal, processingTime: Math.max(1, Math.round(latency * 0.8)), errorRate: current > 0 ? (anomaly / current) * 100 : 0 },
+        { id: '3', name: '数据转换', type: 'transform', status: 'running', inputData: normal, outputData: normal, processingTime: Math.max(1, Math.round(latency * 0.6)), errorRate: 0 },
+        { id: '4', name: '数据存储', type: 'store', status: 'running', inputData: normal, outputData: normal, processingTime: Math.max(1, Math.round(latency * 1.2)), errorRate: 0 },
+        { id: '5', name: '数据分析', type: 'analyze', status: 'running', inputData: normal, outputData: anomaly, processingTime: Math.max(1, Math.round(latency * 1.5)), errorRate: normal > 0 ? (anomaly / normal) * 100 : 0 },
+      ]);
+
+      setLogEntries(
+        safeLogs.map((item: any) => ({
+          id: String(item.id ?? item.eventId ?? Date.now()),
+          timestamp: item.eventTime || item.timestamp || new Date().toLocaleString(),
+          level: String(item.level || 'info').toLowerCase() === 'error'
+            ? 'error'
+            : String(item.level || '').toLowerCase() === 'warning'
+              ? 'warning'
+              : 'info',
+          source: item.sourceName || '日志采集',
+          message: item.rawMessage || item.description || '系统运行日志',
+          details: item.rawMessage || undefined,
+          category: item.eventType || '数据采集',
+        }))
+      );
+    } catch (error) {
+      console.error('加载WMI数据流失败:', error);
+      message.error('加载WMI数据流失败');
     }
-  ]);
+  }, []);
+
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingDataSource, setEditingDataSource] = useState<WMIDataSource | null>(null);
@@ -414,23 +350,8 @@ const WMIDataFlow: React.FC = () => {
   };
 
   const handleRefreshDataSource = async (dataSource: WMIDataSource) => {
-    message.loading('正在刷新数据源...', 2);
-    
-    setTimeout(() => {
-      setDataSources(prev => 
-        prev.map(ds => 
-          ds.id === dataSource.id 
-            ? { 
-                ...ds, 
-                lastUpdate: new Date().toLocaleString(),
-                dataCount: ds.dataCount + Math.floor(Math.random() * 50),
-                errorCount: Math.floor(Math.random() * 5)
-              }
-            : ds
-        )
-      );
-      message.success('数据源刷新完成');
-    }, 2000);
+    await loadDataFlowData();
+    message.success(`数据源 ${dataSource.name} 刷新完成`);
   };
 
   const handleEditDataSource = (dataSource: WMIDataSource) => {
@@ -439,37 +360,12 @@ const WMIDataFlow: React.FC = () => {
     setModalVisible(true);
   };
 
-  // 模拟实时数据更新
   useEffect(() => {
-    const interval = setInterval(() => {
-      // 更新数据流步骤
-      setDataFlowSteps(prev => 
-        prev.map(step => ({
-          ...step,
-          inputData: step.type === 'collect' ? 0 : prev[prev.findIndex(s => s.id === step.id) - 1]?.outputData || 0,
-          outputData: step.type === 'analyze' ? Math.floor(Math.random() * 200) + 100 : step.outputData + Math.floor(Math.random() * 10),
-          processingTime: step.processingTime + Math.floor(Math.random() * 20) - 10,
-          errorRate: Math.max(0, step.errorRate + (Math.random() - 0.5) * 0.5)
-        }))
-      );
-
-      // 更新日志条目
-      if (Math.random() > 0.7) {
-        const newLogEntry: LogEntry = {
-          id: Date.now().toString(),
-          timestamp: new Date().toLocaleString(),
-          level: ['info', 'warning', 'error'][Math.floor(Math.random() * 3)] as any,
-          source: ['WMI采集器', '数据处理引擎', '存储服务', '分析引擎'][Math.floor(Math.random() * 4)],
-          message: '系统运行正常',
-          category: ['数据采集', '数据处理', '数据存储', '数据分析'][Math.floor(Math.random() * 4)]
-        };
-        
-        setLogEntries(prev => [newLogEntry, ...prev.slice(0, 19)]);
-      }
-    }, 3000);
+    loadDataFlowData();
+    const interval = setInterval(loadDataFlowData, 5000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [loadDataFlowData]);
 
   return (
     <div style={{ padding: '20px' }}>

@@ -18,7 +18,7 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/rule-engine")
+@RequestMapping("/rule-engine")
 @RequiredArgsConstructor
 public class RuleEngineController {
     

@@ -5,11 +5,11 @@ import {
   CheckCircleOutlined,
   InfoCircleOutlined,
   FireOutlined,
-  ShieldOutlined,
+  SafetyCertificateOutlined,
   BugOutlined,
   LockOutlined,
 } from '@ant-design/icons';
-import { getSeverity, translate, EVENT_TYPE_MAP, CATEGORY_MAP, STATUS_MAP, getStatus } from '@/utils/enumLabels';
+import { getSeverity, getThreatCategory, getThreatType, translate, EVENT_TYPE_MAP, CATEGORY_MAP, STATUS_MAP, getStatus } from '@/utils/enumLabels';
 
 const { Text, Title } = Typography;
 
@@ -69,7 +69,7 @@ const SecurityEventDetailModal: React.FC<SecurityEventDetailModalProps> = ({
       BRUTE_FORCE: <LockOutlined />,
       BACKDOOR: <BugOutlined />,
       MALWARE: <BugOutlined />,
-      PRIVILEGE_ESCALATION: <ShieldOutlined />,
+      PRIVILEGE_ESCALATION: <SafetyCertificateOutlined />,
       SQL_INJECTION: <BugOutlined />,
       XSS_ATTACK: <BugOutlined />,
       COMMAND_INJECTION: <BugOutlined />,
@@ -216,7 +216,7 @@ const SecurityEventDetailModal: React.FC<SecurityEventDetailModalProps> = ({
                   title={
                     <Space>
                       <Text strong>{rule.ruleName}</Text>
-                      <Tag color="blue">{rule.category}</Tag>
+                      <Tag color="blue">{getThreatCategory(rule.category)}</Tag>
                       <Tag
                         color={
                           rule.severity === 'CRITICAL' ? 'red' :
@@ -230,7 +230,7 @@ const SecurityEventDetailModal: React.FC<SecurityEventDetailModalProps> = ({
                   }
                   description={
                     <Space>
-                      <Text type="secondary">威胁类型: {rule.threatType}</Text>
+                      <Text type="secondary">威胁类型: {getThreatType(rule.threatType)}</Text>
                       <Text type="secondary">规则分数: {(rule.score * 100).toFixed(0)}</Text>
                     </Space>
                   }

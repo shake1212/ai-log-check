@@ -56,6 +56,13 @@ public class Alert {
     @JoinColumn(name = "log_entry_id")
     private LogEntry logEntry;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "unified_event_id", insertable = false, updatable = false)
+    private com.security.ailogsystem.model.UnifiedSecurityEvent unifiedEvent;
+
+    @Column(name = "unified_event_id")
+    private Long unifiedEventId;
+
     @Column(name = "created_time", nullable = false, updatable = false)
     private LocalDateTime createdTime;
 

@@ -14,9 +14,9 @@ import socket
 import requests
 from datetime import datetime
 
-# 后端URL配置
-BACKEND_URL = "http://localhost:8080/api/events/batch"
-SYSTEM_INFO_API_URL = "http://localhost:8080/api/system-info/ingest"
+# 后端URL配置（可通过环境变量覆盖，默认与原先硬编码一致）
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8080/api/events/batch")
+SYSTEM_INFO_API_URL = os.getenv("SYSTEM_INFO_API_URL", "http://localhost:8080/api/system-info/ingest")
 HOST_NAME = platform.node() or "unknown-host"
 PLATFORM_INFO = platform.platform()
 try:
@@ -292,14 +292,14 @@ def send_to_backend(data, data_type):
         )
 
         if response.status_code == 201:
-            print(f"数据成功发送到后端: {data_type}")
+            print(f"数据成功发送到后端: {data_type}", file=sys.stderr)
         else:
-            print(f"发送数据到后端失败，状态码: {response.status_code}")
+            print(f"发送数据到后端失败，状态码: {response.status_code}", file=sys.stderr)
 
     except requests.exceptions.RequestException as e:
-        print(f"发送数据到后端时网络错误: {e}")
+        print(f"发送数据到后端时网络错误: {e}", file=sys.stderr)
     except Exception as e:
-        print(f"发送数据到后端时发生错误: {e}")
+        print(f"发送数据到后端时发生错误: {e}", file=sys.stderr)
 
     return enriched
 
@@ -324,12 +324,12 @@ def send_to_system_info_service(enriched_payload, data_type):
             timeout=30
         )
         if response.status_code in (200, 201):
-            print(f"系统信息入库成功: {data_type}")
+            print(f"系统信息入库成功: {data_type}", file=sys.stderr)
             return True
-        print(f"系统信息入库失败，状态码: {response.status_code}")
+        print(f"系统信息入库失败，状态码: {response.status_code}", file=sys.stderr)
         return False
     except requests.exceptions.RequestException as e:
-        print(f"推送系统信息失败: {e}")
+        print(f"推送系统信息失败: {e}", file=sys.stderr)
         return False
 
 def main():

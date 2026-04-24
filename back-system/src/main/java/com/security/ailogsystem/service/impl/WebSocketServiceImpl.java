@@ -1,7 +1,6 @@
 // service/impl/WebSocketServiceImpl.java
 package com.security.ailogsystem.service.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.security.ailogsystem.entity.SecurityLog;
 import com.security.ailogsystem.entity.SecurityAlert;
 import com.security.ailogsystem.service.WebSocketService;
@@ -27,7 +26,6 @@ public class WebSocketServiceImpl implements WebSocketService {
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, String> activeSessions = new ConcurrentHashMap<>();
     private final Map<String, String> userSessions = new ConcurrentHashMap<>();
     private final AtomicInteger connectionCount = new AtomicInteger(0);
@@ -41,7 +39,8 @@ public class WebSocketServiceImpl implements WebSocketService {
 
         try {
             Map<String, Object> message = new HashMap<>();
-            message.put("type", "NEW_LOGS");
+            message.put("type", "LOGS_BATCH");
+            message.put("legacyType", "NEW_LOGS");
             message.put("count", logs.size());
             message.put("logs", logs.subList(0, Math.min(logs.size(), 10))); // 只发送前10条
             message.put("timestamp", System.currentTimeMillis());
@@ -59,7 +58,8 @@ public class WebSocketServiceImpl implements WebSocketService {
     public void sendLog(SecurityLog log) {
         try {
             Map<String, Object> message = new HashMap<>();
-            message.put("type", "SINGLE_LOG");
+            message.put("type", "LOG_SINGLE");
+            message.put("legacyType", "SINGLE_LOG");
             message.put("log", log);
             message.put("timestamp", System.currentTimeMillis());
 
@@ -74,7 +74,8 @@ public class WebSocketServiceImpl implements WebSocketService {
     public void sendSecurityAlert(SecurityAlert alert) {
         try {
             Map<String, Object> alertMessage = new HashMap<>();
-            alertMessage.put("type", "SECURITY_ALERT");
+            alertMessage.put("type", "ALERT_SECURITY");
+            alertMessage.put("legacyType", "SECURITY_ALERT");
             alertMessage.put("id", alert.getId());
             alertMessage.put("level", alert.getAlertLevel().toString());
             alertMessage.put("alertType", alert.getAlertType());
@@ -100,7 +101,8 @@ public class WebSocketServiceImpl implements WebSocketService {
     public void sendStatistics(Map<String, Object> stats) {
         try {
             Map<String, Object> message = new HashMap<>();
-            message.put("type", "STATISTICS");
+            message.put("type", "STATS_UPDATE");
+            message.put("legacyType", "STATISTICS");
             message.put("data", stats);
             message.put("timestamp", System.currentTimeMillis());
 
@@ -117,7 +119,8 @@ public class WebSocketServiceImpl implements WebSocketService {
     public void sendSystemNotification(String message, String level) {
         try {
             Map<String, Object> notification = new HashMap<>();
-            notification.put("type", "SYSTEM_NOTIFICATION");
+            notification.put("type", "NOTIFY_SYSTEM");
+            notification.put("legacyType", "SYSTEM_NOTIFICATION");
             notification.put("level", level);
             notification.put("message", message);
             notification.put("timestamp", System.currentTimeMillis());

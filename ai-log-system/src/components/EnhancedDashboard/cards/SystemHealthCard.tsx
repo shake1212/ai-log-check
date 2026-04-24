@@ -15,6 +15,7 @@ interface SystemMetrics {
 
 interface SystemHealthCardProps extends CardProps {
   style?: React.CSSProperties;
+  loading?: boolean;
 }
 
 const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
@@ -22,7 +23,8 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
   autoRefresh = true,
   isPaused = false,
   compact = false,
-  style
+  style,
+  loading: externalLoading,
 }) => {
   const [metrics, setMetrics] = useState<SystemMetrics>({
     systemHealth: 0,
@@ -30,7 +32,8 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
     latency: 0,
     lastUpdate: new Date().toISOString()
   });
-  const [loading, setLoading] = useState(false);
+  const [internalLoading, setLoading] = useState(false);
+  const loading = externalLoading !== undefined ? externalLoading : internalLoading;
   const [lastUpdated, setLastUpdated] = useState<string>('');
 
   const loadHealthData = useCallback(async () => {

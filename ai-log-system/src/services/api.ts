@@ -234,6 +234,7 @@ export const alertApi = {
   searchSecurityAlerts: (params: {
     keyword?: string;
     alertLevel?: string;
+    alertType?: string;
     handled?: boolean;
     status?: string;
     page?: number;
@@ -805,18 +806,44 @@ export const scriptApi = {
     request(`${API_BASE_URL}/scripts/logs/${executionId}`),
 };
 
+// 性能监控API - 对接后端 /performance 端点
+export interface PerformanceStats {
+  totalCollectedEvents: number;
+  totalProcessedEvents: number;
+  errorCount: number;
+  eventsPerMinute: number;
+  errorRate: number;
+  uptimeMinutes: number;
+}
+
+export interface HealthStatus {
+  status: 'HEALTHY' | 'WARNING' | 'UNHEALTHY';
+  message: string;
+}
+
+export const performanceApi = {
+  // 获取性能统计
+  getStats: (): Promise<PerformanceStats> =>
+    request(`${API_BASE_URL}/performance/stats`),
+
+  // 获取健康状态
+  getHealth: (): Promise<HealthStatus> =>
+    request(`${API_BASE_URL}/performance/health`),
+};
+
 // 统一导出
 export const api = {
   auth: authApi,
   log: logApi,
   alert: alertApi,
-  websocket: websocketApi, // 新增WebSocket API
+  websocket: websocketApi,
   model: modelApi,
   system: systemApi,
   user: userApi,
   event: eventApi,
   batch: batchApi,
   script: scriptApi,
-   analysis: analysisApi, 
+  analysis: analysisApi,
+  performance: performanceApi,
 };
 

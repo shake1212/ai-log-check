@@ -42,11 +42,13 @@ public interface AlertRepository extends JpaRepository<Alert, Long>, JpaSpecific
             "LOWER(a.description) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
             "LOWER(a.assignee) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
             "AND (:alertLevel IS NULL OR a.alertLevel = :alertLevel) " +
+            "AND (:alertType IS NULL OR a.alertType = :alertType) " +
             "AND (:handled IS NULL OR a.handled = :handled) " +
             "AND (:status IS NULL OR a.status = :status)")
     Page<Alert> searchAlerts(
             @Param("keyword") String keyword,
             @Param("alertLevel") String alertLevel,
+            @Param("alertType") String alertType,
             @Param("handled") Boolean handled,
             @Param("status") Alert.AlertStatus status,
             Pageable pageable);

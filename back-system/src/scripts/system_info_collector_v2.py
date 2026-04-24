@@ -95,7 +95,7 @@ def validate_event(event):
             raise ValueError(f"缺少必填字段: {field}")
     
     # 验证严重级别
-    valid_severities = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL']
+    valid_severities = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL', 'LOW', 'MEDIUM', 'HIGH']
     if event['severity'] not in valid_severities:
         raise ValueError(f"无效的严重级别: {event['severity']}")
     

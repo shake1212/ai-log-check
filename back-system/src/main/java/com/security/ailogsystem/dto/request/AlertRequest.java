@@ -44,6 +44,8 @@ public class AlertRequest {
 
     private Long logEntryId;
 
+    private Long unifiedEventId;
+
     private String eventId;
 
     private Integer processId;

@@ -11,7 +11,7 @@ import {
   LockOutlined,
 } from '@ant-design/icons';
 import './SecurityEventCard.less';
-import { getSeverity, translate, EVENT_TYPE_MAP, CATEGORY_MAP } from '@/utils/enumLabels';
+import { getSeverity, getThreatCategory, getThreatType, translate, EVENT_TYPE_MAP, CATEGORY_MAP } from '@/utils/enumLabels';
 
 const { Text, Paragraph } = Typography;
 
@@ -231,7 +231,7 @@ const SecurityEventCard: React.FC<SecurityEventCardProps> = ({
                   <Space size="small" wrap>
                     {getThreatTypeIcon(rule.threatType)}
                     <Text strong>{rule.ruleName}</Text>
-                    <Tag color="blue">{rule.category}</Tag>
+                    <Tag color="blue">{getThreatCategory(rule.category)}</Tag>
                     <Tag color={
                       rule.severity === 'CRITICAL' ? 'red' :
                       rule.severity === 'HIGH' ? 'orange' :
@@ -240,7 +240,7 @@ const SecurityEventCard: React.FC<SecurityEventCardProps> = ({
                       {getSeverity(rule.severity).label}
                     </Tag>
                     <Text type="secondary">
-                      威胁类型: {rule.threatType}
+                      威胁类型: {getThreatType(rule.threatType)}
                     </Text>
                   </Space>
                 </div>

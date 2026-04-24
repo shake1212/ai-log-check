@@ -7,8 +7,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 /**
  * 数据库管理控制器
@@ -21,6 +24,8 @@ public class DatabaseController {
 
     @Autowired
     private DatabaseMonitoringService databaseMonitoringService;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     /**
      * 获取数据库状态概览
@@ -196,6 +201,49 @@ public class DatabaseController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError()
                     .body(Map.of("error", "Failed to get overview: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/query")
+    @Operation(summary = "执行SQL查询", description = "执行数据库查询（仅管理用途）")
+    public ResponseEntity<Map<String, Object>> executeQuery(@RequestBody Map<String, Object> payload) {
+        try {
+            String sql = String.valueOf(payload.getOrDefault("sql", ""));
+            @SuppressWarnings("unchecked")
+            List<Object> params = (List<Object>) payload.getOrDefault("params", List.of());
+            if (sql.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "sql不能为空"));
+            }
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, params.toArray());
+            Map<String, Object> result = new HashMap<>();
+            result.put("rows", rows);
+            result.put("fields", List.of());
+            result.put("affectedRows", rows.size());
+            result.put("insertId", 0);
+            result.put("changedRows", 0);
+            result.put("message", "Query OK");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("message", "Query failed: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/transaction")
+    @Operation(summary = "执行事务", description = "按顺序执行SQL语句事务")
+    public ResponseEntity<Map<String, Object>> executeTransaction(@RequestBody Map<String, Object> payload) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> queries = (List<Map<String, Object>>) payload.getOrDefault("queries", List.of());
+            int affected = 0;
+            for (Map<String, Object> q : queries) {
+                String sql = String.valueOf(q.getOrDefault("sql", ""));
+                @SuppressWarnings("unchecked")
+                List<Object> params = (List<Object>) q.getOrDefault("params", List.of());
+                affected += jdbcTemplate.update(sql, params.toArray());
+            }
+            return ResponseEntity.ok(Map.of("message", "Transaction OK", "affectedRows", affected));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("message", "Transaction failed: " + e.getMessage()));
         }
     }
 }

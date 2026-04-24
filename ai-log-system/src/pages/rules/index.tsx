@@ -18,7 +18,7 @@ import {
   LockOutlined,
 } from '@ant-design/icons';
 import ruleManagementApi, { Rule } from '@/services/ruleManagementApi';
-import { getSeverity, translate, PATTERN_TYPE_MAP } from '@/utils/enumLabels';
+import { getSeverity, getThreatCategory, getThreatType, translate, PATTERN_TYPE_MAP } from '@/utils/enumLabels';
 import './index.less';
 
 const { Title, Text } = Typography;
@@ -101,7 +101,7 @@ const RulesPage: React.FC = () => {
       key: 'category',
       width: 150,
       render: (category: string) => (
-        <Tag color="blue">{category}</Tag>
+        <Tag color="blue">{getThreatCategory(category)}</Tag>
       ),
     },
     {
@@ -110,6 +110,9 @@ const RulesPage: React.FC = () => {
       key: 'threatType',
       width: 150,
       ellipsis: true,
+      render: (threatType: string) => (
+        <Tag color="orange">{getThreatType(threatType)}</Tag>
+      ),
     },
     {
       title: '严重程度',
@@ -238,8 +241,8 @@ const RulesPage: React.FC = () => {
           <Descriptions bordered column={2}>
             <Descriptions.Item label="规则ID">{selectedRule.id}</Descriptions.Item>
             <Descriptions.Item label="规则名称">{selectedRule.name}</Descriptions.Item>
-            <Descriptions.Item label="分类">{selectedRule.category}</Descriptions.Item>
-            <Descriptions.Item label="威胁类型">{selectedRule.threatType}</Descriptions.Item>
+            <Descriptions.Item label="分类"><Tag color="blue">{getThreatCategory(selectedRule.category)}</Tag></Descriptions.Item>
+            <Descriptions.Item label="威胁类型"><Tag color="orange">{getThreatType(selectedRule.threatType)}</Tag></Descriptions.Item>
             <Descriptions.Item label="严重程度">
               {(() => { const { label, color } = getSeverity(selectedRule.severity); return <Tag color={color}>{label}</Tag>; })()}
             </Descriptions.Item>

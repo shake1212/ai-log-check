@@ -1,4 +1,4 @@
-// src/services/websocketService.ts
+// src/services/websocket.ts — STOMP 实时消息（与后端 WebSocketMessage / 推送 JSON 对齐）
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { message } from 'antd';
 import SockJS from 'sockjs-client';
@@ -16,6 +16,59 @@ const WEBSOCKET_CONFIG = {
   baseRetryInterval: 3000,
 };
 
+const API_BASE = '/api';
+
+/**
+ * 将后端/历史别名归一为前端分支使用的规范类型。
+ * 规范类型：LOGS_BATCH | LOG_SINGLE | ALERT_SECURITY | STATS_UPDATE | NOTIFY_SYSTEM |
+ * SYSTEM_INFO | SYSTEM_ERROR | HEARTBEAT | CUSTOM | TEST_MESSAGE | PING | PONG
+ */
+const normalizeMessageType = (rawType?: string): string => {
+  const t = (rawType || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  switch (t) {
+    case 'NEW_LOGS':
+    case 'LOG_UPDATE':
+    case 'LOGS_BATCH':
+      return 'LOGS_BATCH';
+    case 'SINGLE_LOG':
+    case 'LOG_SINGLE':
+      return 'LOG_SINGLE';
+    case 'SECURITY_ALERT':
+    case 'ALERT_SECURITY':
+      return 'ALERT_SECURITY';
+    case 'STATISTICS':
+    case 'STATISTICS_UPDATE':
+    case 'STATS_UPDATE':
+      return 'STATS_UPDATE';
+    case 'SYSTEM_INFO':
+      return 'SYSTEM_INFO';
+    case 'SYSTEM_ERROR':
+      return 'SYSTEM_ERROR';
+    case 'SYSTEM_NOTIFICATION':
+    case 'NOTIFY_SYSTEM':
+      return 'NOTIFY_SYSTEM';
+    case 'HEARTBEAT':
+      return 'HEARTBEAT';
+    case 'PING':
+      return 'PING';
+    case 'PONG':
+      return 'PONG';
+    case 'CUSTOM':
+      return 'CUSTOM';
+    case 'TEST_MESSAGE':
+    case 'TEST':
+      return 'TEST_MESSAGE';
+    default:
+      return t;
+  }
+};
+
+// 消息节流配置：批量累积消息后统一更新状态，避免每条消息触发一次重渲染
+const BATCH_INTERVAL = 100; // 100ms 批量更新间隔
+const MAX_BATCH_SIZE = 50;  // 单次批量最大消息数
+// 告警通知节流：避免高频告警堆满屏幕
+const ALERT_NOTIFY_INTERVAL = 2000; // 2秒内最多显示1条告警通知
+
 export const useWebSocket = () => {
   const [connected, setConnected] = useState(false);
   const [logs, setLogs] = useState<SecurityLog[]>([]);
@@ -27,6 +80,21 @@ export const useWebSocket = () => {
   const reconnectTimerRef = useRef<NodeJS.Timeout>();
   const isMountedRef = useRef(true);
   const retryCountRef = useRef(0); // 用 ref 避免闭包捕获旧值
+
+  // 批量消息缓冲区
+  const batchLogsRef = useRef<SecurityLog[]>([]);
+  const batchAlertsRef = useRef<SecurityAlert[]>([]);
+  const batchStatsRef = useRef<Statistics | null>(null);
+  const batchTimerRef = useRef<NodeJS.Timeout>();
+  const batchCountRef = useRef(0);
+
+  // 告警通知节流
+  const lastAlertNotifyRef = useRef(0);
+  const pendingAlertCountRef = useRef(0);
+
+  // 用 ref 存储 handleWebSocketMessage 和 handleReconnect，避免 connect 闭包捕获旧引用
+  const handleMessageRef = useRef<(msg: any) => void>(() => {});
+  const handleReconnectRef = useRef<() => void>(() => {});
 
   // 统一的连接状态通知，使用固定 key 保证只显示一条
   const showConnectionMessage = useCallback((type: 'success' | 'warning' | 'error', content: string) => {
@@ -44,7 +112,6 @@ export const useWebSocket = () => {
     }
 
     const wsUrl = WEBSOCKET_CONFIG.getWebSocketUrl();
-    console.log(`尝试连接 WebSocket: ${wsUrl}`);
     
     try {
       // 创建 STOMP 客户端
@@ -67,27 +134,26 @@ export const useWebSocket = () => {
         setConnected(true);
         setRetryCount(0);
         retryCountRef.current = 0;
-        console.log('WebSocket 连接成功:', frame);
         
         // 订阅各种主题
         stompClient.subscribe('/topic/logs', (message: IMessage) => {
-          handleWebSocketMessage(JSON.parse(message.body));
+          handleMessageRef.current(JSON.parse(message.body));
         });
 
         stompClient.subscribe('/topic/alerts', (message: IMessage) => {
-          handleWebSocketMessage(JSON.parse(message.body));
+          handleMessageRef.current(JSON.parse(message.body));
         });
 
         stompClient.subscribe('/topic/stats', (message: IMessage) => {
-          handleWebSocketMessage(JSON.parse(message.body));
+          handleMessageRef.current(JSON.parse(message.body));
         });
 
         stompClient.subscribe('/topic/notifications', (message: IMessage) => {
-          handleWebSocketMessage(JSON.parse(message.body));
+          handleMessageRef.current(JSON.parse(message.body));
         });
 
         stompClient.subscribe('/topic/broadcast', (message: IMessage) => {
-          handleWebSocketMessage(JSON.parse(message.body));
+          handleMessageRef.current(JSON.parse(message.body));
         });
 
         // 只在第一次连接成功时显示消息
@@ -109,9 +175,8 @@ export const useWebSocket = () => {
         if (!isMountedRef.current) return;
         
         setConnected(false);
-        console.log(`WebSocket 连接关闭: ${event.code} ${event.reason || '无原因'}`);
         
-        handleReconnect();
+        handleReconnectRef.current();
       };
 
       stompClient.onWebSocketError = (event) => {
@@ -128,7 +193,7 @@ export const useWebSocket = () => {
       console.error('创建 WebSocket 连接失败:', error);
       if (isMountedRef.current) {
         setConnected(false);
-        handleReconnect();
+        handleReconnectRef.current();
       }
     }
   }, [showConnectionMessage]);
@@ -150,7 +215,6 @@ export const useWebSocket = () => {
       
       // 指数退避策略：重试间隔逐渐增加
       const retryDelay = WEBSOCKET_CONFIG.baseRetryInterval * Math.pow(1.5, nextRetryCount - 1);
-      console.log(`WebSocket 重连中... (${nextRetryCount}/${WEBSOCKET_CONFIG.maxRetries})，${retryDelay}ms后重试`);
       
       reconnectTimerRef.current = setTimeout(() => {
         if (isMountedRef.current) {
@@ -166,20 +230,71 @@ export const useWebSocket = () => {
     }
   };
 
+  // 将最新的 handleReconnect 赋值给 ref
+  handleReconnectRef.current = handleReconnect;
+
+  // 批量刷新缓冲区到 React 状态
+  const flushBatch = useCallback(() => {
+    if (!isMountedRef.current) return;
+
+    const pendingLogs = batchLogsRef.current;
+    const pendingAlerts = batchAlertsRef.current;
+    const pendingStats = batchStatsRef.current;
+
+    if (pendingLogs.length > 0) {
+      setLogs(prev => [...pendingLogs, ...prev.slice(0, 100)]);
+      batchLogsRef.current = [];
+    }
+    if (pendingAlerts.length > 0) {
+      setAlerts(prev => [...pendingAlerts, ...prev.slice(0, 50)]);
+      batchAlertsRef.current = [];
+    }
+    if (pendingStats) {
+      setStatistics(pendingStats);
+      batchStatsRef.current = null;
+    }
+
+    batchCountRef.current = 0;
+    if (batchTimerRef.current) {
+      clearTimeout(batchTimerRef.current);
+      batchTimerRef.current = undefined;
+    }
+  }, []);
+
+  // 节流告警通知：2秒内最多显示1条，多余告警计数
+  const throttledAlertNotify = useCallback((level: string, description: string) => {
+    const now = Date.now();
+    pendingAlertCountRef.current += 1;
+
+    if (now - lastAlertNotifyRef.current >= ALERT_NOTIFY_INTERVAL) {
+      lastAlertNotifyRef.current = now;
+      const count = pendingAlertCountRef.current;
+      pendingAlertCountRef.current = 0;
+
+      const suffix = count > 1 ? ` (及另外 ${count - 1} 条告警)` : '';
+      if (level === 'CRITICAL' || level === 'HIGH') {
+        message.error(`安全警报: ${description}${suffix}`, 5);
+      } else if (level === 'MEDIUM') {
+        message.warning(`安全警报: ${description}${suffix}`, 3);
+      } else {
+        message.info(`安全警报: ${description}${suffix}`, 2);
+      }
+    }
+  }, []);
+
   const handleWebSocketMessage = useCallback((msg: any) => {
     if (!isMountedRef.current) return;
-    
-    console.log('收到 WebSocket 消息:', msg);
 
-    if (msg.type === 'NEW_LOGS') {
+    const messageType = normalizeMessageType(msg.type);
+    if (messageType === 'LOGS_BATCH') {
       if (msg.logs && Array.isArray(msg.logs)) {
-        setLogs(prev => [...msg.logs, ...prev.slice(0, 100)]); // 限制日志数量
+        batchLogsRef.current.push(...msg.logs);
       }
-    } else if (msg.type === 'SINGLE_LOG') {
+    } else if (messageType === 'LOG_SINGLE') {
       if (msg.log) {
-        setLogs(prev => [msg.log, ...prev.slice(0, 100)]);
+        batchLogsRef.current.push(msg.log);
       }
-    } else if (msg.type === 'SECURITY_ALERT') {
+    } else if (messageType === 'ALERT_SECURITY') {
       // @ts-ignore
       const alert: SecurityAlert = {
         id: msg.id || `alert_${Date.now()}`,
@@ -192,23 +307,23 @@ export const useWebSocket = () => {
         source: msg.source,
         computerName: msg.computerName,
       };
-      setAlerts(prev => [alert, ...prev.slice(0, 50)]); // 限制警报数量
+      batchAlertsRef.current.push(alert);
 
-      // 显示高危警报通知
-      if (msg.level === 'CRITICAL' || msg.level === 'HIGH') {
-        message.error(`安全警报: ${msg.description}`, 5);
-      } else if (msg.level === 'MEDIUM') {
-        message.warning(`安全警报: ${msg.description}`, 3);
-      } else {
-        message.info(`安全警报: ${msg.description}`, 2);
-      }
-    } else if (msg.type === 'STATISTICS') {
+      // 节流告警通知
+      throttledAlertNotify(msg.level, msg.description);
+    } else if (messageType === 'STATS_UPDATE') {
       if (msg.data) {
-        setStatistics(msg.data);
+        batchStatsRef.current = msg.data;
       }
-    } else if (msg.type === 'SYSTEM_NOTIFICATION') {
+    } else if (messageType === 'SYSTEM_INFO') {
+      const notificationMsg = msg.content || msg.message || '系统信息';
+      message.info(notificationMsg);
+    } else if (messageType === 'SYSTEM_ERROR') {
+      const notificationMsg = msg.content || msg.message || '系统错误';
+      message.error(notificationMsg);
+    } else if (messageType === 'NOTIFY_SYSTEM') {
       const level = msg.level || 'info';
-      const notificationMsg = msg.message || '系统通知';
+      const notificationMsg = msg.message || msg.content || '系统通知';
 
       if (level === 'error') {
         message.error(notificationMsg);
@@ -219,22 +334,30 @@ export const useWebSocket = () => {
       } else {
         message.info(notificationMsg);
       }
-    } else if (msg.type === 'SYSTEM_INFO') {
-      message.info(msg.content || '系统信息');
-    } else if (msg.type === 'SYSTEM_ERROR') {
-      message.error(msg.content || '系统错误');
-    } else if (msg.type === 'TEST_MESSAGE') {
-      console.log('收到测试消息:', msg);
-      message.info(`测试消息: ${msg.content || msg.message}`);
-    } else if (msg.type === 'HEARTBEAT') {// 心跳消息，可以用于监控连接状态
-      console.log('收到心跳消息:', msg);
-    } else {
-      console.warn('未知的消息类型:', msg.type, msg);
+    } else if (messageType === 'CUSTOM') {
+      // 自定义消息静默处理
+    } else if (messageType === 'TEST_MESSAGE') {
+      const text = msg.content || msg.message || '测试消息';
+      message.info(`测试消息: ${text}`);
+    } else if (messageType === 'PING' || messageType === 'PONG') {
+      // 静默处理
+    } else if (messageType === 'HEARTBEAT') {
+      // 心跳消息，静默处理
     }
-  }, []);
+
+    // 批量刷新：达到最大批量数或启动定时器
+    batchCountRef.current += 1;
+    if (batchCountRef.current >= MAX_BATCH_SIZE) {
+      flushBatch();
+    } else if (!batchTimerRef.current) {
+      batchTimerRef.current = setTimeout(flushBatch, BATCH_INTERVAL);
+    }
+  }, [flushBatch, throttledAlertNotify]);
+
+  // 将最新的 handler 赋值给 ref，供 connect 闭包使用
+  handleMessageRef.current = handleWebSocketMessage;
 
   const disconnect = useCallback(() => {
-    console.log('主动断开 WebSocket 连接');
     
     // 清理重连定时器
     if (reconnectTimerRef.current) {
@@ -253,7 +376,6 @@ export const useWebSocket = () => {
   }, []);
 
   const reconnect = useCallback(() => {
-    console.log('手动重连 WebSocket');
     disconnect(); // 先断开现有连接
     setRetryCount(0); // 重置重试计数
     setTimeout(() => connect(), 100); // 短暂延迟后重新连接
@@ -278,11 +400,32 @@ export const useWebSocket = () => {
     connect();
     
     return () => {
-      console.log('清理 WebSocket 连接');
       isMountedRef.current = false;
-      disconnect();
+      
+      // 清理批量刷新定时器
+      if (batchTimerRef.current) {
+        clearTimeout(batchTimerRef.current);
+        batchTimerRef.current = undefined;
+      }
+      
+      // 清理重连定时器
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = undefined;
+      }
+      
+      // 关闭 STOMP 客户端
+      if (stompClientRef.current) {
+        try {
+          stompClientRef.current.deactivate();
+        } catch (e) {
+          // 忽略已关闭的错误
+        }
+        stompClientRef.current = null;
+      }
     };
-  }, [connect, disconnect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     connected,
@@ -325,7 +468,7 @@ export const webSocketTest = {
   // 发送测试消息
   sendTestMessage: async (): Promise<boolean> => {
     try {
-      const response = await fetch('http://localhost:8080/api/websocket/test');
+      const response = await fetch(`${API_BASE}/websocket/test-connection`, { method: 'POST' });
       return response.ok;
     } catch (error) {
       console.error('发送测试消息失败:', error);
@@ -336,7 +479,7 @@ export const webSocketTest = {
   // 检查状态
   checkStatus: async (): Promise<any> => {
     try {
-      const response = await fetch('http://localhost:8080/api/websocket/status');
+      const response = await fetch(`${API_BASE}/websocket/status`);
       return await response.json();
     } catch (error) {
       console.error('检查状态失败:', error);

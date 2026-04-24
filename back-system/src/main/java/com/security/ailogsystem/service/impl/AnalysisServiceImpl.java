@@ -3,6 +3,8 @@ package com.security.ailogsystem.service.impl;
 
 import com.security.ailogsystem.dto.SecurityAnalysisItemDTO;
 import com.security.ailogsystem.dto.ThreatIntelItemDTO;
+import com.security.ailogsystem.repository.AlertRepository;
+import com.security.ailogsystem.repository.SecurityLogRepository;
 import com.security.ailogsystem.service.AnalysisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,53 +17,55 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class AnalysisServiceImpl implements AnalysisService {
+    private final SecurityLogRepository securityLogRepository;
+    private final AlertRepository alertRepository;
 
     @Override
     public List<SecurityAnalysisItemDTO> getSecurityAnalyses() {
         log.info("获取安全分析数据");
+        LocalDateTime since = LocalDateTime.now().minusDays(7);
+        long critical = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("CRITICAL", since)).orElse(0L);
+        long high = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("HIGH", since)).orElse(0L);
+        long medium = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("MEDIUM", since)).orElse(0L);
+        long failedLogins = Optional.ofNullable(securityLogRepository.countByEventIdAndEventTimeBetween(4625, since, LocalDateTime.now())).orElse(0L);
 
-        // 模拟数据 - 实际应从数据库获取
         List<SecurityAnalysisItemDTO> analyses = new ArrayList<>();
-
         analyses.add(new SecurityAnalysisItemDTO(
-                "1",
+                UUID.randomUUID().toString(),
                 "anomaly_detection",
                 "异常登录检测",
-                "检测异常的用户登录行为",
-                85,
-                Arrays.asList("检测到来自未知IP的登录尝试", "登录时间异常", "多次失败登录"),
-                Arrays.asList("启用双因素认证", "审查登录日志", "加强密码策略"),
-                LocalDateTime.now().minusDays(2),
+                "基于最近7天登录失败事件进行风险分析",
+                (int) Math.min(100, failedLogins),
+                List.of("近7天登录失败次数: " + failedLogins),
+                List.of("启用双因素认证", "锁定高频失败来源IP"),
+                LocalDateTime.now().minusHours(1),
+                LocalDateTime.now().plusHours(1),
+                "completed"
+        ));
+        analyses.add(new SecurityAnalysisItemDTO(
+                UUID.randomUUID().toString(),
+                "threat_hunting",
+                "威胁狩猎分析",
+                "基于高危威胁等级日志发现潜在攻击行为",
+                (int) Math.min(100, high + critical),
+                List.of("HIGH事件: " + high, "CRITICAL事件: " + critical),
+                List.of("优先排查CRITICAL事件来源", "关联分析相同IP行为"),
+                LocalDateTime.now().minusHours(1),
+                LocalDateTime.now().plusHours(2),
+                "completed"
+        ));
+        analyses.add(new SecurityAnalysisItemDTO(
+                UUID.randomUUID().toString(),
+                "risk_assessment",
+                "风险评估报告",
+                "基于日志与告警总量计算整体风险",
+                (int) Math.min(100, medium + high + critical),
+                List.of("MEDIUM事件: " + medium, "总告警数: " + alertRepository.count()),
+                List.of("降低中危积压事件", "优化安全规则准确率"),
+                LocalDateTime.now().minusHours(2),
                 LocalDateTime.now().plusDays(1),
                 "completed"
         ));
-
-        analyses.add(new SecurityAnalysisItemDTO(
-                "2",
-                "threat_hunting",
-                "威胁狩猎分析",
-                "主动寻找潜在威胁",
-                72,
-                Arrays.asList("发现可疑进程", "网络连接异常", "文件修改可疑"),
-                Arrays.asList("隔离可疑进程", "检查网络配置", "审查文件权限"),
-                LocalDateTime.now().minusDays(1),
-                LocalDateTime.now().plusDays(2),
-                "running"
-        ));
-
-        analyses.add(new SecurityAnalysisItemDTO(
-                "3",
-                "risk_assessment",
-                "风险评估报告",
-                "系统整体风险评估",
-                65,
-                Arrays.asList("密码策略过弱", "缺少安全审计", "系统漏洞未修复"),
-                Arrays.asList("强化密码策略", "启用安全审计", "及时更新补丁"),
-                LocalDateTime.now().minusDays(3),
-                LocalDateTime.now().plusDays(7),
-                "completed"
-        ));
-
         return analyses;
     }
 
@@ -139,64 +143,37 @@ public class AnalysisServiceImpl implements AnalysisService {
     @Override
     public List<ThreatIntelItemDTO> getThreatIntelligence() {
         log.info("获取威胁情报数据");
+        LocalDateTime since = LocalDateTime.now().minusDays(7);
+        long critical = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("CRITICAL", since)).orElse(0L);
+        long high = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("HIGH", since)).orElse(0L);
+        long medium = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("MEDIUM", since)).orElse(0L);
 
-        // 模拟数据 - 实际应从外部API或数据库获取
         List<ThreatIntelItemDTO> threats = new ArrayList<>();
-
-        threats.add(new ThreatIntelItemDTO(
-                "1",
-                "malware",
-                "critical",
-                "云端威胁情报",
-                "新型勒索软件攻击，通过钓鱼邮件传播",
-                Arrays.asList("Windows Server", "Exchange Server"),
-                LocalDateTime.now().minusDays(1),
-                12,
-                95,
-                "active",
-                Arrays.asList("Emotet", "TrickBot")
-        ));
-
-        threats.add(new ThreatIntelItemDTO(
-                "2",
-                "phishing",
-                "high",
-                "国际威胁情报",
-                "针对金融行业的钓鱼攻击，伪造银行网站",
-                Arrays.asList("Web Server", "Mail Server"),
-                LocalDateTime.now().minusHours(6),
-                8,
-                88,
-                "active",
-                Arrays.asList("Banking Trojan", "Credential Theft")
-        ));
-
-        threats.add(new ThreatIntelItemDTO(
-                "3",
-                "vulnerability",
-                "medium",
-                "CVE数据库",
-                "Apache Log4j2 远程代码执行漏洞",
-                Arrays.asList("Java应用", "Web服务"),
-                LocalDateTime.now().minusDays(5),
-                5,
-                92,
-                "mitigated",
-                Arrays.asList("RCE", "Data Breach")
-        ));
-
+        if (critical > 0) {
+            threats.add(new ThreatIntelItemDTO(UUID.randomUUID().toString(), "malware", "critical", "internal-db",
+                    "检测到高危威胁日志事件", List.of("Windows Host"), LocalDateTime.now().minusHours(2),
+                    (int) critical, 90, "active", List.of("critical-threat-pattern")));
+        }
+        if (high > 0) {
+            threats.add(new ThreatIntelItemDTO(UUID.randomUUID().toString(), "phishing", "high", "internal-db",
+                    "检测到高风险可疑访问行为", List.of("Web Service"), LocalDateTime.now().minusHours(4),
+                    (int) high, 85, "active", List.of("high-threat-pattern")));
+        }
+        if (medium > 0) {
+            threats.add(new ThreatIntelItemDTO(UUID.randomUUID().toString(), "vulnerability", "medium", "internal-db",
+                    "检测到中风险安全事件", List.of("Application"), LocalDateTime.now().minusHours(8),
+                    (int) medium, 75, "mitigated", List.of("medium-threat-pattern")));
+        }
         return threats;
     }
 
     @Override
     public Map<String, Object> syncCloudThreatIntel() {
         log.info("同步云端威胁情报");
-
-        // 实际同步逻辑
         Map<String, Object> result = new HashMap<>();
         result.put("status", "success");
-        result.put("syncedCount", 25);
-        result.put("message", "成功同步云端威胁情报数据");
+        result.put("syncedCount", getThreatIntelligence().size());
+        result.put("message", "已完成基于数据库数据的威胁情报同步");
 
         return result;
     }

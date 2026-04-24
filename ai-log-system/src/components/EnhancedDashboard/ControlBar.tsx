@@ -10,7 +10,6 @@ import {
   ExportOutlined,
   SyncOutlined,
   FileExcelOutlined,
-  FilePdfOutlined,
   CodeOutlined
 } from '@ant-design/icons';
 import { DashboardProps } from './types/dashboard';
@@ -34,29 +33,64 @@ const ControlBar: React.FC<ControlBarProps> = ({
   setActiveTab,
   setNotificationPanelVisible
 }) => {
-  const handleExport = (format: 'excel' | 'csv' | 'json' | 'report') => {
-    console.log('导出格式:', format);
-    // 这里添加导出逻辑
+  const TYPE_LABEL: Record<string, string> = {
+    'logs':          '日志数据',
+    'alerts':        '告警数据',
+    'events':        '安全事件',
+    'security-logs': 'Windows安全日志',
+    'metrics':       '系统性能指标',
+  };
+
+  const handleExport = (key: string) => {
+    const [dataType, format] = key.split('_');
+    const ext = format === 'excel' ? 'xlsx' : format;
+    const token = localStorage.getItem('token');
+    const label = TYPE_LABEL[dataType] ?? dataType;
+    const ts = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '');
+    const filename = `${label}_${ts}.${ext}`;
+    const backendBase = process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : '';
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', `${backendBase}/api/api/export/${dataType}?format=${format}`, true);
+    xhr.responseType = 'blob';
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const url = window.URL.createObjectURL(xhr.response as Blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;   // 直接用前端拼好的中文文件名
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      } else {
+        console.error('导出失败，状态码:', xhr.status);
+      }
+    };
+    xhr.onerror = () => console.error('导出请求失败');
+    xhr.send();
   };
 
   return (
     <Card 
       style={{ 
-        marginBottom: '32px',
-        borderRadius: '16px',
+        marginBottom: '16px',
+        borderRadius: '12px',
         background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
         boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
         border: '1px solid rgba(0,0,0,0.06)'
       }}
-      bodyStyle={{ padding: '20px' }}
+      bodyStyle={{ padding: '12px 14px' }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <Tabs 
             activeKey={activeTab}
             onChange={setActiveTab}
-            size="large"
-            style={{ minWidth: '300px' }}
+            size="middle"
+            style={{ minWidth: '260px' }}
           >
             <TabPane 
               tab={
@@ -88,18 +122,18 @@ const ControlBar: React.FC<ControlBarProps> = ({
           </Tabs>
         </div>
         <div>
-          <Space size="large" wrap>
+          <Space size="middle" wrap>
             <Button
               type="primary"
               icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
               onClick={() => setIsPaused(!isPaused)}
               shape="round"
-              size="large"
+              size="middle"
               style={{
                 background: isPaused ? '#1890ff' : 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
                 border: 'none',
-                padding: '0 24px',
-                height: '44px'
+                padding: '0 14px',
+                height: '36px'
               }}
             >
               {isPaused ? '继续监控' : '暂停监控'}
@@ -110,8 +144,8 @@ const ControlBar: React.FC<ControlBarProps> = ({
                 icon={<BellOutlined />}
                 onClick={() => setNotificationPanelVisible(true)}
                 shape="round"
-                size="large"
-                style={{ height: '44px', padding: '0 20px' }}
+                size="middle"
+                style={{ height: '36px', padding: '0 14px' }}
               >
                 系统通知
               </Button>
@@ -120,24 +154,68 @@ const ControlBar: React.FC<ControlBarProps> = ({
             <Dropdown
               menu={{
                 items: [
-                  { key: 'excel', icon: <FileExcelOutlined />, label: '导出Excel报告' },
-                  { key: 'pdf', icon: <FilePdfOutlined />, label: '导出PDF报告' },
-                  { key: 'json', icon: <CodeOutlined />, label: '导出JSON数据' },
+                  {
+                    type: 'group',
+                    label: '安全事件',
+                    children: [
+                      { key: 'events_excel', icon: <FileExcelOutlined />, label: '安全事件 → Excel' },
+                      { key: 'events_csv',   icon: <CodeOutlined />,      label: '安全事件 → CSV' },
+                      { key: 'events_json',  icon: <CodeOutlined />,      label: '安全事件 → JSON' },
+                    ],
+                  },
+                  { type: 'divider' },
+                  {
+                    type: 'group',
+                    label: '告警数据',
+                    children: [
+                      { key: 'alerts_excel', icon: <FileExcelOutlined />, label: '告警数据 → Excel' },
+                      { key: 'alerts_csv',   icon: <CodeOutlined />,      label: '告警数据 → CSV' },
+                      { key: 'alerts_json',  icon: <CodeOutlined />,      label: '告警数据 → JSON' },
+                    ],
+                  },
+                  { type: 'divider' },
+                  {
+                    type: 'group',
+                    label: '日志数据',
+                    children: [
+                      { key: 'logs_excel', icon: <FileExcelOutlined />, label: '日志数据 → Excel' },
+                      { key: 'logs_csv',   icon: <CodeOutlined />,      label: '日志数据 → CSV' },
+                      { key: 'logs_json',  icon: <CodeOutlined />,      label: '日志数据 → JSON' },
+                    ],
+                  },
+                  { type: 'divider' },
+                  {
+                    type: 'group',
+                    label: '系统性能指标',
+                    children: [
+                      { key: 'metrics_excel', icon: <FileExcelOutlined />, label: '性能指标 → Excel' },
+                      { key: 'metrics_csv',   icon: <CodeOutlined />,      label: '性能指标 → CSV' },
+                    ],
+                  },
+                  { type: 'divider' },
+                  {
+                    type: 'group',
+                    label: 'Windows安全日志',
+                    children: [
+                      { key: 'security-logs_excel', icon: <FileExcelOutlined />, label: 'Windows日志 → Excel' },
+                      { key: 'security-logs_csv',   icon: <CodeOutlined />,      label: 'Windows日志 → CSV' },
+                    ],
+                  },
                 ],
-                onClick: ({ key }) => handleExport(key as any),
+                onClick: ({ key }) => handleExport(key),
               }}
               placement="bottomRight"
             >
               <Button 
                 icon={<ExportOutlined />}
                 shape="round"
-                size="large"
+                size="middle"
                 style={{ 
                   background: 'linear-gradient(135deg, #722ed1 0%, #531dab 100%)',
                   border: 'none',
                   color: 'white',
-                  height: '44px',
-                  padding: '0 20px'
+                  height: '36px',
+                  padding: '0 14px'
                 }}
               >
                 数据导出
@@ -145,12 +223,34 @@ const ControlBar: React.FC<ControlBarProps> = ({
             </Dropdown>
 
             <Button
+              shape="round"
+              size="middle"
+              style={{ height: '36px', padding: '0 14px' }}
+              onClick={() => {
+                window.location.hash = '/alerts';
+              }}
+            >
+              前往告警处置
+            </Button>
+
+            <Button
+              shape="round"
+              size="middle"
+              style={{ height: '36px', padding: '0 14px' }}
+              onClick={() => {
+                window.location.hash = '/events';
+              }}
+            >
+              前往事件分析
+            </Button>
+
+            <Button
               icon={<SyncOutlined spin={!connected} />}
               onClick={reconnect}
               disabled={connected}
               shape="round"
-              size="large"
-              style={{ height: '44px', padding: '0 20px' }}
+              size="middle"
+              style={{ height: '36px', padding: '0 14px' }}
             >
               重新连接
             </Button>
