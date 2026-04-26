@@ -379,7 +379,7 @@ const SystemInfoManagement: React.FC = () => {
 
   // CPU 信息
   const renderCpuInfo = () => (
-    <Card title="CPU" size="small">
+    <Card title="CPU" size="small" style={{ height: '100%', minHeight: 280 }}>
       {cpuInfo ? (
         <>
           <div style={{ textAlign: 'center', marginBottom: 12 }}>
@@ -411,7 +411,7 @@ const SystemInfoManagement: React.FC = () => {
 
   // 内存信息
   const renderMemoryInfo = () => (
-    <Card title="内存" size="small">
+    <Card title="内存" size="small" style={{ height: '100%', minHeight: 280 }}>
       {memoryInfo && memoryInfo.total > 0 ? (
         <>
           <div style={{ textAlign: 'center', marginBottom: 12 }}>
@@ -444,7 +444,7 @@ const SystemInfoManagement: React.FC = () => {
 
   // 磁盘信息
   const renderDiskInfo = () => (
-    <Card title="磁盘" size="small">
+    <Card title="磁盘" size="small" style={{ height: '100%', minHeight: 280 }}>
       {diskInfo && diskInfo.total > 0 ? (
         <>
           <div style={{ textAlign: 'center', marginBottom: 12 }}>
@@ -483,7 +483,7 @@ const SystemInfoManagement: React.FC = () => {
 
   // 系统信息
   const renderSystemInfo = () => (
-    <Card title="系统信息" size="small">
+    <Card title="系统信息" size="small" style={{ height: '100%', minHeight: 320 }}>
       {systemInfo ? (
         <Descriptions column={1} size="small">
           <Descriptions.Item label="主机名">{systemInfo.hostname}</Descriptions.Item>
@@ -514,7 +514,7 @@ const SystemInfoManagement: React.FC = () => {
       : [];
 
     return (
-      <Card title="进程信息" size="small">
+      <Card title="进程信息" size="small" style={{ height: '100%', minHeight: 320 }}>
         {processInfo ? (
           <>
             <Descriptions column={3} size="small">
@@ -585,15 +585,16 @@ const SystemInfoManagement: React.FC = () => {
         {loading.realtime && (
           <Alert message="正在刷新实时数据..." type="info" showIcon style={{ marginBottom: 16 }} />
         )}
-        <Row gutter={16} style={{ marginBottom: 16 }}>
-          <Col span={8}>{renderCpuInfo()}</Col>
-          <Col span={8}>{renderMemoryInfo()}</Col>
-          <Col span={8}>{renderDiskInfo()}</Col>
-        </Row>
-        <Row gutter={16}>
-          <Col span={12}>{renderSystemInfo()}</Col>
-          <Col span={12}>{renderProcessInfo()}</Col>
-        </Row>
+        {/* 优化布局：使用flex布局确保卡片高度一致 */}
+        <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ flex: 1 }}>{renderCpuInfo()}</div>
+          <div style={{ flex: 1 }}>{renderMemoryInfo()}</div>
+          <div style={{ flex: 1 }}>{renderDiskInfo()}</div>
+        </div>
+        <div style={{ display: 'flex', gap: '16px' }}>
+          <div style={{ flex: 1 }}>{renderSystemInfo()}</div>
+          <div style={{ flex: 1 }}>{renderProcessInfo()}</div>
+        </div>
       </Card>
 
       {/* 查询结果 */}

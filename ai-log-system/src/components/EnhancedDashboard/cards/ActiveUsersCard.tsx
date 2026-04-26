@@ -3,6 +3,7 @@ import { Card, Typography, Progress, Badge, Tooltip } from 'antd';
 import { TeamOutlined, SyncOutlined } from '@ant-design/icons';
 import { analysisApi, logApi } from '@/services/api';
 import { CardProps, formatNumber } from '../types/dashboard';
+import type { KpiData } from '../hooks/useKpiData';
 
 const { Text, Title } = Typography;
 
@@ -17,6 +18,7 @@ interface ActiveUsersData {
 interface ActiveUsersCardProps extends CardProps {
   style?: React.CSSProperties;
   loading?: boolean;
+  kpiData?: KpiData;
 }
 
 const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
@@ -26,6 +28,7 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
   compact = false,
   style,
   loading: externalLoading,
+  kpiData,
 }) => {
   const [usersData, setUsersData] = useState<ActiveUsersData>({
     activeUsers: 0,
@@ -37,6 +40,15 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
   const [internalLoading, setLoading] = useState(false);
   const loading = externalLoading !== undefined ? externalLoading : internalLoading;
   const [lastUpdated, setLastUpdated] = useState<string>('');
+
+  // 有共享kpiData时直接使用
+  const displayData = kpiData ? {
+    activeUsers: kpiData.activeUsers,
+    currentConnections: kpiData.currentConnections,
+    activeSessions: kpiData.activeSessions,
+    throughput: kpiData.throughput,
+    lastUpdate: kpiData.lastUpdate,
+  } : usersData;
 
   const loadUsersData = useCallback(async () => {
     if (isPaused) return;
@@ -74,15 +86,16 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
   }, [isPaused]);
 
   useEffect(() => {
+    if (kpiData) return; // 有共享数据时跳过独立轮询
     loadUsersData();
     
     if (autoRefresh && !isPaused) {
       const interval = setInterval(loadUsersData, refreshInterval);
       return () => clearInterval(interval);
     }
-  }, [loadUsersData, autoRefresh, refreshInterval, isPaused]);
+  }, [loadUsersData, autoRefresh, refreshInterval, isPaused, kpiData]);
 
-  const throughputPercentage = Math.min(usersData.throughput, 100);
+  const throughputPercentage = Math.min(displayData.throughput, 100);
 
   if (compact) {
     return (
@@ -125,7 +138,7 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
           <div style={{ flex: 1 }}>
             <Text strong style={{ fontSize: '14px' }}>活跃用户</Text>
             <Title level={5} style={{ margin: '4px 0 0 0', color: '#096dd9' }}>
-              {usersData.activeUsers}
+              {displayData.activeUsers}
             </Title>
           </div>
         </div>
@@ -192,7 +205,7 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
             活跃用户
           </Text>
           <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#096dd9' }}>
-            {usersData.activeUsers}
+            {displayData.activeUsers}
           </Title>
         </div>
         <div style={{
@@ -223,7 +236,7 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
           />
         </div>
         <Text strong style={{ fontSize: '16px', color: '#096dd9' }}>
-          {formatNumber(usersData.throughput, 1)}/s
+          {formatNumber(displayData.throughput, 1)}/s
         </Text>
       </div>
       
@@ -235,13 +248,13 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
         <div>
           <Text style={{ fontSize: '12px', color: '#666' }}>在线设备</Text>
           <Text strong style={{ fontSize: '16px', display: 'block' }}>
-            {usersData.currentConnections}
+            {displayData.currentConnections}
           </Text>
         </div>
         <div>
           <Text style={{ fontSize: '12px', color: '#666' }}>会话数</Text>
           <Text strong style={{ fontSize: '16px', display: 'block' }}>
-            {usersData.activeSessions}
+            {displayData.activeSessions}
           </Text>
         </div>
       </div>

@@ -735,22 +735,58 @@ const AlertsPage: React.FC = () => {
       onFilter: (value, record) => record.handled === value,
     },
     {
-      title: '关联事件',
-      key: 'unifiedEventId',
-      width: 100,
-      render: (_: any, record: SecurityAlert) => record.unifiedEventId ? (
-        <Button
-          type="link"
-          size="small"
-          style={{ padding: 0, fontSize: '12px' }}
-          onClick={(e) => {
-            e.stopPropagation();
-            window.location.hash = `/events?eventId=${record.unifiedEventId}`;
-          }}
-        >
-          事件 #{record.unifiedEventId}
-        </Button>
-      ) : <span style={{ color: '#ccc', fontSize: '12px' }}>-</span>,
+      title: '关联信息',
+      key: 'relatedInfo',
+      width: 150,
+      render: (_: any, record: SecurityAlert) => {
+        // 优先显示关联事件
+        if (record.unifiedEventId) {
+          return (
+            <Button
+              type="link"
+              size="small"
+              style={{ padding: 0, fontSize: '12px' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                window.location.hash = `/events?eventId=${record.unifiedEventId}`;
+              }}
+            >
+              事件 #{record.unifiedEventId}
+            </Button>
+          );
+        }
+
+        // 如果有指标值，显示指标信息
+        if ((record as any).metricValue && (record as any).threshold) {
+          return (
+            <Tooltip title={`当前值: ${(record as any).metricValue}%, 阈值: ${(record as any).threshold}%`}>
+              <div style={{ fontSize: '11px' }}>
+                <div>当前: {(record as any).metricValue}%</div>
+                <div style={{ color: '#999' }}>阈值: {(record as any).threshold}%</div>
+              </div>
+            </Tooltip>
+          );
+        }
+
+        // 如果有日志ID，显示日志关联
+        if (record.logEntryId) {
+          return (
+            <Button
+              type="link"
+              size="small"
+              style={{ padding: 0, fontSize: '12px' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                message.info('查看日志详情功能开发中');
+              }}
+            >
+              日志 #{record.logEntryId}
+            </Button>
+          );
+        }
+
+        return <span style={{ color: '#ccc', fontSize: '12px' }}>-</span>;
+      },
     },
   ];
 
@@ -1191,7 +1227,11 @@ const AlertsPage: React.FC = () => {
                       } 
                       image={Empty.PRESENTED_IMAGE_SIMPLE}
                       style={{ padding: '40px 0' }}
-                    /> : undefined
+                    /> : undefined,
+                  // 排序提示文本中文化
+                  triggerAsc: '点击升序',
+                  triggerDesc: '点击降序',
+                  cancelSort: '点击取消排序'
                 }}
               />
             </div>

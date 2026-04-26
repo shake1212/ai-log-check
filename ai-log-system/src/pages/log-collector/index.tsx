@@ -187,7 +187,50 @@ const LogCollectorPage: React.FC = () => {
     { title: '冷却', dataIndex: 'cooldownSeconds', width: 80, render: (s) => s ? `${Math.round(s / 60)}分钟` : '-' },
     { title: '最后执行', key: 'lastExec', render: (_, r) => {
       const last = scrtHistory.find(h => h.scriptKey === r.key);
-      return last ? <span>{dayjs(last.startedAt).format('MM-DD HH:mm')} <Tag color={last.status === 'SUCCESS' ? 'success' : 'error'}>{last.status}</Tag></span> : '-';
+      const statusColorMap: Record<string, string> = {
+        SUCCESS: 'success',
+        FAILED: 'error',
+        RUNNING: 'processing',
+        BUSY: 'warning',
+        COOLDOWN: 'default',
+      };
+
+      // 优化状态显示
+      const getStatusDisplay = () => {
+        if (!last) return '-';
+
+        const timeStr = dayjs(last.startedAt).format('MM-DD HH:mm');
+        const statusTag = <Tag color={statusColorMap[last.status] || 'default'}>{last.status}</Tag>;
+
+        // 如果是FAILED，检查是否有成功采集的提示
+        if (last.status === 'FAILED' && last.message?.includes('数据已成功采集')) {
+          return (
+            <Tooltip title={last.message}>
+              <span>
+                {timeStr}
+                <Tag color="success">采集成功</Tag>
+                <Tag color="warning">超时</Tag>
+              </span>
+            </Tooltip>
+          );
+        }
+
+        // 如果是RUNNING，显示执行中
+        if (last.status === 'RUNNING') {
+          return (
+            <Tooltip title="脚本正在执行中，请稍候...">
+              <span>
+                {timeStr}
+                <Tag color="processing">采集中</Tag>
+              </span>
+            </Tooltip>
+          );
+        }
+
+        return <span>{timeStr} {statusTag}</span>;
+      };
+
+      return getStatusDisplay();
     }},
     { title: '操作', key: 'actions', width: 80, render: (_, r) => (
       <Button type="primary" size="small" icon={<PlayCircleOutlined />} loading={runningScrtKey === r.key} disabled={!r.allowManualTrigger} onClick={() => handleRunScrt(r.key)}>执行</Button>

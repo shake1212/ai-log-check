@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Typography, Avatar, Dropdown, Badge, Button, Space, Tabs } from 'antd';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
+import { Layout, Menu, Typography, Avatar, Dropdown, Badge, Button, Space, Tabs, Spin } from 'antd';
 import { useNotification } from '../hooks/useNotification';
 import NotificationPanel from '../components/NotificationPanel';
 import {
@@ -16,13 +16,21 @@ import {
   DatabaseOutlined,
   LineChartOutlined,
 } from '@ant-design/icons';
-import EnhancedDashboard from '../components/EnhancedDashboard/EnhancedDashboard';
-import WMIManagement from '../pages/wmi/index';
-import EventsPage from '../pages/events/index';
-import LogCollectorPage from '../pages/log-collector';
-import AlertsPage from '../pages/alerts/alerts';
-import SystemPage from '../pages/system';
-import RulesPage from '../pages/rules/index';
+
+// 懒加载页面组件 - 按需加载，减少首屏JS体积
+const EnhancedDashboard = lazy(() => import('../components/EnhancedDashboard/EnhancedDashboard'));
+const WMIManagement = lazy(() => import('../pages/wmi/index'));
+const EventsPage = lazy(() => import('../pages/events/index'));
+const LogCollectorPage = lazy(() => import('../pages/log-collector'));
+const AlertsPage = lazy(() => import('../pages/alerts/alerts'));
+const SystemPage = lazy(() => import('../pages/system'));
+const RulesPage = lazy(() => import('../pages/rules/index'));
+
+const LazyFallback = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 300 }}>
+    <Spin size="large" tip="加载中..." />
+  </div>
+);
 
 const { Header, Content, Footer, Sider } = Layout;
 const { Title, Text } = Typography;
@@ -375,7 +383,9 @@ export default function DefaultLayout() {
               overflow: 'auto'
             }}
           >
-            {renderTabContent(activeTab)}
+            <Suspense fallback={<LazyFallback />}>
+              {renderTabContent(activeTab)}
+            </Suspense>
           </div>
         </Content>
         <Footer style={{ 

@@ -3,6 +3,7 @@ import { Card, Typography, Tag, Progress, Badge, Tooltip } from 'antd';
 import { FireOutlined, SyncOutlined } from '@ant-design/icons';
 import { logApi, alertApi, eventApi } from '@/services/api';
 import { CardProps, formatNumber, LEVEL_GRADIENTS } from '../types/dashboard';
+import type { KpiData } from '../hooks/useKpiData';
 
 const { Text, Title } = Typography;
 
@@ -22,6 +23,7 @@ interface SecurityEventsCardProps extends CardProps {
   style?: React.CSSProperties;
   loading?: boolean;
   hasCritical?: boolean;
+  kpiData?: KpiData;
 }
 
 const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
@@ -32,6 +34,7 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
   style,
   loading: externalLoading,
   hasCritical = false,
+  kpiData,
 }) => {
   const [eventsData, setEventsData] = useState<SecurityEventsData>({
     anomalyCount: 0,
@@ -46,6 +49,18 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
   const [internalLoading, setLoading] = useState(false);
   const loading = externalLoading !== undefined ? externalLoading : internalLoading;
   const [lastUpdated, setLastUpdated] = useState<string>('');
+
+  // 有共享kpiData时直接使用
+  const displayData = kpiData ? {
+    anomalyCount: kpiData.anomalyCount,
+    criticalCount: kpiData.criticalCount,
+    highCount: kpiData.highCount,
+    mediumCount: kpiData.mediumCount,
+    lowCount: kpiData.lowCount,
+    unhandledAlerts: kpiData.unhandledAlerts,
+    investigatingCount: kpiData.investigatingCount,
+    lastUpdate: kpiData.lastUpdate,
+  } : eventsData;
 
   const loadEventsData = useCallback(async () => {
     if (isPaused) return;
@@ -97,13 +112,14 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
   }, [isPaused]);
 
   useEffect(() => {
+    if (kpiData) return; // 有共享数据时跳过独立轮询
     loadEventsData();
     
     if (autoRefresh && !isPaused) {
       const interval = setInterval(loadEventsData, refreshInterval);
       return () => clearInterval(interval);
     }
-  }, [loadEventsData, autoRefresh, refreshInterval, isPaused]);
+  }, [loadEventsData, autoRefresh, refreshInterval, isPaused, kpiData]);
 
   if (compact) {
     return (
@@ -146,7 +162,7 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
           <div style={{ flex: 1 }}>
             <Text strong style={{ fontSize: '14px' }}>安全事件</Text>
             <Title level={5} style={{ margin: '4px 0 0 0', color: '#d46b08' }}>
-              {eventsData.anomalyCount}
+              {displayData.anomalyCount}
             </Title>
           </div>
         </div>
@@ -213,7 +229,7 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
             安全事件
           </Text>
           <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#d46b08' }}>
-            {eventsData.anomalyCount}
+            {displayData.anomalyCount}
           </Title>
         </div>
         <div style={{
@@ -238,7 +254,7 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
             textAlign: 'center'
           }}>
             <Text strong style={{ color: '#ff4d4f', fontSize: '18px' }}>
-              {eventsData.criticalCount}
+              {displayData.criticalCount}
             </Text>
             <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
               严重
@@ -251,7 +267,7 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
             textAlign: 'center'
           }}>
             <Text strong style={{ color: '#fa8c16', fontSize: '18px' }}>
-              {eventsData.highCount}
+              {displayData.highCount}
             </Text>
             <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
               高危
@@ -268,13 +284,13 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
         <div>
           <Text style={{ fontSize: '12px', color: '#666' }}>未处理</Text>
           <Text strong style={{ fontSize: '16px', display: 'block' }}>
-            {eventsData.unhandledAlerts}
+            {displayData.unhandledAlerts}
           </Text>
         </div>
         <div>
           <Text style={{ fontSize: '12px', color: '#666' }}>处理中</Text>
           <Text strong style={{ fontSize: '16px', display: 'block' }}>
-            {eventsData.investigatingCount}
+            {displayData.investigatingCount}
           </Text>
         </div>
       </div>

@@ -19,20 +19,35 @@ public class TrafficStatsService {
         try {
             TrafficStatsDTO stats = new TrafficStatsDTO();
 
+            // 优化：一次性计算所有流量数据，避免重复查询
+            LocalDateTime oneMinuteAgo = LocalDateTime.now().minusMinutes(1);
+            LocalDateTime tenSecondsAgo = LocalDateTime.now().minusSeconds(10);
+
             // 1. 正常流量 - 基于数据库统计
-            stats.setNormalTraffic(calculateNormalTraffic());
+            Long normalCount = securityLogRepository.countByThreatLevelAndEventTimeAfter("LOW", oneMinuteAgo);
+            Double normalTraffic = normalCount != null ? normalCount.doubleValue() : 0.0;
+            stats.setNormalTraffic(normalTraffic);
 
             // 2. 异常流量 - 基于异常日志统计
-            stats.setAnomalyTraffic(calculateAnomalyTraffic());
+            Long anomalyCount = securityLogRepository.countByThreatLevelInAndEventTimeAfter(
+                    java.util.Arrays.asList("MEDIUM", "HIGH", "CRITICAL"),
+                    oneMinuteAgo
+            );
+            Double anomalyTraffic = anomalyCount != null ? anomalyCount.doubleValue() : 0.0;
+            stats.setAnomalyTraffic(anomalyTraffic);
 
             // 3. 峰值流量
-            stats.setPeakTraffic(calculatePeakTraffic(stats.getNormalTraffic()));
+            stats.setPeakTraffic(normalTraffic * 1.5);
 
-            // 4. 平均延迟
-            stats.setAvgLatency(calculateAvgLatency());
+            // 4. 平均延迟 - 使用已计算的值，避免重复查询
+            double total = Math.max(1.0, normalTraffic + anomalyTraffic);
+            double anomalyRatio = anomalyTraffic / total;
+            stats.setAvgLatency(40.0 + anomalyRatio * 260.0);
 
             // 5. 当前流量
-            stats.setCurrentTraffic(calculateCurrentTraffic());
+            Long recentCount = securityLogRepository.countByEventTimeAfter(tenSecondsAgo);
+            Double currentTraffic = recentCount != null ? recentCount.doubleValue() * 6 : 0.0;
+            stats.setCurrentTraffic(currentTraffic);
 
             return stats;
 

@@ -121,6 +121,13 @@ public interface AlertRepository extends JpaRepository<Alert, Long>, JpaSpecific
             "ORDER BY HOUR(a.createdTime) ASC")
     List<Object[]> getLast24HoursHourlyCounts(@Param("twentyFourHoursAgo") LocalDateTime twentyFourHoursAgo);
 
+    // 查询统一事件关联的安全日志ID
+    @Query(value = "SELECT security_log_id FROM unified_security_events WHERE id = :unifiedEventId", nativeQuery = true)
+    List<Object[]> findSecurityLogIdByUnifiedEventId(@Param("unifiedEventId") Long unifiedEventId);
+
+    // 查询指定时间之前的告警（用于数据清理）
+    List<Alert> findByCreatedTimeBefore(LocalDateTime time);
+
     // 获取用于Dashboard的告警统计
     default java.util.Map<String, Object> getDashboardStatistics() {
         java.util.Map<String, Object> stats = new java.util.HashMap<>();

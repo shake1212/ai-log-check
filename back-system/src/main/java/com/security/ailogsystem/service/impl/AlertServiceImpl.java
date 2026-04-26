@@ -70,6 +70,26 @@ public class AlertServiceImpl implements AlertService {
             } catch (IllegalArgumentException e) {
                 secAlert.setAlertLevel(com.security.ailogsystem.entity.SecurityAlert.AlertLevel.MEDIUM);
             }
+
+            // 设置事件关联 - 如果有unifiedEventId，查询并关联SecurityLog
+            if (request.getUnifiedEventId() != null) {
+                try {
+                    // 查询unified_security_events表获取对应的security_log_id
+                    Long securityLogId = getSecurityLogIdByUnifiedEventId(request.getUnifiedEventId());
+                    if (securityLogId != null) {
+                        com.security.ailogsystem.entity.SecurityLog securityLog =
+                            securityAlertRepository.findSecurityLogById(securityLogId);
+                        if (securityLog != null) {
+                            secAlert.setSecurityLog(securityLog);
+                            log.info("告警关联到安全日志: alertId={}, logId={}",
+                                request.getAlertId(), securityLogId);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("关联安全日志失败: {}", e.getMessage());
+                }
+            }
+
             securityAlertRepository.save(secAlert);
         } catch (Exception e) {
             log.warn("同步写入 SecurityAlert 失败: {}", e.getMessage());
@@ -88,7 +108,21 @@ public class AlertServiceImpl implements AlertService {
     @Override
     public Page<AlertResponse> getAllAlerts(Pageable pageable) {
         Page<Alert> alerts = alertRepository.findAll(pageable);
-        return alerts.map(AlertResponse::fromEntity);
+        return alerts.map(alert -> {
+            AlertResponse response = AlertResponse.fromEntity(alert);
+            // 从SecurityAlert表补充metricValue和threshold
+            try {
+                com.security.ailogsystem.entity.SecurityAlert secAlert =
+                    securityAlertRepository.findById(alert.getId()).orElse(null);
+                if (secAlert != null) {
+                    response.setMetricValue(secAlert.getMetricValue());
+                    response.setThreshold(secAlert.getThreshold());
+                }
+            } catch (Exception e) {
+                log.debug("补充告警指标信息失败: {}", e.getMessage());
+            }
+            return response;
+        });
     }
 
     @Override
@@ -108,7 +142,21 @@ public class AlertServiceImpl implements AlertService {
                                             Boolean handled, Alert.AlertStatus status,
                                             Pageable pageable) {
         Page<Alert> alerts = alertRepository.searchAlerts(keyword, alertLevel, alertType, handled, status, pageable);
-        return alerts.map(AlertResponse::fromEntity);
+        return alerts.map(alert -> {
+            AlertResponse response = AlertResponse.fromEntity(alert);
+            // 从SecurityAlert表补充metricValue和threshold
+            try {
+                com.security.ailogsystem.entity.SecurityAlert secAlert =
+                    securityAlertRepository.findById(alert.getId()).orElse(null);
+                if (secAlert != null) {
+                    response.setMetricValue(secAlert.getMetricValue());
+                    response.setThreshold(secAlert.getThreshold());
+                }
+            } catch (Exception e) {
+                log.debug("补充告警指标信息失败: {}", e.getMessage());
+            }
+            return response;
+        });
     }
 
     @Override
@@ -274,24 +322,41 @@ public class AlertServiceImpl implements AlertService {
             return false;
         }
     }
-    
+
     @Override
     @Transactional
     public boolean resolveAlert(Long id) {
         try {
-            com.security.ailogsystem.entity.SecurityAlert alert = 
+            com.security.ailogsystem.entity.SecurityAlert alert =
                 securityAlertRepository.findById(id)
                     .orElseThrow(() -> new RuntimeException("告警不存在: " + id));
-            
+
             // 标记为已解决
             alert.setHandled(true);
             securityAlertRepository.save(alert);
-            
+
             log.info("告警已解决: ID={}", id);
             return true;
         } catch (Exception e) {
             log.error("解决告警失败: ID={}", id, e);
             return false;
         }
+    }
+
+    /**
+     * 根据统一事件ID查询关联的安全日志ID
+     */
+    private Long getSecurityLogIdByUnifiedEventId(Long unifiedEventId) {
+        try {
+            // 通过JPA查询unified_security_events表
+            String sql = "SELECT security_log_id FROM unified_security_events WHERE id = ?";
+            java.util.List<Object[]> results = alertRepository.findSecurityLogIdByUnifiedEventId(unifiedEventId);
+            if (!results.isEmpty() && results.get(0)[0] != null) {
+                return ((Number) results.get(0)[0]).longValue();
+            }
+        } catch (Exception e) {
+            log.warn("查询安全日志ID失败: unifiedEventId={}, error={}", unifiedEventId, e.getMessage());
+        }
+        return null;
     }
 }

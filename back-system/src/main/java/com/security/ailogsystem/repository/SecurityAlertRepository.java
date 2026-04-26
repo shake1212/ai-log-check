@@ -93,4 +93,8 @@ public interface SecurityAlertRepository extends JpaRepository<SecurityAlert, Lo
     default SecurityAlert getById(Long id) {
         return findById(id).orElse(null);
     }
+
+    // 查询SecurityLog实体
+    @Query("SELECT sl FROM SecurityLog sl WHERE sl.id = :id")
+    com.security.ailogsystem.entity.SecurityLog findSecurityLogById(@Param("id") Long id);
 }

@@ -3,6 +3,7 @@ package com.security.ailogsystem.service;
 import com.security.ailogsystem.repository.SecurityAlertRepository;
 import com.security.ailogsystem.repository.SecurityLogRepository;
 import com.security.ailogsystem.repository.UnifiedEventRepository;
+import com.security.ailogsystem.repository.AlertRepository;
 import com.security.ailogsystem.service.LogCollectorConfigService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,7 @@ public class MetricsRetentionScheduler {
     private final SecurityLogRepository securityLogRepository;
     private final UnifiedEventRepository unifiedEventRepository;
     private final LogCollectorConfigService logCollectorConfigService;
+    private final AlertRepository alertRepository;
 
     @Value("${log-collector.metrics.retention-days:30}")
     private int defaultRetentionDays;
@@ -84,6 +86,20 @@ public class MetricsRetentionScheduler {
         } catch (Exception e) {
             log.error("Failed to cleanup unified security events", e);
         }
+
+        // 5. 清理 alerts 表 (新告警表)
+        try {
+            List<com.security.ailogsystem.model.Alert> oldAlerts =
+                    alertRepository.findByCreatedTimeBefore(cutoff);
+            if (!oldAlerts.isEmpty()) {
+                alertRepository.deleteAll(oldAlerts);
+                log.info("Cleaned up {} old alerts records", oldAlerts.size());
+            }
+        } catch (Exception e) {
+            log.error("Failed to cleanup alerts", e);
+        }
+
+        log.info("Data cleanup completed successfully");
     }
 
     /**

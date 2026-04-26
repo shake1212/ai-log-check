@@ -1,6 +1,7 @@
 """
 integrated_security_alert_collector.py
-安全日志与告警集成收集器 - Python �?功能：自动收集系统安全日志、性能指标，并自动创建告警
+安全日志与告警集成收集器 - Python 端
+功能：自动收集系统安全日志、性能指标，并自动创建告警
 """
 
 import logging
@@ -38,12 +39,13 @@ logger = logging.getLogger("SecurityAlertCollector")
 try:
     from rule_engine_integration import RuleEngineClient
     RULE_ENGINE_AVAILABLE = True
-    logger.info("规则引擎集成模块已加�?)
+    logger.info("规则引擎集成模块已加载")
 except ImportError:
     RULE_ENGINE_AVAILABLE = False
     logger.warning("规则引擎集成模块未找到，规则引擎功能将被禁用")
 
-# 配置�?@dataclass
+# 配置类
+@dataclass
 class CollectorConfig:
     # Java 后端地址
     java_backend_url: str = "http://localhost:8080"
@@ -51,15 +53,18 @@ class CollectorConfig:
     # 收集间隔（分钟）
     security_collection_interval: int = 5      # 安全日志收集间隔
     performance_collection_interval: int = 2   # 性能数据收集间隔
-    alert_check_interval: int = 1              # 告警检查间隔（分钟�?
+    alert_check_interval: int = 1              # 告警检查间隔（分钟）
+
     # 自动告警配置
     auto_create_alerts: bool = True
-    alert_min_severity: str = "MEDIUM"  # 最低告警级�?
+    alert_min_severity: str = "MEDIUM"  # 最低告警级别
+
     # 网络配置
     request_timeout: int = 30
     max_retries: int = 3
 
-    # 性能阈�?    cpu_critical_threshold: float = 90.0
+    # 性能阈值
+    cpu_critical_threshold: float = 90.0
     cpu_high_threshold: float = 80.0
     memory_critical_threshold: float = 95.0
     memory_high_threshold: float = 90.0
@@ -70,19 +75,16 @@ class CollectorConfig:
     max_processes_to_check: int = 100
     suspicious_process_keywords: List[str] = None
 
-    # AI 异常检测配�?    enable_ai: bool = True
+    # AI 异常检测配置
+    enable_ai: bool = True
     ai_service_url: str = "http://localhost:5001/predict"
     ai_timeout: int = 5
     ai_max_workers: int = 10
 
     # 规则引擎配置
     enable_rule_engine: bool = True      # 是否启用规则引擎分析
-    rule_engine_timeout: int = 10        # 规则引擎分析超时时间（秒�?
+    rule_engine_timeout: int = 10        # 规则引擎分析超时时间（秒）
 
-    # ����Դ���ˣ����Ժ�����ã�None ��ʾ�ɼ�ȫ����
-    data_sources: List[str] = None
-    retention_days: int = 7
-    error_rate_threshold: float = 5.0
     def __post_init__(self):
         if self.suspicious_process_keywords is None:
             self.suspicious_process_keywords = [
@@ -94,7 +96,7 @@ class CollectorConfig:
                 "xmr", "xmrig", "ccminer", "cpuminer"
             ]
 
-# ==================== 枚举和常�?====================
+# ==================== 枚举和常量 ====================
 
 class AlertLevel(Enum):
     LOW = "LOW"
@@ -144,7 +146,8 @@ class SecurityEvent:
     normalized_message: str = ""
     is_anomaly: bool = False
 
-    # 可选字�?    host_name: str = None
+    # 可选字段
+    host_name: str = None
     user_id: str = None
     source_ip: str = None
     destination_ip: str = None
@@ -159,13 +162,14 @@ class SecurityEvent:
     source_port: int = None
     event_sub_type: str = None
 
-    # 异常检测相关字�?    anomaly_score: float = 0.0
+    # 异常检测相关字段
+    anomaly_score: float = 0.0
     anomaly_reason: str = None
     threat_level: str = None
     detection_algorithm: str = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字�?""
+        """转换为字典"""
         result = asdict(self)
         for key, value in result.items():
             if value is None:
@@ -198,7 +202,7 @@ class PerformanceMetrics:
     uptime: int  # seconds
 
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字�?""
+        """转换为字典"""
         return asdict(self)
 
 @dataclass
@@ -224,7 +228,7 @@ class AlertData:
     port: int = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字�?""
+        """转换为字典"""
         result = asdict(self)
         return {k: v for k, v in result.items() if v is not None}
 
@@ -245,10 +249,14 @@ class ProcessInfo:
     suspicious_reason: str = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字�?""
+        """转换为字典"""
         result = asdict(self)
         if result['cmdline']:
-            result['cmdline'] = ' '.join(result['cmdline'])
+            if isinstance(result["cmdline"], (list, tuple)):
+                result["cmdline"] = " ".join(result["cmdline"])
+            else:
+                # 如果不是列表，直接转为字符串
+                result["cmdline"] = str(result["cmdline"])
         return result
 
 class AIClient:
@@ -289,7 +297,9 @@ class AIClient:
 
 class IntegratedSecurityAlertCollector:
     """
-    集成的安全日志与告警收集�?    功能�?    1. 收集系统安全日志
+    集成的安全日志与告警收集器
+    功能：
+    1. 收集系统安全日志
     2. 收集性能指标
     3. 自动创建告警
     4. 发送数据到Java后端
@@ -298,7 +308,8 @@ class IntegratedSecurityAlertCollector:
         self.config = config or CollectorConfig()
         self.session = requests.Session()
 
-        # 初始�?AI 客户�?        self.ai_client = None
+        # 初始化 AI 客户端
+        self.ai_client = None
         if self.config.enable_ai:
             try:
                 self.ai_client = AIClient(
@@ -311,9 +322,10 @@ class IntegratedSecurityAlertCollector:
                 logger.warning(f"AI客户端初始化失败: {e}")
                 self.ai_client = None
         else:
-            logger.info("AI分析已禁用（配置�?)
+            logger.info("AI分析已禁用（配置）")
 
-        # 获取主机�?        try:
+        # 获取主机名
+        try:
             raw_host = platform.node() or socket.gethostname() or "unknown-host"
             if any(ord(c) > 127 for c in raw_host):
                 self.collector_host = "unknown-host"
@@ -325,7 +337,8 @@ class IntegratedSecurityAlertCollector:
         # 生成collector_id
         self.collector_id = f"collector_{hashlib.md5(self.collector_host.encode()).hexdigest()[:8]}"
 
-        # 配置请求�?        self.session.headers.update({
+        # 配置请求头
+        self.session.headers.update({
             'Content-Type': 'application/json',
             'User-Agent': 'SecurityAlertCollector/2.0',
             'X-Collector-ID': self.collector_id
@@ -360,19 +373,19 @@ class IntegratedSecurityAlertCollector:
                     timeout=self.config.rule_engine_timeout,
                     enabled=True
                 )
-                logger.info("规则引擎客户端已初始�?)
+                logger.info("规则引擎客户端已初始化")
             except Exception as e:
                 logger.warning(f"规则引擎客户端初始化失败: {e}")
                 self.rule_engine_client = None
         else:
             if not RULE_ENGINE_AVAILABLE:
-                logger.info("规则引擎模块不可�?)
+                logger.info("规则引擎模块不可用")
             elif not self.config.enable_rule_engine:
-                logger.info("规则引擎已禁用（配置�?)
+                logger.info("规则引擎已禁用（配置）")
 
         logger.info(f"初始化安全告警收集器: {self.collector_host} (ID: {self.collector_id})")
         logger.info(f"Java后端地址: {self.config.java_backend_url}")
-        logger.info(f"规则引擎状�? {'启用' if self.rule_engine_client else '禁用'}")
+        logger.info(f"规则引擎状态: {'启用' if self.rule_engine_client else '禁用'}")
 
     # ==================== 配置管理 ====================
     def load_config_from_backend(self) -> bool:
@@ -390,7 +403,7 @@ class IntegratedSecurityAlertCollector:
 
                 if 'interval' in config_data:
                     self.config.security_collection_interval = config_data['interval'] // 60
-                    logger.info(f"采集间隔更新�? {self.config.security_collection_interval}分钟")
+                    logger.info(f"采集间隔更新为: {self.config.security_collection_interval}分钟")
 
                 if 'cpuThreshold' in config_data:
                     self.config.cpu_high_threshold = float(config_data['cpuThreshold'])
@@ -399,23 +412,6 @@ class IntegratedSecurityAlertCollector:
                 if 'diskThreshold' in config_data:
                     self.config.disk_high_threshold = float(config_data['diskThreshold'])
 
-
-                # ��ȡ����Դ����
-                if 'dataSources' in config_data and isinstance(config_data['dataSources'], list):
-                    self.config.data_sources = config_data['dataSources']
-                    logger.info(f"����Դ����Ϊ: {self.config.data_sources}")
-
-                # ��ȡ���ݱ�������
-                if 'retentionDays' in config_data:
-                    self.config.retention_days = int(config_data['retentionDays'])
-                    logger.info(f"���ݱ�����������Ϊ: {self.config.retention_days}��")
-
-                # ��ȡ��������ֵ
-                if 'alertThresholds' in config_data and isinstance(config_data['alertThresholds'], dict):
-                    err = config_data['alertThresholds'].get('errorRate')
-                    if err is not None:
-                        self.config.error_rate_threshold = float(err)
-                        logger.info(f"��������ֵ����Ϊ: {self.config.error_rate_threshold}%")
                 enable_rule_engine = config_data.get('enableRuleEngine', True)
                 rule_engine_timeout = config_data.get('ruleEngineTimeout', 10)
 
@@ -439,16 +435,16 @@ class IntegratedSecurityAlertCollector:
                     else:
                         self.rule_engine_client = None
                         if not RULE_ENGINE_AVAILABLE:
-                            logger.warning("规则引擎模块不可�?)
+                            logger.warning("规则引擎模块不可用")
                         else:
-                            logger.info("规则引擎已禁用（配置�?)
+                            logger.info("规则引擎已禁用（配置）")
                 return True
             else:
                 logger.warning(f"加载配置失败，状态码: {response.status_code}")
                 return False
 
         except Exception as e:
-            logger.error(f"从后端加载配置失�? {e}")
+            logger.error(f"从后端加载配置失败: {e}")
             return False
 
     # ==================== 公共方法 ====================
@@ -458,19 +454,19 @@ class IntegratedSecurityAlertCollector:
         try:
             self.load_config_from_backend()
             self._start_timed_collectors()
-            logger.info("所有收集器已启�?)
+            logger.info("所有收集器已启动")
             return True
         except Exception as e:
-            logger.error(f"启动收集器失�? {e}")
+            logger.error(f"启动收集器失败: {e}")
             return False
 
     def test_java_backend(self) -> bool:
-        logger.info("Java后端连接测试：跳过检查（已修�?00错误�?)
+        logger.info("Java后端连接测试：跳过检查（已修复500错误）")
         return True
 
     def collect_all_data(self) -> Dict[str, Any]:
         """收集所有数据：安全事件、性能指标、并创建告警"""
-        logger.info("开始收集所有数�?..")
+        logger.info("开始收集所有数据...")
         all_data = {
             'timestamp': datetime.now().isoformat(),
             'collector_id': self.collector_id,
@@ -493,19 +489,19 @@ class IntegratedSecurityAlertCollector:
 
             if security_events:
                 success = self.send_security_events(security_events)
-                logger.info(f"安全事件发送结�? {'成功' if success else '失败'}")
+                logger.info(f"安全事件发送结果: {'成功' if success else '失败'}")
 
             if self.config.auto_create_alerts:
                 alerts_created = self.auto_create_alerts(security_events, performance_data, process_info)
                 all_data['alerts_created'] = alerts_created
-                logger.info(f"自动创建�?{alerts_created} 个告�?)
+                logger.info(f"自动创建了 {alerts_created} 个告警")
 
             self.stats['total_events_collected'] += len(security_events)
             self.stats['last_collection_time'] = datetime.now()
-            logger.info(f"数据收集完成: {len(security_events)}个安全事�?)
+            logger.info(f"数据收集完成: {len(security_events)}个安全事件")
 
         except Exception as e:
-            logger.error(f"收集所有数据失�? {e}", exc_info=True)   # 添加 exc_info=True
+            logger.error(f"收集所有数据失败: {e}", exc_info=True)   # 添加 exc_info=True
             all_data['error'] = str(e)
             self.stats['errors'].append({
                 'time': datetime.now().isoformat(),
@@ -515,46 +511,31 @@ class IntegratedSecurityAlertCollector:
 
     # ==================== 安全日志收集 ====================
     def collect_security_logs(self) -> List[Dict[str, Any]]:
-        """收集所有安全相关日�?""
-        logger.info("开始收集安全日�?..")
+        """收集所有安全相关日志"""
+        logger.info("开始收集安全日志...")
         security_events = []
 
+        try:
+            if platform.system() == "Windows":
+                events = self.collect_windows_security_events()
+            else:
+                events = self.collect_unix_security_events()
 
+            network_events = self.collect_network_security_events()
+            process_events = self.collect_process_security_events()
+
+            security_events.extend(events)
+            security_events.extend(network_events)
+            security_events.extend(process_events)
 
             status_event = self._create_collector_status_event(len(security_events))
             security_events.append(status_event)
 
             if self.rule_engine_client:
-                logger.info(f"开始规则引擎分�?{len(security_events)} 个事�?..")
+                logger.info(f"开始规则引擎分析 {len(security_events)} 个事件...")
                 analyzed_events = []
                 for event in security_events:
                     try:
-            # ���� data_sources ���þ����ɼ���Щ����Դ��None ��ʾȫ���ɼ���
-            ds = self.config.data_sources
-            collect_win_events = ds is None or any(s in ds for s in ['security', 'system', 'application'])
-            collect_network    = ds is None or 'network' in ds
-            collect_process    = ds is None or 'process' in ds
-
-            if collect_win_events:
-                if platform.system() == "Windows":
-                    events = self.collect_windows_security_events()
-                else:
-                    events = self.collect_unix_security_events()
-                security_events.extend(events)
-            else:
-                logger.info("����Դ��������Windows/Unix��ȫ�¼��ɼ�")
-
-            if collect_network:
-                network_events = self.collect_network_security_events()
-                security_events.extend(network_events)
-            else:
-                logger.info("����Դ�����������簲ȫ�¼��ɼ�")
-
-            if collect_process:
-                process_events = self.collect_process_security_events()
-                security_events.extend(process_events)
-            else:
-                logger.info("����Դ�����������̰�ȫ�¼��ɼ�")
                         analyzed_event = self.rule_engine_client.analyze_event(event)
                         analyzed_events.append(analyzed_event)
                         self.stats['rule_engine_analyzed'] += 1
@@ -567,7 +548,7 @@ class IntegratedSecurityAlertCollector:
                 security_events = analyzed_events
                 logger.info(f"规则引擎分析完成: 分析={self.stats['rule_engine_analyzed']}, 匹配={self.stats['rule_engine_matched']}, 失败={self.stats['rule_engine_failures']}")
 
-            logger.info(f"安全日志收集完成，共收集 {len(security_events)} 个安全事�?)
+            logger.info(f"安全日志收集完成，共收集 {len(security_events)} 个安全事件")
 
         except Exception as e:
             logger.error(f"安全日志收集失败: {e}")
@@ -575,7 +556,7 @@ class IntegratedSecurityAlertCollector:
             security_events.append(error_event)
 
         if self.ai_client:
-            logger.info(f"开始AI分析 {len(security_events)} 个事�?..")
+            logger.info(f"开始AI分析 {len(security_events)} 个事件...")
             for event in security_events:
                 self.ai_client.analyze_async(event, callback=self._update_event_with_ai)
             self.ai_client.wait_all()
@@ -584,17 +565,8 @@ class IntegratedSecurityAlertCollector:
         return security_events
 
     def collect_windows_security_events(self) -> List[Dict[str, Any]]:
-        """收集Windows安全事件日志（需要管理员权限）"""
+        """收集Windows安全事件日志"""
         events = []
-        # 检查是否有管理员权限
-        try:
-            import ctypes
-            if not ctypes.windll.shell32.IsUserAnAdmin():
-                logger.warning("当前进程无管理员权限，跳过Windows安全事件日志采集。"
-                               "请以管理员身份运行脚本以启用此功能。")
-                return events
-        except Exception:
-            pass  # 非Windows环境，继续执行
         try:
             logger.debug("收集Windows安全事件日志...")
             security_event_ids = [
@@ -606,10 +578,8 @@ class IntegratedSecurityAlertCollector:
                 4803, 5376, 5377
             ]
             event_ids_str = ",".join(map(str, security_event_ids))
-            # ���ݲɼ������̬�����ѯ���ڣ�����©�ɻ��ظ��ɼ�
-            interval_min = self.config.security_collection_interval
-            hours_back = max(0.1, (interval_min + 1) / 60.0)  # ��1���ӻ����©��
-            max_events = 200 if interval_min <= 3 else 500  # �̼�����ٵ��β�ѯ��
+            hours_back = 0.5
+            max_events = 500
 
             powershell_cmd = f"""
             $StartTime = (Get-Date).AddHours(-{hours_back})
@@ -641,7 +611,7 @@ class IntegratedSecurityAlertCollector:
                         parsed_event = self._parse_windows_security_event(events_data)
                         if parsed_event:
                             events.append(parsed_event)
-                    logger.info(f"收集�?{len(events)} 个Windows安全事件")
+                    logger.info(f"收集到 {len(events)} 个Windows安全事件")
                 except json.JSONDecodeError as e:
                     logger.error(f"解析Windows事件JSON失败: {e}")
         except Exception as e:
@@ -685,7 +655,7 @@ class IntegratedSecurityAlertCollector:
                     continue
                 except Exception as e:
                     logger.warning(f"读取安全日志文件 {log_file} 失败: {e}")
-            logger.info(f"收集�?{len(events)} 个Unix安全事件")
+            logger.info(f"收集到 {len(events)} 个Unix安全事件")
         except Exception as e:
             logger.error(f"收集Unix安全事件失败: {e}")
         return events
@@ -708,7 +678,7 @@ class IntegratedSecurityAlertCollector:
             events.extend(interface_events)
             events.extend(firewall_events)
             events.extend(anomaly_events)
-            logger.info(f"收集�?{len(events)} 个网络安全事�?)
+            logger.info(f"收集到 {len(events)} 个网络安全事件")
         except Exception as e:
             logger.error(f"收集网络安全事件失败: {e}")
         return events
@@ -734,7 +704,7 @@ class IntegratedSecurityAlertCollector:
                         events.append(event)
             anomaly_events = self._detect_process_anomalies(processes)
             events.extend(anomaly_events)
-            logger.info(f"收集�?{len(events)} 个进程安全事�?)
+            logger.info(f"收集到 {len(events)} 个进程安全事件")
         except Exception as e:
             logger.error(f"收集进程安全事件失败: {e}")
         return events
@@ -824,7 +794,7 @@ class IntegratedSecurityAlertCollector:
 
             processes.sort(key=lambda x: x.get('cpu_percent', 0), reverse=True)
             processes = processes[:self.config.max_processes_to_check]
-            logger.debug(f"收集�?{len(processes)} 个进程信�?)
+            logger.debug(f"收集到 {len(processes)} 个进程信息")
         except Exception as e:
             logger.error(f"收集进程信息失败: {e}")
         return processes
@@ -834,7 +804,7 @@ class IntegratedSecurityAlertCollector:
         """自动创建告警"""
         if not self.config.auto_create_alerts:
             return 0
-        logger.debug("开始自动创建告�?..")
+        logger.debug("开始自动创建告警...")
         alerts_created = 0
         try:
             alerts_to_create = []
@@ -861,13 +831,13 @@ class IntegratedSecurityAlertCollector:
 
             self._cleanup_alert_cache()
             self.stats['total_alerts_created'] += alerts_created
-            logger.info(f"自动创建�?{alerts_created} 个告�?)
+            logger.info(f"自动创建了 {alerts_created} 个告警")
         except Exception as e:
             logger.error(f"自动创建告警失败: {e}")
         return alerts_created
 
     def _create_alert_from_security_event(self, event: Dict) -> Optional[Dict]:
-        """从安全事件创建告�?""
+        """从安全事件创建告警"""
         try:
             event_type = event.get('event_type', '')
             severity = event.get('severity', 'INFO')
@@ -896,9 +866,12 @@ class IntegratedSecurityAlertCollector:
                 ip_address=event.get('source_ip') or event.get('destination_ip'),
                 port=event.get('destination_port')
             )
-            return alert.to_dict()
+            alert_dict = alert.to_dict()
+            # 添加事件关联ID（用于关联到数据库）
+            alert_dict['unified_event_id'] = event.get('database_id')  # 数据库中的事件ID
+            return alert_dict
         except Exception as e:
-            logger.warning(f"从安全事件创建告警失�? {e}")
+            logger.warning(f"从安全事件创建告警失败: {e}")
             return None
 
     def _create_alerts_from_performance_data(self, performance_data: Dict) -> List[Dict]:
@@ -910,36 +883,25 @@ class IntegratedSecurityAlertCollector:
             disk = performance_data.get('disk_usage', 0)
 
             if cpu >= self.config.cpu_critical_threshold:
-                alerts.append(self._create_performance_alert('CPU_USAGE_CRITICAL', 'CRITICAL', f"CPU使用率严重过�? {cpu:.1f}%", cpu))
+                alerts.append(self._create_performance_alert('CPU_USAGE_CRITICAL', 'CRITICAL', f"CPU使用率严重过高: {cpu:.1f}%", cpu))
             elif cpu >= self.config.cpu_high_threshold:
-                alerts.append(self._create_performance_alert('CPU_USAGE_HIGH', 'HIGH', f"CPU使用率过�? {cpu:.1f}%", cpu))
+                alerts.append(self._create_performance_alert('CPU_USAGE_HIGH', 'HIGH', f"CPU使用率过高: {cpu:.1f}%", cpu))
 
             if mem >= self.config.memory_critical_threshold:
-                alerts.append(self._create_performance_alert('MEMORY_USAGE_CRITICAL', 'CRITICAL', f"内存使用率严重过�? {mem:.1f}%", mem))
+                alerts.append(self._create_performance_alert('MEMORY_USAGE_CRITICAL', 'CRITICAL', f"内存使用率严重过高: {mem:.1f}%", mem))
             elif mem >= self.config.memory_high_threshold:
-                alerts.append(self._create_performance_alert('MEMORY_USAGE_HIGH', 'HIGH', f"内存使用率过�? {mem:.1f}%", mem))
+                alerts.append(self._create_performance_alert('MEMORY_USAGE_HIGH', 'HIGH', f"内存使用率过高: {mem:.1f}%", mem))
 
             if disk >= self.config.disk_critical_threshold:
-                alerts.append(self._create_performance_alert('DISK_USAGE_CRITICAL', 'CRITICAL', f"磁盘使用率严重过�? {disk:.1f}%", disk))
+                alerts.append(self._create_performance_alert('DISK_USAGE_CRITICAL', 'CRITICAL', f"磁盘使用率严重过高: {disk:.1f}%", disk))
             elif disk >= self.config.disk_high_threshold:
-                alerts.append(self._create_performance_alert('DISK_USAGE_HIGH', 'HIGH', f"磁盘使用率过�? {disk:.1f}%", disk))
+                alerts.append(self._create_performance_alert('DISK_USAGE_HIGH', 'HIGH', f"磁盘使用率过高: {disk:.1f}%", disk))
         except Exception as e:
             logger.warning(f"从性能数据创建告警失败: {e}")
-            # �����ʸ澯�����ڲɼ�ʧ�ܴ������ܴ���֮�ȣ�
-            total = self.stats.get('total_events_collected', 0)
-            errors = len(self.stats.get('errors', []))
-            if total > 0:
-                error_rate = (errors / total) * 100
-                if error_rate >= self.config.error_rate_threshold:
-                    alerts.append(self._create_performance_alert(
-                        'ERROR_RATE_HIGH', 'HIGH',
-                        f"�ɼ������ʹ���: {error_rate:.1f}% (��ֵ: {self.config.error_rate_threshold}%)",
-                        error_rate
-                    ))
         return alerts
 
     def _create_alerts_from_process_info(self, process_info: List[Dict]) -> List[Dict]:
-        """从进程信息创建告�?""
+        """从进程信息创建告警"""
         alerts = []
         try:
             for proc in process_info:
@@ -950,9 +912,9 @@ class IntegratedSecurityAlertCollector:
                 if cpu > 70 or mem > 50:
                     alerts.append(self._create_process_alert('HIGH_RESOURCE_PROCESS', 'MEDIUM', f"进程资源占用过高: {proc.get('name')} (CPU: {cpu:.1f}%, 内存: {mem:.1f}%)", proc))
                 if proc.get('username') in ['root', 'SYSTEM', 'Administrator']:
-                    alerts.append(self._create_process_alert('PRIVILEGED_PROCESS', 'MEDIUM', f"高权限进�? {proc.get('name')} (用户: {proc.get('username')})", proc))
+                    alerts.append(self._create_process_alert('PRIVILEGED_PROCESS', 'MEDIUM', f"高权限进程: {proc.get('name')} (用户: {proc.get('username')})", proc))
         except Exception as e:
-            logger.warning(f"从进程信息创建告警失�? {e}")
+            logger.warning(f"从进程信息创建告警失败: {e}")
         return alerts
 
     def _create_system_anomaly_alerts(self, security_events: List[Dict], performance_data: Dict) -> List[Dict]:
@@ -961,19 +923,26 @@ class IntegratedSecurityAlertCollector:
         try:
             recent_events = [e for e in security_events if datetime.fromisoformat(e.get('timestamp', '').replace('Z', '')) > datetime.now() - timedelta(minutes=5)]
             if len(recent_events) > 100:
-                alerts.append(self._create_system_alert('EVENT_STORM', 'HIGH', f"检测到事件风暴: 5分钟�?{len(recent_events)} 个事�?, {'event_count': len(recent_events)}))
+                alerts.append(self._create_system_alert('EVENT_STORM', 'HIGH', f"检测到事件风暴: 5分钟内 {len(recent_events)} 个事件", {'event_count': len(recent_events)}))
 
             load = performance_data.get('system_load', 0)
             cores = psutil.cpu_count()
             if load > cores * 2:
-                alerts.append(self._create_system_alert('HIGH_SYSTEM_LOAD', 'HIGH', f"系统负载异常�? {load:.2f} (CPU核心: {cores})", {'load': load, 'cpu_cores': cores}))
+                alerts.append(self._create_system_alert('HIGH_SYSTEM_LOAD', 'HIGH', f"系统负载异常高: {load:.2f} (CPU核心: {cores})", {'load': load, 'cpu_cores': cores}))
         except Exception as e:
             logger.warning(f"创建系统异常告警失败: {e}")
         return alerts
 
     def _create_performance_alert(self, alert_type: str, level: str, description: str, value: float) -> Dict:
         alert_id = f"PERF_{alert_type}_{int(time.time())}"
-        return AlertData(
+        # 确定阈值
+        threshold = self.config.cpu_critical_threshold if 'CRITICAL' in alert_type else self.config.cpu_high_threshold
+        if 'MEMORY' in alert_type:
+            threshold = self.config.memory_critical_threshold if 'CRITICAL' in alert_type else self.config.memory_high_threshold
+        elif 'DISK' in alert_type:
+            threshold = self.config.disk_critical_threshold if 'CRITICAL' in alert_type else self.config.disk_high_threshold
+
+        alert_dict = AlertData(
             alert_id=alert_id,
             timestamp=datetime.now().isoformat(),
             source='PERFORMANCE_MONITOR',
@@ -984,6 +953,10 @@ class IntegratedSecurityAlertCollector:
             handled=False,
             status='PENDING'
         ).to_dict()
+        # 添加指标值和阈值
+        alert_dict['metric_value'] = value
+        alert_dict['threshold'] = threshold
+        return alert_dict
 
     def _create_process_alert(self, alert_type: str, level: str, description: str, process_info: Dict) -> Dict:
         alert_id = f"PROC_{alert_type}_{process_info.get('pid', 0)}_{int(time.time())}"
@@ -1034,7 +1007,7 @@ class IntegratedSecurityAlertCollector:
             event['combined_score'] = max(rule_score, score)
         else:
             event['combined_score'] = score
-        logger.debug(f"�?AI分析完成：分�?{score:.4f}, 是否异常={is_anomaly}")
+        logger.debug(f"✅ AI分析完成：分数={score:.4f}, 是否异常={is_anomaly}")
 
     # ==================== 内部工具方法 ====================
     def _get_network_connections(self) -> List[Dict]:
@@ -1055,7 +1028,7 @@ class IntegratedSecurityAlertCollector:
                         try:
                             proc = psutil.Process(conn.pid)
                             conn_info['process_name'] = proc.name()
-                        except Exception:
+                        except:
                             conn_info['process_name'] = 'unknown'
                     connections.append(conn_info)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -1076,7 +1049,7 @@ class IntegratedSecurityAlertCollector:
                             source_system="NETWORK",
                             event_type="NETWORK_INTERFACE",
                             category="NETWORK_INFO",
-                            severity="LOW",
+                            severity="INFO",
                             normalized_message=f"网络接口: {interface} - {addr.address}",
                             event_data={"interface": interface, "ip_address": addr.address, "collectorHost": self.collector_host},
                             threat_level="INFO",
@@ -1098,10 +1071,10 @@ class IntegratedSecurityAlertCollector:
                         source_system="SECURITY",
                         event_type="FIREWALL_STATUS",
                         category="NETWORK_SECURITY",
-                        severity="LOW",
+                        severity="INFO",
                         normalized_message="Windows防火墙状态检查",
                         event_data={"collectorHost": self.collector_host},
-                        threat_level="LOW",
+                        threat_level="INFO",
                         anomaly_score=0.0
                     )
                     events.append(event.to_dict())
@@ -1115,10 +1088,10 @@ class IntegratedSecurityAlertCollector:
                                 source_system="SECURITY",
                                 event_type="FIREWALL_STATUS",
                                 category="NETWORK_SECURITY",
-                                severity="LOW",
+                                severity="INFO",
                                 normalized_message=f"防火墙规则检查: {' '.join(cmd)}",
                                 event_data={"collectorHost": self.collector_host},
-                                threat_level="LOW",
+                                threat_level="INFO",
                                 anomaly_score=0.0
                             )
                             events.append(event.to_dict())
@@ -1126,7 +1099,7 @@ class IntegratedSecurityAlertCollector:
                     except FileNotFoundError:
                         continue
         except Exception as e:
-            logger.warning(f"收集防火墙信息失�? {e}")
+            logger.warning(f"收集防火墙信息失败: {e}")
         return events
 
     def _detect_network_anomalies(self, connections: List[Dict]) -> List[Dict]:
@@ -1149,7 +1122,7 @@ class IntegratedSecurityAlertCollector:
                         event_type="HIGH_PORT_CONNECTIONS",
                         category="NETWORK_ANOMALY",
                         severity="MEDIUM",
-                        normalized_message=f"端口 {port} 连接数异�? {cnt} �?,
+                        normalized_message=f"端口 {port} 连接数异常: {cnt} 个",
                         threat_level="MEDIUM",
                         anomaly_score=0.6
                     ).to_dict())
@@ -1161,12 +1134,12 @@ class IntegratedSecurityAlertCollector:
                         event_type="HIGH_IP_CONNECTIONS",
                         category="NETWORK_ANOMALY",
                         severity="MEDIUM",
-                        normalized_message=f"IP {ip} 连接数异�? {cnt} �?,
+                        normalized_message=f"IP {ip} 连接数异常: {cnt} 个",
                         threat_level="MEDIUM",
                         anomaly_score=0.6
                     ).to_dict())
         except Exception as e:
-            logger.warning(f"检测网络异常失�? {e}")
+            logger.warning(f"检测网络异常失败: {e}")
         return events
 
     def _get_process_connections(self, pid: int) -> List[Dict]:
@@ -1179,14 +1152,14 @@ class IntegratedSecurityAlertCollector:
                     'remote': f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else None,
                     'status': conn.status
                 })
-        except Exception as e:
-            logger.debug("获取进程连接失败 pid=%s: %s", pid, e)
+        except:
+            pass
         return connections
 
     def _is_suspicious_process(self, proc_info: Dict) -> bool:
         name = proc_info.get('name', '').lower()
         exe = proc_info.get('exe', '').lower()
-        cmd = ' '.join(proc_info.get('cmdline', [])).lower()
+        cmd = ' '.join(proc_info.get('cmdline', []) or []).lower()
         for kw in self.config.suspicious_process_keywords:
             if kw in name or kw in exe or kw in cmd:
                 return True
@@ -1201,19 +1174,19 @@ class IntegratedSecurityAlertCollector:
         reasons = []
         name = proc_info.get('name', '').lower()
         exe = proc_info.get('exe', '').lower()
-        cmd = ' '.join(proc_info.get('cmdline', [])).lower()
+        cmd = ' '.join(proc_info.get('cmdline', []) or []).lower()
         for kw in self.config.suspicious_process_keywords:
             if kw in name:
-                reasons.append(f"名称�?{kw}")
+                reasons.append(f"名称含:{kw}")
             if kw in exe:
-                reasons.append(f"路径�?{kw}")
+                reasons.append(f"路径含:{kw}")
             if kw in cmd:
-                reasons.append(f"参数�?{kw}")
+                reasons.append(f"参数含:{kw}")
         for p in SUSPICIOUS_PATHS:
             if p.lower() in exe:
                 reasons.append(f"可疑路径:{p}")
         if not exe:
-            reasons.append("无执行路�?)
+            reasons.append("无执行路径")
         return '; '.join(reasons) if reasons else "未知可疑"
 
     def _detect_process_anomalies(self, processes: List[Dict]) -> List[Dict]:
@@ -1231,12 +1204,12 @@ class IntegratedSecurityAlertCollector:
                         event_type="DUPLICATE_PROCESSES",
                         category="PROCESS_ANOMALY",
                         severity="MEDIUM",
-                        normalized_message=f"{name} 多开: {cnt} �?,
+                        normalized_message=f"{name} 多开: {cnt} 个",
                         threat_level="MEDIUM",
                         anomaly_score=0.5
                     ).to_dict())
-        except Exception as e:
-            logger.debug("进程多开异常检测失�? %s", e)
+        except:
+            pass
         return events
 
     def _get_process_network_info(self, process_info: Dict) -> Optional[str]:
@@ -1245,8 +1218,8 @@ class IntegratedSecurityAlertCollector:
             for c in proc.connections():
                 if c.raddr:
                     return c.raddr.ip
-        except Exception as e:
-            logger.debug("获取进程远端 IP 失败: %s", e)
+        except:
+            pass
         return None
 
     def _is_suspicious_connection(self, conn_info: Dict) -> bool:
@@ -1256,14 +1229,14 @@ class IntegratedSecurityAlertCollector:
                 if port in SUSPICIOUS_PORTS:
                     return True
             return False
-        except (ValueError, IndexError, TypeError, AttributeError):
+        except:
             return False
 
     def _is_private_ip(self, ip: str) -> bool:
         try:
             parts = list(map(int, ip.split('.')))
             return parts[0] == 10 or (parts[0] == 172 and 16 <= parts[1] <= 31) or (parts[0] == 192 and parts[1] == 168) or parts[0] == 127
-        except (ValueError, TypeError, IndexError):
+        except:
             return False
 
     # ==================== 解析方法 ====================
@@ -1288,8 +1261,7 @@ class IntegratedSecurityAlertCollector:
                 anomaly_score=self._calculate_windows_anomaly_score(eid, msg)
             )
             return se.to_dict()
-        except Exception as e:
-            logger.debug("解析 Windows 安全事件失败: %s", e)
+        except:
             return None
 
     def _parse_unix_security_log(self, line: str, log_file: str) -> Optional[Dict]:
@@ -1308,8 +1280,7 @@ class IntegratedSecurityAlertCollector:
                 anomaly_score=self._calculate_unix_anomaly_score(line)
             )
             return se.to_dict()
-        except Exception as e:
-            logger.debug("解析 Unix 安全日志行失�? %s", e)
+        except:
             return None
 
     def _parse_network_connection(self, conn: Dict) -> Optional[Dict]:
@@ -1318,7 +1289,7 @@ class IntegratedSecurityAlertCollector:
             se = SecurityEvent(
                 timestamp=datetime.now().isoformat(),
                 source_system="NETWORK",
-                event_type="SUSPICIOUS_ACTIVITY" if is_susp else "NETWORK_CONNECTION",
+                event_type="SUSPICIOUS_CONNECTION" if is_susp else "NETWORK_CONNECTION",
                 category="NETWORK_SECURITY",
                 severity="HIGH" if is_susp else "INFO",
                 raw_message=str(conn),
@@ -1326,15 +1297,14 @@ class IntegratedSecurityAlertCollector:
                 anomaly_score=0.8 if is_susp else 0.1
             )
             return se.to_dict()
-        except Exception as e:
-            logger.debug("解析网络连接事件失败: %s", e)
+        except:
             return None
 
     def _create_suspicious_process_event(self, proc: Dict) -> Optional[Dict]:
         return SecurityEvent(
             timestamp=datetime.now().isoformat(),
             source_system="SYSTEM",
-            event_type="SUSPICIOUS_ACTIVITY",
+            event_type="SUSPICIOUS_PROCESS",
             category="PROCESS_SECURITY",
             severity="HIGH",
             process_id=proc['pid'],
@@ -1348,12 +1318,12 @@ class IntegratedSecurityAlertCollector:
         return SecurityEvent(
             timestamp=datetime.now().isoformat(),
             source_system="SYSTEM",
-            event_type="PRIVILEGE_ESCALATION",
+            event_type="PRIVILEGED_PROCESS",
             category="PROCESS_SECURITY",
             severity="MEDIUM",
             process_id=proc['pid'],
             process_name=proc['name'],
-            normalized_message=f"高权�?{proc['name']}",
+            normalized_message=f"高权限:{proc['name']}",
             threat_level="MEDIUM",
             anomaly_score=0.4
         ).to_dict()
@@ -1369,7 +1339,7 @@ class IntegratedSecurityAlertCollector:
             severity="MEDIUM" if cpu > 70 or mem > 50 else "LOW",
             process_id=proc['pid'],
             process_name=proc['name'],
-            normalized_message=f"高资�?{proc['name']} CPU:{cpu:.1f}%",
+            normalized_message=f"高资源:{proc['name']} CPU:{cpu:.1f}%",
             anomaly_score=0.3
         ).to_dict()
 
@@ -1379,7 +1349,7 @@ class IntegratedSecurityAlertCollector:
             source_system="COLLECTOR",
             event_type="COLLECTOR_STATUS",
             category="SYSTEM",
-            severity="LOW",
+            severity="INFO",
             normalized_message=f"收集器状态：{cnt} 事件",
             anomaly_score=0.0
         ).to_dict()
@@ -1390,108 +1360,39 @@ class IntegratedSecurityAlertCollector:
             source_system="COLLECTOR",
             event_type="COLLECTOR_ERROR",
             category="SYSTEM",
-            severity="HIGH",
+            severity="ERROR",
             normalized_message=f"{collector} 错误：{err}",
             anomaly_score=0.0
         ).to_dict()
 
     # ==================== 映射方法 ====================
     def _map_windows_event_id(self, eid: int) -> str:
-        m = {
-            # 登录/注销
-            4624: "LOGIN_SUCCESS",
-            4625: "LOGIN_FAILURE",
-            4634: "LOGOUT",
-            4647: "LOGOUT",
-            4648: "LOGIN_SUCCESS",       # 显式凭据登录
-            4778: "LOGIN_SUCCESS",       # 会话重连
-            4779: "LOGOUT",              # 会话断开
-            # 权限/特权
-            4672: "PRIVILEGE_ESCALATION",
-            4673: "PRIVILEGE_ESCALATION",
-            4674: "PRIVILEGE_ESCALATION",
-            4697: "PRIVILEGE_ESCALATION",  # 安装服务
-            4719: "SECURITY_POLICY_CHANGE",
-            4739: "SECURITY_POLICY_CHANGE",
-            # 账户管理
-            4720: "CONFIGURATION_CHANGE",  # 创建用户
-            4722: "CONFIGURATION_CHANGE",  # 启用账户
-            4723: "CONFIGURATION_CHANGE",  # 修改密码
-            4724: "CONFIGURATION_CHANGE",  # 重置密码
-            4725: "CONFIGURATION_CHANGE",  # 禁用账户
-            4726: "CONFIGURATION_CHANGE",  # 删除账户
-            4728: "CONFIGURATION_CHANGE",  # 添加组成员
-            4732: "CONFIGURATION_CHANGE",  # 添加本地组成员
-            4740: "LOGIN_FAILURE",          # 账户锁定
-            # 进程
-            4688: "PROCESS_CREATION",
-            4689: "PROCESS_TERMINATION",
-            # 服务
-            7034: "SERVICE_STOP",
-            7035: "SERVICE_START",
-            7036: "SERVICE_START",
-            7045: "SERVICE_START",          # 安装新服务
-            # 文件/对象访问
-            4663: "FILE_ACCESS",
-            4656: "FILE_ACCESS",
-            4660: "FILE_ACCESS",
-            # 网络/防火墙
-            5156: "NETWORK_CONNECTION",
-            5157: "NETWORK_CONNECTION",
-            5158: "NETWORK_CONNECTION",
-            # 审计策略
-            4907: "SECURITY_POLICY_CHANGE",
-            4904: "SECURITY_POLICY_CHANGE",
-            4905: "SECURITY_POLICY_CHANGE",
-        }
+        m = {4624: "LOGON_SUCCESS", 4625: "LOGON_FAILED", 4688: "PROCESS_CREATION"}
         return m.get(eid, f"WIN_{eid}")
 
     def _map_windows_severity(self, level, eid) -> str:
-        # 基于事件ID的安全严重程度分级
-        critical_eids = {4625, 4724, 4740, 4648, 4697, 4698, 4719, 4739}  # 登录失败、密码重置、账户锁定、特权操作、计划任务、策略变更
-        high_eids = {4688, 4672, 4728, 4732, 4756, 4768, 4769, 4776}       # 进程创建、特权分配、组成员变更、Kerberos
-        medium_eids = {4634, 4647, 4778, 4779, 4800, 4801}                  # 注销、工作站锁定/解锁
-        if eid in critical_eids:
+        crit = {4625, 4724, 4740}
+        if eid in crit:
             return "CRITICAL"
-        if eid in high_eids or level == "Error":
-            return "HIGH"
-        if eid in medium_eids or level == "Warning":
-            return "MEDIUM"
-        return "LOW"
+        return "ERROR" if level == "Error" else "WARN" if level == "Warning" else "INFO"
 
     def _map_severity_to_alert_level(self, s: str) -> str:
-        m = {"CRITICAL": "CRITICAL", "HIGH": "HIGH", "MEDIUM": "MEDIUM", "LOW": "LOW"}
+        m = {"CRITICAL": "CRITICAL", "ERROR": "HIGH", "WARN": "MEDIUM", "INFO": "LOW"}
         return m.get(s.upper(), "MEDIUM")
 
     def _detect_unix_event_type(self, line: str) -> str:
         l = line.lower()
-        if "failed password" in l or "authentication failure" in l or "invalid user" in l:
-            return "LOGIN_FAILURE"
-        if "accepted password" in l or "accepted publickey" in l or "session opened" in l:
-            return "LOGIN_SUCCESS"
-        if "session closed" in l or "logout" in l:
-            return "LOGOUT"
+        if "failed password" in l:
+            return "LOGIN_FAILED"
         if "sudo" in l:
-            return "PRIVILEGE_ESCALATION"
-        if "permission denied" in l or "access denied" in l:
-            return "PERMISSION_DENIED"
-        if "started" in l and ("service" in l or "daemon" in l):
-            return "SERVICE_START"
-        if "stopped" in l and ("service" in l or "daemon" in l):
-            return "SERVICE_STOP"
-        if "useradd" in l or "userdel" in l or "usermod" in l or "passwd" in l:
-            return "CONFIGURATION_CHANGE"
-        return "SUSPICIOUS_ACTIVITY"
+            return "SUDO_USAGE"
+        return "UNIX_EVENT"
 
     def _detect_unix_severity(self, line: str) -> str:
         l = line.lower()
-        if any(w in l for w in ["attack", "intrusion", "breach", "exploit"]):
-            return "CRITICAL"
-        if any(w in l for w in ["failed", "denied", "unauthorized", "invalid"]):
-            return "HIGH"
-        if any(w in l for w in ["warning", "sudo", "su:"]):
-            return "MEDIUM"
-        return "LOW"
+        if any(w in l for w in ["failed", "denied"]):
+            return "ERROR"
+        return "INFO"
 
     def _extract_ip_from_message(self, msg: str) -> Optional[str]:
         match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', msg)
@@ -1499,7 +1400,7 @@ class IntegratedSecurityAlertCollector:
 
     # ==================== 评分 ====================
     def _calculate_threat_level(self, eid, sev):
-        return "HIGH" if sev in ["CRITICAL", "HIGH"] else "MEDIUM"
+        return "HIGH" if sev in ["CRITICAL", "ERROR"] else "MEDIUM"
 
     def _calculate_unix_threat_level(self, line):
         return "HIGH" if "attack" in line.lower() else "MEDIUM"
@@ -1511,77 +1412,44 @@ class IntegratedSecurityAlertCollector:
         return 0.7 if "failed" in line.lower() else 0.2
 
     def _calculate_event_confidence(self, e):
-        sev = e.get('severity', '')
-        return 0.95 if sev in ("CRITICAL", "HIGH") else 0.7
+        return 0.95 if e.get('severity') == "CRITICAL" else 0.7
 
     def _calculate_performance_confidence(self, v, lvl):
         return 0.95 if lvl == "CRITICAL" else 0.85
 
-    # ==================== 发�?====================
-    @staticmethod
-    def _safe_int(value):
-        """安全转换为整数，失败返回None"""
-        if value is None or value == "" or value == 0:
-            return None
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            return None
-
+    # ==================== 发送 ====================
     def send_security_events(self, events):
         if not events:
             return True
         try:
             url = f"{self.config.java_backend_url}/api/events/batch"
-            full_events = []
+            # 只发送核心必要字段，忽略可能引起验证失败的字段
+            core_events = []
             for event in events:
-                e = {
-                    # 必填字段
-                    "timestamp":          event.get("timestamp"),
-                    "sourceSystem":       event.get("source_system"),
-                    "eventType":          event.get("event_type"),
-                    "category":           event.get("category"),
-                    "severity":           event.get("severity"),
-                    # 消息
-                    "rawMessage":         event.get("raw_message"),
-                    "normalizedMessage":  event.get("normalized_message"),
-                    # 主机
-                    "hostName":           event.get("host_name"),
-                    "hostIp":             event.get("host_ip"),
-                    # 用户
-                    "userId":             event.get("user_id"),
-                    "userName":           event.get("user_name"),
-                    "sessionId":          event.get("session_id"),
-                    # 进程
-                    "processName":        event.get("process_name"),
-                    "processId":          self._safe_int(event.get("process_id")),
-                    "threadId":           self._safe_int(event.get("thread_id")),
-                    # 网络
-                    "sourceIp":           event.get("source_ip"),
-                    "sourcePort":         self._safe_int(event.get("source_port")),
-                    "destinationIp":      event.get("destination_ip"),
-                    "destinationPort":    self._safe_int(event.get("destination_port")),
-                    "protocol":           event.get("protocol"),
-                    # 事件分类
-                    "eventSubType":       event.get("event_sub_type"),
-                    "threatLevel":        event.get("threat_level"),
-                    # 异常检测
-                    "isAnomaly":          bool(event.get("is_anomaly", False)),
-                    "anomalyScore":       float(event.get("anomaly_score", 0.0)),
-                    "anomalyReason":      event.get("anomaly_reason"),
-                    "detectionAlgorithm": event.get("detection_algorithm"),
-                    # AI 分析
-                    "aiAnomalyScore":     float(event.get("ai_anomaly_score", 0.0)),
-                    "aiIsAnomaly":        bool(event.get("ai_is_anomaly", False)),
-                    "combinedScore":      float(event.get("combined_score", 0.0)),
-                    # 原始数据
-                    "rawData":            event.get("raw_data"),
+                core = {
+                    "timestamp": event.get("timestamp"),
+                    "sourceSystem": event.get("source_system"),
+                    "eventType": event.get("event_type"),
+                    "category": event.get("category"),
+                    "severity": event.get("severity"),
+                    "normalizedMessage": event.get("normalized_message"),
+                    # AI 分析相关字段（可选但建议保留）
+                    "anomalyScore": float(event.get("anomaly_score", 0.0)),
+                    "aiAnomalyScore": float(event.get("ai_anomaly_score", 0.0)),
+                    "aiIsAnomaly": bool(event.get("ai_is_anomaly", False)),
+                    # 如果需要告警关联，可以保留 processId 等，但要确保类型正确
+                    # "processId": int(event["process_id"]) if event.get("process_id") not in (None, "") else None,
                 }
-                # 移除 None 值，避免后端验证失败
-                e = {k: v for k, v in e.items() if v is not None}
-                full_events.append(e)
+                # 移除 None 值
+                core = {k: v for k, v in core.items() if v is not None}
+                # 确保数字类型正确
+                if "anomalyScore" in core:
+                    core["anomalyScore"] = float(core["anomalyScore"])
+                if "aiAnomalyScore" in core:
+                    core["aiAnomalyScore"] = float(core["aiAnomalyScore"])
+                core_events.append(core)
 
-            response = self.session.post(url, json=full_events, timeout=self.config.request_timeout)
+            response = self.session.post(url, json=core_events, timeout=self.config.request_timeout)
             if response.status_code in (200, 201):
                 logger.info(f"成功发送 {len(events)} 个安全事件")
                 return True
@@ -1607,13 +1475,18 @@ class IntegratedSecurityAlertCollector:
                 "eventId": alert.get("event_id"),
                 "processId": alert.get("process_id"),
                 "ipAddress": alert.get("ip_address"),
-                "port": alert.get("port")
+                "port": alert.get("port"),
+                # 添加事件关联字段
+                "unifiedEventId": alert.get("unified_event_id"),
+                "logEntryId": alert.get("log_entry_id"),
+                "metricValue": alert.get("metric_value"),
+                "threshold": alert.get("threshold")
             }
             j_alert = {k: v for k, v in j_alert.items() if v is not None}
             resp = self.session.post(url, json=j_alert, timeout=self.config.request_timeout)
             return resp.status_code in (200, 201)
         except Exception as e:
-            logger.error(f"发送告警失�? {e}")
+            logger.error(f"发送告警失败: {e}")
             return False
 
     # ==================== 告警判断 ====================
@@ -1628,8 +1501,7 @@ class IntegratedSecurityAlertCollector:
             if key in self.alert_cache:
                 return False
             return True
-        except Exception as e:
-            logger.debug("告警去重判断失败，允许创�? %s", e)
+        except:
             return True
 
     def _generate_alert_key(self, alert):
@@ -1668,8 +1540,8 @@ class IntegratedSecurityAlertCollector:
                     for a in self._create_alerts_from_performance_data(d):
                         if self._should_create_alert(a):
                             self.send_alert_to_java(a)
-            except Exception as e:
-                logger.error("性能采集循环失败: %s", e, exc_info=True)
+            except:
+                pass
             time.sleep(self.config.performance_collection_interval * 60)
 
     def _run_alert_checker(self):
@@ -1682,19 +1554,17 @@ class IntegratedSecurityAlertCollector:
         try:
             issues = []
             if psutil.cpu_percent(1) > self.config.cpu_high_threshold:
-                issues.append("CPU�?)
+                issues.append("CPU高")
             if psutil.virtual_memory().percent > self.config.memory_high_threshold:
-                issues.append("内存�?)
+                issues.append("内存高")
             return {'has_issues': len(issues) > 0, 'issues': issues}
-        except Exception as e:
-            logger.debug("快速系统检查失�? %s", e)
+        except:
             return {'has_issues': False}
 
     def _safe_json_dumps(self, d):
         try:
             return json.dumps(d, ensure_ascii=False)
-        except (TypeError, ValueError) as e:
-            logger.debug("JSON 序列化失败，回退�?str: %s", e)
+        except:
             return str(d)
 
     def get_stats(self):
@@ -1703,26 +1573,23 @@ class IntegratedSecurityAlertCollector:
         return s
 
     def stop(self):
-        logger.info("收集器停�?)
+        logger.info("收集器停止")
 
-# ==================== 主函�?====================
+# ==================== 主函数 ====================
 def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--java-url', default='http://localhost:8080')
     parser.add_argument('--interval', type=int, default=5)
-    parser.add_argument('--once', action='store_true', help='单次采集后退出（供Java定时调度使用）')
-    parser.add_argument('--test', action='store_true', help='同 --once，兼容旧用法')
+    parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
 
     config = CollectorConfig(java_backend_url=args.java_url, security_collection_interval=args.interval)
     c = IntegratedSecurityAlertCollector(config)
 
-    if args.once or args.test:
-        logger.info("单次采集模式，采集完成后退出")
-        c.load_config_from_backend()
+    if args.test:
+        print("测试运行一次...")
         c.collect_all_data()
-        logger.info("单次采集完成")
         return
 
     c.start_all_collectors()

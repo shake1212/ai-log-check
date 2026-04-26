@@ -3,6 +3,7 @@ import { Card, Progress, Typography, Badge, Tooltip } from 'antd';
 import { CheckCircleOutlined, SyncOutlined } from '@ant-design/icons';
 import { analysisApi, eventApi } from '@/services/api';
 import { CardProps, formatPercentage, formatTime, LEVEL_GRADIENTS } from '../types/dashboard';
+import type { KpiData } from '../hooks/useKpiData';
 
 const { Text, Title } = Typography;
 
@@ -16,6 +17,7 @@ interface SystemMetrics {
 interface SystemHealthCardProps extends CardProps {
   style?: React.CSSProperties;
   loading?: boolean;
+  kpiData?: KpiData;
 }
 
 const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
@@ -25,6 +27,7 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
   compact = false,
   style,
   loading: externalLoading,
+  kpiData,
 }) => {
   const [metrics, setMetrics] = useState<SystemMetrics>({
     systemHealth: 0,
@@ -35,6 +38,15 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
   const [internalLoading, setLoading] = useState(false);
   const loading = externalLoading !== undefined ? externalLoading : internalLoading;
   const [lastUpdated, setLastUpdated] = useState<string>('');
+
+  // 有共享kpiData时直接使用，否则用本地state
+  const displayMetrics = kpiData ? {
+    systemHealth: kpiData.systemHealth,
+    uptime: kpiData.uptime,
+    latency: kpiData.latency,
+    lastUpdate: kpiData.lastUpdate,
+  } : metrics;
+  const displayLastUpdated = kpiData ? kpiData.lastUpdate : lastUpdated;
 
   const loadHealthData = useCallback(async () => {
     if (isPaused) return;
@@ -68,16 +80,17 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
   }, [isPaused]);
 
   useEffect(() => {
+    if (kpiData) return; // 有共享数据时跳过独立轮询
     loadHealthData();
     
     if (autoRefresh && !isPaused) {
       const interval = setInterval(loadHealthData, refreshInterval);
       return () => clearInterval(interval);
     }
-  }, [loadHealthData, autoRefresh, refreshInterval, isPaused]);
+  }, [loadHealthData, autoRefresh, refreshInterval, isPaused, kpiData]);
 
-  const systemHealthStatus = metrics.systemHealth >= 90 ? 'healthy' : 
-                            metrics.systemHealth >= 70 ? 'warning' : 'critical';
+  const systemHealthStatus = displayMetrics.systemHealth >= 90 ? 'healthy' : 
+                            displayMetrics.systemHealth >= 70 ? 'warning' : 'critical';
   
   const healthConfig = {
     healthy: {
@@ -141,14 +154,14 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
             <Text strong style={{ fontSize: '14px' }}>系统健康度</Text>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
               <Progress 
-                percent={metrics.systemHealth}
+                percent={displayMetrics.systemHealth}
                 strokeColor={config.color}
                 size="small"
                 showInfo={false}
                 style={{ flex: 1 }}
               />
               <Text strong style={{ fontSize: '14px', color: config.color, minWidth: '40px' }}>
-                {formatPercentage(metrics.systemHealth, 0)}
+                {formatPercentage(displayMetrics.systemHealth, 0)}
               </Text>
             </div>
           </div>
@@ -202,7 +215,7 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
         fontSize: '11px', 
         color: '#999' 
       }}>
-        {lastUpdated}
+        {displayLastUpdated}
       </div>
 
       <div style={{ 
@@ -222,7 +235,7 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
             />
           </Text>
           <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px' }}>
-            {formatPercentage(metrics.systemHealth, 0)}
+            {formatPercentage(displayMetrics.systemHealth, 0)}
           </Title>
         </div>
         <div style={{
@@ -239,7 +252,7 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
       </div>
       
       <Progress 
-        percent={metrics.systemHealth}
+        percent={displayMetrics.systemHealth}
         strokeColor={config.color}
         strokeWidth={6}
         style={{ margin: '12px 0' }}
@@ -253,13 +266,13 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
         <div>
           <Text style={{ fontSize: '12px', color: '#666' }}>正常运行</Text>
           <Text strong style={{ fontSize: '16px', display: 'block' }}>
-            {formatPercentage(metrics.uptime, 1)}
+            {formatPercentage(displayMetrics.uptime, 1)}
           </Text>
         </div>
         <div>
           <Text style={{ fontSize: '12px', color: '#666' }}>响应时间</Text>
           <Text strong style={{ fontSize: '16px', display: 'block' }}>
-            {formatTime(metrics.latency)}
+            {formatTime(displayMetrics.latency)}
           </Text>
         </div>
       </div>

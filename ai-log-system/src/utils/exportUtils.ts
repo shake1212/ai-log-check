@@ -1,14 +1,12 @@
-import * as XLSX from 'xlsx';
-
-// 安装xlsx依赖
-// pnpm add xlsx
+// xlsx 仅在导出Excel时动态加载，避免首屏加载300+KB
 
 export interface ExportData {
   [key: string]: any;
 }
 
-export const exportToExcel = (data: ExportData[], filename: string = 'data.xlsx') => {
+export const exportToExcel = async (data: ExportData[], filename: string = 'data.xlsx') => {
   try {
+    const XLSX = await import('xlsx');
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');

@@ -3,7 +3,7 @@ import axios from 'axios';
 // 创建 axios 实例
 const request = axios.create({
   baseURL: '',
-  timeout: 10000,
+  timeout: 30000, // 增加超时时间到30秒
 });
 
 // 请求拦截器

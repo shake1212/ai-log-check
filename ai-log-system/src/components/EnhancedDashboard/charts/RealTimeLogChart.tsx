@@ -83,42 +83,72 @@ const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
   });
 
   const dataRef = useRef(chartData);
+  const lastFetchTimeRef = useRef<number>(0);
+  const cacheRef = useRef<any>(null);
+
   const loadChartData = useCallback(async () => {
     if (isPaused) {
       console.log('图表更新已暂停');
       return;
     }
-    
-    setChartLoading(true);
-    setError(null);
-    
-    try {
-      const traffic = await analysisApi.getTrafficStats();
-      const now = Date.now();
+
+    // 检查缓存：如果距离上次请求不到5秒，使用缓存数据
+    const now = Date.now();
+    const timeSinceLastFetch = now - lastFetchTimeRef.current;
+    if (timeSinceLastFetch < 5000 && cacheRef.current) {
+      console.log('使用缓存数据');
+      const traffic = cacheRef.current;
       const currentData = dataRef.current || [];
       const updatedData = [...currentData, {
         time: now,
         value: Number(traffic.currentTraffic || 0),
         type: Number(traffic.anomalyTraffic || 0) > 0 ? 'anomaly' : 'normal'
       }].slice(-100);
-      
+
       setChartData(updatedData);
       dataRef.current = updatedData;
-      
+      return;
+    }
+
+    setChartLoading(true);
+    setError(null);
+
+    try {
+      const traffic = await analysisApi.getTrafficStats();
+
+      // 更新缓存
+      cacheRef.current = traffic;
+      lastFetchTimeRef.current = now;
+
+      const currentData = dataRef.current || [];
+      const updatedData = [...currentData, {
+        time: now,
+        value: Number(traffic.currentTraffic || 0),
+        type: Number(traffic.anomalyTraffic || 0) > 0 ? 'anomaly' : 'normal'
+      }].slice(-100);
+
+      setChartData(updatedData);
+      dataRef.current = updatedData;
+
       setTrafficStats({
         normalTraffic: Number(traffic.normalTraffic || 0),
         anomalyTraffic: Number(traffic.anomalyTraffic || 0),
         peakTraffic: Number(traffic.peakTraffic || 0),
         avgLatency: Number(traffic.avgLatency || 0)
       });
-      
+
     } catch (error) {
       console.error('加载图表数据失败:', error);
-      setError(`数据加载失败: ${(error as Error).message || '未知错误'}`);
+      // 只在首次加载失败时显示错误，后续失败使用旧数据
+      if (chartData.length === 0) {
+        setError(`数据加载失败: ${(error as Error).message || '未知错误'}`);
+      } else {
+        console.warn('使用旧数据继续显示');
+      }
     } finally {
       setChartLoading(false);
     }
-  }, [isPaused]);
+  }, [isPaused, chartData.length]);
 
   useEffect(() => {
     // 立即加载一次数据

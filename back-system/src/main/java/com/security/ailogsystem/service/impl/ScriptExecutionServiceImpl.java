@@ -199,12 +199,39 @@ public class ScriptExecutionServiceImpl implements ScriptExecutionService {
             record.setFinishedAt(LocalDateTime.now());
             record.setExitCode(exitCode);
             record.setOutputSnippet(truncateOutput(output));
-            boolean success = exitCode == 0;
-            record.setStatus(success ? ScriptStatus.SUCCESS : ScriptStatus.FAILED);
-            record.setMessage(success ? "脚本执行成功" : "脚本执行失败");
 
-            log.info("脚本 {} 执行完成，退出码: {}", definition.getName(), exitCode);
-            if (success) {
+            // 优化状态判断逻辑
+            ScriptStatus finalStatus;
+            String finalMessage;
+
+            if (finished && exitCode == 0) {
+                // 正常完成且退出码为0
+                finalStatus = ScriptStatus.SUCCESS;
+                finalMessage = "脚本执行成功";
+            } else if (!finished) {
+                // 超时但可能已采集数据
+                // 检查输出中是否有成功标志
+                if (output.contains("安全日志收集完成") ||
+                    output.contains("规则引擎分析完成") ||
+                    output.contains("收集到") && output.contains("个")) {
+                    finalStatus = ScriptStatus.SUCCESS;
+                    finalMessage = "脚本执行超时，但数据已成功采集";
+                    log.info("脚本 {} 虽然超时，但从输出判断数据采集成功", definition.getName());
+                } else {
+                    finalStatus = ScriptStatus.FAILED;
+                    finalMessage = "脚本执行超时，未检测到成功标志";
+                }
+            } else {
+                // 正常完成但退出码非0
+                finalStatus = ScriptStatus.FAILED;
+                finalMessage = "脚本执行失败，退出码: " + exitCode;
+            }
+
+            record.setStatus(finalStatus);
+            record.setMessage(finalMessage);
+
+            log.info("脚本 {} 执行完成，退出码: {}, 状态: {}", definition.getName(), exitCode, finalStatus);
+            if (finalStatus == ScriptStatus.SUCCESS) {
                 processScriptOutput(definition, record, output);
             } else {
                 publishScriptEvent(definition, record, output, true);

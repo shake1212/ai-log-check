@@ -735,57 +735,51 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
       title: '时间',
       dataIndex: 'timestamp',
       key: 'timestamp',
-      width: 180,
+      width: 140,
+      fixed: 'left',
       render: (text) => text ? (
         <div>
           <div style={{ fontSize: '12px', fontWeight: 500 }}>
-            {dayjs(text).format('YYYY-MM-DD')}
+            {dayjs(text).format('MM-DD HH:mm')}
           </div>
-          <div style={{ fontSize: '11px', color: '#666' }}>
-            {dayjs(text).format('HH:mm:ss')}
+          <div style={{ fontSize: '10px', color: '#999' }}>
+            {dayjs(text).format('ss')}s
           </div>
         </div>
       ) : '-'
     },
     {
-      title: '事件类型',
+      title: '类型',
       dataIndex: 'eventType',
       key: 'eventType',
-      width: 150,
+      width: 120,
       render: (text) => (
-        <Tag color="blue" style={{ fontWeight: 500, padding: '2px 8px' }}>
-          {translate(EVENT_TYPE_MAP, text) || getDisplayText(text)}
-        </Tag>
+        <Tooltip title={translate(EVENT_TYPE_MAP, text) || getDisplayText(text)}>
+          <Tag color="blue" style={{ fontWeight: 500, padding: '2px 6px', fontSize: '11px' }}>
+            {getDisplayText(translate(EVENT_TYPE_MAP, text) || text, 10)}
+          </Tag>
+        </Tooltip>
       )
     },
     {
-      title: '严重程度',
+      title: '级别',
       dataIndex: 'severity',
       key: 'severity',
-      width: 120,
+      width: 80,
       render: (severity) => {
         const { label, color } = getSeverity(severity);
-        const icons: Record<string, React.ReactNode> = {
-          HIGH: <WarningOutlined />,
-          MEDIUM: <WarningOutlined />,
-          LOW: <CheckCircleOutlined />,
-          WARN: <WarningOutlined />,
-          INFO: <InfoCircleOutlined />,
-          DEBUG: <SettingOutlined />
-        };
         const colorHex: Record<string, string> = {
           red: '#ff4d4f', orange: '#fa8c16', gold: '#faad14',
           green: '#52c41a', blue: '#1890ff', default: '#d9d9d9'
         };
         const hex = colorHex[color] || '#1890ff';
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <div style={{
-              width: '8px', height: '8px', borderRadius: '50%',
-              background: hex, boxShadow: `0 0 6px ${hex}`
+              width: '6px', height: '6px', borderRadius: '50%',
+              background: hex, boxShadow: `0 0 4px ${hex}`
             }} />
-            {icons[severity?.toUpperCase()] || <InfoCircleOutlined />}
-            <span style={{ fontSize: '12px', fontWeight: 500 }}>{label}</span>
+            <span style={{ fontSize: '11px', fontWeight: 500 }}>{label}</span>
           </div>
         );
       }
@@ -795,12 +789,11 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
       dataIndex: 'normalizedMessage',
       key: 'normalizedMessage',
       ellipsis: true,
-      width: 250,
+      width: 200,
       render: (text, record) => (
         <Tooltip title={getDisplayText(text || record.rawMessage || record.description)}>
-          <span style={{ fontSize: '12px' }}>
-            {getDisplayText(text || record.rawMessage || record.description).slice(0, 60)}
-            {getDisplayText(text || record.rawMessage || record.description).length > 60 ? '...' : ''}
+          <span style={{ fontSize: '11px' }}>
+            {getDisplayText(text || record.rawMessage || record.description, 40)}
           </span>
         </Tooltip>
       )
@@ -809,100 +802,77 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
       title: '源IP',
       dataIndex: 'sourceIp',
       key: 'sourceIp',
-      width: 130,
+      width: 110,
       render: (text) => (
-        <Tag style={{ fontSize: '11px', padding: '2px 6px' }}>
-          {getDisplayText(text)}
-        </Tag>
+        <Tooltip title={text}>
+          <Tag style={{ fontSize: '10px', padding: '1px 4px' }}>
+            {getDisplayText(text, 12)}
+          </Tag>
+        </Tooltip>
       )
     },
     {
       title: '用户',
       dataIndex: 'userId',
       key: 'userId',
-      width: 100,
+      width: 80,
       render: (text, record) => (
-        <div>
-          <div style={{ fontSize: '12px' }}>{getDisplayText(record.userName || text)}</div>
-          {text && <div style={{ fontSize: '10px', color: '#666' }}>{text}</div>}
-        </div>
+        <Tooltip title={record.userName || text}>
+          <span style={{ fontSize: '11px' }}>
+            {getDisplayText(record.userName || text, 8)}
+          </span>
+        </Tooltip>
       )
     },
     {
       title: '异常',
       dataIndex: 'isAnomaly',
       key: 'isAnomaly',
-      width: 100,
-      render: (isAnomaly, record) => (
-        <Space>
-          <div style={{
-            padding: '3px 10px',
-            borderRadius: '20px',
-            background: isAnomaly ? 'rgba(255, 77, 79, 0.1)' : 'rgba(82, 196, 26, 0.1)',
-            border: `1px solid ${isAnomaly ? '#ff4d4f' : '#52c41a'}`,
-            color: isAnomaly ? '#ff4d4f' : '#52c41a',
-            fontSize: '11px',
-            fontWeight: 500
-          }}>
-            {isAnomaly ? '异常' : '正常'}
-          </div>
-          {isAnomaly && record.anomalyScore && (
-            <Tooltip title={`异常分数: ${record.anomalyScore}`}>
-              <Progress 
-                type="circle" 
-                percent={Math.round(record.anomalyScore * 100)} 
-                size={28}
-                strokeColor={record.anomalyScore > 0.8 ? '#ff4d4f' : record.anomalyScore > 0.5 ? '#fa8c16' : '#faad14'}
-                format={percent => `${percent}%`}
-              />
-            </Tooltip>
-          )}
-        </Space>
+      width: 70,
+      render: (isAnomaly) => (
+        <div style={{
+          padding: '2px 6px',
+          borderRadius: '12px',
+          background: isAnomaly ? 'rgba(255, 77, 79, 0.1)' : 'rgba(82, 196, 26, 0.1)',
+          border: `1px solid ${isAnomaly ? '#ff4d4f' : '#52c41a'}`,
+          color: isAnomaly ? '#ff4d4f' : '#52c41a',
+          fontSize: '10px',
+          fontWeight: 500,
+          textAlign: 'center'
+        }}>
+          {isAnomaly ? '异常' : '正常'}
+        </div>
       )
     },
-    // 新增：AI判定列
     {
-      title: 'AI判定',
+      title: 'AI',
       dataIndex: 'aiIsAnomaly',
       key: 'aiIsAnomaly',
-      width: 90,
+      width: 60,
       render: (aiIsAnomaly) => (
-        <Tag color={aiIsAnomaly === true ? 'error' : aiIsAnomaly === false ? 'success' : 'default'}>
-          {aiIsAnomaly === undefined ? '-' : (aiIsAnomaly ? '异常' : '正常')}
+        <Tag
+          color={aiIsAnomaly === true ? 'error' : aiIsAnomaly === false ? 'success' : 'default'}
+          style={{ fontSize: '10px', padding: '1px 4px' }}
+        >
+          {aiIsAnomaly === undefined ? '-' : (aiIsAnomaly ? '异' : '正')}
         </Tag>
       ),
       sorter: true,
     },
-    // 新增：AI分数列（同时显示AI异常分数和综合分数）
     {
-      title: 'AI分数',
+      title: '分数',
       dataIndex: 'aiAnomalyScore',
       key: 'aiAnomalyScore',
-      width: 130,
+      width: 80,
       render: (score, record) => {
         if (score === undefined && record.combinedScore === undefined) return '-';
+        const displayScore = score || record.combinedScore || 0;
         return (
-          <Space size="small">
-            {score !== undefined && (
-              <Tooltip title={`AI异常分数: ${(score * 100).toFixed(1)}%`}>
-                <Progress 
-                  type="circle" 
-                  percent={Math.round(score * 100)} 
-                  size={28}
-                  strokeColor={score > 0.8 ? '#ff4d4f' : score > 0.5 ? '#fa8c16' : '#faad14'}
-                  format={() => `${Math.round(score * 100)}%`}
-                />
-              </Tooltip>
-            )}
-            {record.combinedScore !== undefined && (
-              <Tooltip title={`综合分数: ${(record.combinedScore * 100).toFixed(1)}%`}>
-                <Badge 
-                  count={`综${Math.round(record.combinedScore * 100)}%`} 
-                  style={{ backgroundColor: '#1890ff', fontSize: 10 }}
-                />
-              </Tooltip>
-            )}
-          </Space>
+          <Tooltip title={`AI: ${(score * 100 || 0).toFixed(1)}%, 综合: ${(record.combinedScore * 100 || 0).toFixed(1)}%`}>
+            <div style={{ fontSize: '11px', fontWeight: 500 }}>
+              {Math.round(displayScore * 100)}%
+            </div>
+          </Tooltip>
         );
       },
       sorter: true,
@@ -1740,6 +1710,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
               rowKey="id"
               loading={loading}
               size="small"
+              scroll={{ x: 940, y: 600 }}
               rowClassName={(record) => {
                 if (record.id === highlightEventId) return 'highlighted-event-row';
                 if (record.isAnomaly) return 'anomaly-event-row';
@@ -1754,7 +1725,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
                 showSizeChanger: true,
                 pageSizeOptions: ['10', '20', '50', '100'],
                 showQuickJumper: true,
-                showTotal: (total, range) => 
+                showTotal: (total, range) =>
                   <div style={{ fontSize: '13px' }}>
                     显示第 <Text strong>{range[0]}</Text> 到 <Text strong>{range[1]}</Text> 条，共 <Text strong>{total}</Text> 条事件
                   </div>,
@@ -1762,7 +1733,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
               }}
               onChange={handleTableChange}
               locale={{
-                emptyText: events.length === 0 ? 
+                emptyText: events.length === 0 ?
                   <div style={{ padding: '40px 0', textAlign: 'center' }}>
                     <DatabaseOutlined style={{ fontSize: '48px', color: '#d9d9d9', marginBottom: '16px' }} />
                     <div style={{ fontSize: '16px', marginBottom: '8px' }}>暂无事件数据</div>
@@ -1771,7 +1742,11 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
                       <Button size="small" onClick={handleReset}>清空筛选</Button>
                       <Button size="small" type="primary" onClick={handleRestoreRecent7Days}>恢复最近7天</Button>
                     </div>
-                  </div> : undefined
+                  </div> : undefined,
+                // 排序提示文本中文化
+                triggerAsc: '点击升序',
+                triggerDesc: '点击降序',
+                cancelSort: '点击取消排序'
               }}
             />
           </div>

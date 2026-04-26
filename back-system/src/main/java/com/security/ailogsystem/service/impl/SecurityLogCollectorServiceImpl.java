@@ -78,7 +78,7 @@ public class SecurityLogCollectorServiceImpl implements SecurityLogCollectorServ
             // 否则会一�?RUNNING，后续触发全�?BUSY，导致看起来“采集失效”�?
             ScriptRunResponse response = scriptExecutionService.triggerScript(
                     SECURITY_LOG_SCRIPT_KEY,
-                    java.util.List.of("--once")
+                    java.util.List.of("--test")
             );
 
             // 更新统计信息

@@ -31,6 +31,9 @@ public class AlertResponse {
     private LocalDateTime createdTime;
     private LocalDateTime updatedTime;
     private Boolean handled;
+    // 新增：指标值和阈值
+    private Double metricValue;
+    private Double threshold;
 
     public static AlertResponse fromEntity(Alert alert) {
         return AlertResponse.builder()

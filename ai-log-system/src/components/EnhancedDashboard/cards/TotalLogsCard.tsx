@@ -3,12 +3,14 @@ import { Card, Typography, Tag, Progress, Badge, Tooltip, Button } from 'antd';
 import { SafetyCertificateOutlined, ArrowUpOutlined, SyncOutlined } from '@ant-design/icons';
 import { eventApi, analysisApi } from '@/services/api';
 import { CardProps, formatNumber, formatStorage } from '../types/dashboard';
+import type { KpiData } from '../hooks/useKpiData';
 
 const { Text, Title } = Typography;
 
 interface TotalLogsCardProps extends CardProps {
   style?: React.CSSProperties;
   loading?: boolean;
+  kpiData?: KpiData;
 }
 
 const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
@@ -18,6 +20,7 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
   compact = false,
   style,
   loading: externalLoading,
+  kpiData,
 }) => {
   const [stats, setStats] = useState({
     totalLogs: 0,
@@ -31,6 +34,17 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
   const loading = externalLoading !== undefined ? externalLoading : internalLoading;
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+
+  // 有共享kpiData时直接使用，否则用本地state
+  const displayStats = kpiData ? {
+    totalLogs: kpiData.totalLogs,
+    todayLogs: kpiData.todayLogs,
+    throughput: kpiData.throughput,
+    storageUsed: kpiData.storageUsed,
+    storageTotal: kpiData.storageTotal,
+    lastUpdate: kpiData.lastUpdate,
+  } : stats;
+  const displayLastUpdated = kpiData ? kpiData.lastUpdate : lastUpdated;
 
   const loadLogsData = useCallback(async () => {
     if (isPaused) return;
@@ -100,6 +114,7 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
   }, [isPaused]);
 
   useEffect(() => {
+    if (kpiData) return; // 有共享数据时跳过独立轮询
     loadLogsData();
     
     if (autoRefresh && !isPaused) {
@@ -108,7 +123,7 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
         clearInterval(interval);
       };
     }
-  }, [loadLogsData, autoRefresh, refreshInterval, isPaused]);
+  }, [loadLogsData, autoRefresh, refreshInterval, isPaused, kpiData]);
 
   if (process.env.NODE_ENV === 'development') {
     console.log('组件渲染状态:', { stats, loading, lastUpdated, error });
@@ -192,7 +207,7 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
           <div style={{ flex: 1 }}>
             <Text strong style={{ fontSize: '14px' }}>总日志数</Text>
             <Title level={5} style={{ margin: '4px 0 0 0', color: '#389e0d' }}>
-              {formatNumber(stats.totalLogs, 1)}
+              {formatNumber(displayStats.totalLogs, 1)}
             </Title>
           </div>
         </div>
@@ -201,8 +216,8 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
   }
 
   // 计算存储百分比，确保不会出现NaN
-  const storagePercent = stats.storageTotal > 0 
-    ? (stats.storageUsed / stats.storageTotal) * 100 
+  const storagePercent = displayStats.storageTotal > 0 
+    ? (displayStats.storageUsed / displayStats.storageTotal) * 100 
     : 0;
 
   return (
@@ -228,7 +243,7 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
         flex: 1
       }}
       extra={
-        <Tooltip title={`上次更新: ${lastUpdated}`}>
+        <Tooltip title={`上次更新: ${displayLastUpdated}`}>
           <Badge dot={loading}>
             <SyncOutlined 
               onClick={loadLogsData} 
@@ -267,7 +282,7 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
         fontSize: '11px', 
         color: '#666' 
       }}>
-        {lastUpdated || '正在加载...'}
+        {displayLastUpdated || '正在加载...'}
       </div>
 
       <div style={{ 
@@ -281,7 +296,7 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
             总日志数
           </Text>
           <Title level={3} style={{ margin: '8px 0 0 0', fontSize: '32px', color: '#389e0d' }}>
-            {formatNumber(stats.totalLogs, 1)}
+            {formatNumber(displayStats.totalLogs, 1)}
           </Title>
         </div>
         <div style={{
@@ -305,7 +320,7 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
       }}>
         <ArrowUpOutlined style={{ color: '#52c41a' }} />
         <Text strong style={{ fontSize: '14px', color: '#389e0d' }}>
-          今日新增 {stats.todayLogs} 条
+          今日新增 {displayStats.todayLogs} 条
         </Text>
         <Tag color="success" style={{ marginLeft: 'auto' }}>实时</Tag>
       </div>
@@ -318,13 +333,13 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
         <div>
           <Text style={{ fontSize: '12px', color: '#666' }}>实时处理</Text>
           <Text strong style={{ fontSize: '16px', display: 'block' }}>
-            {formatNumber(stats.throughput, 1)}/s
+            {formatNumber(displayStats.throughput, 1)}/s
           </Text>
         </div>
         <div style={{ minWidth: '120px' }}>
           <Text style={{ fontSize: '12px', color: '#666' }}>存储量</Text>
           <Text strong style={{ fontSize: '16px', display: 'block' }}>
-            {formatStorage(stats.storageUsed, stats.storageTotal)}
+            {formatStorage(displayStats.storageUsed, displayStats.storageTotal)}
           </Text>
           <Progress 
             percent={Math.min(storagePercent, 100)}
