@@ -15,9 +15,9 @@ spring:
   application:
     name: ai-log-system
   datasource:
-    url: jdbc:mysql://localhost:3306/ai_log_system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10
-    username: root
-    password: 123456
+    url: ${DB_URL:jdbc:mysql://localhost:3306/ai_log_system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&autoReconnect=true&failOverReadOnly=false&maxReconnects=10}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
@@ -79,8 +79,8 @@ spring:
 
 # JWT配置
 jwt:
-  secret: 8Zz5tw0Ionm3XPZZfN0NOml3z9FMfmpgXwovR9fp6ryDIoGRM8EPHAB6iHsc0fb
-  expiration: 86400000
+  secret: ${JWT_SECRET:change-this-secret-in-production-min-32-chars}
+  expiration: ${JWT_EXPIRATION:86400000}
 
 # 日志配置
 logging:

@@ -4,7 +4,7 @@ import { ExclamationCircleOutlined } from '@ant-design/icons';
 
 import KpiRow from '../KpiRow';
 import ChartsRow from '../ChartsRow';
-import EventList from '../EventList';
+import EventSummary from '../EventSummary';
 import { SecurityEvent, LEVEL_COLORS } from '../types/dashboard';
 
 const { Text } = Typography;
@@ -116,8 +116,8 @@ const OverviewPage: React.FC<OverviewPageProps> = ({
       {/* 图表行 */}
       <ChartsRow events={events} isPaused={isPaused} threatData={threatData} />
 
-      {/* 安全事件列表 */}
-      <EventList events={events} loading={eventLoading} />
+      {/* 安全事件概览摘要 */}
+      <EventSummary stats={eventStats} />
     </div>
   );
 };

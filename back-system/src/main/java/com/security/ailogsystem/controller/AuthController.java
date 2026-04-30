@@ -1,11 +1,14 @@
 package com.security.ailogsystem.controller;
 
-    import com.security.ailogsystem.model.User;
+import com.security.ailogsystem.model.User;
 import com.security.ailogsystem.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -17,48 +20,58 @@ import java.util.Optional;
 @Tag(name = "认证管理", description = "用户认证相关接口")
 public class AuthController {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+
     private final UserService userService;
+    private final PasswordEncoder passwordEncoder;
 
     @Autowired
-    public AuthController(UserService userService) {
+    public AuthController(UserService userService, PasswordEncoder passwordEncoder) {
         this.userService = userService;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @PostMapping("/login")
     @Operation(summary = "用户登录", description = "用户登录认证")
     public ResponseEntity<Map<String, Object>> login(@RequestBody Map<String, String> loginRequest) {
-        System.out.println("收到登录请求: " + loginRequest);
         String username = loginRequest.get("username");
         String password = loginRequest.get("password");
-        System.out.println("用户名: " + username + ", 密码: " + password);
+        log.info("收到登录请求，用户名: {}", username);
         
         try {
-            // 从数据库查询用户
             Optional<User> userOpt = userService.findByUsername(username);
             
             if (userOpt.isPresent()) {
                 User user = userOpt.get();
-                System.out.println("找到用户: " + user.getUsername() + ", 角色: " + user.getRole());
+                log.debug("查询到用户: {}, 角色: {}", user.getUsername(), user.getRole());
                 
-                // 验证密码 - 支持明文和哈希密码
+                // 验证密码：优先 BCrypt 哈希验证，兼容明文密码并自动升级
                 boolean passwordValid = false;
                 if (user.getPassword() != null && !user.getPassword().isEmpty()) {
-                    // 尝试哈希验证
-                    passwordValid = userService.validatePassword(password, user.getPassword());
-                }
-                // 如果哈希验证失败，尝试明文验证（临时方案）
-                if (!passwordValid) {
-                    passwordValid = password.equals(user.getPassword()) || 
-                                  password.equals("admin") || 
-                                  password.equals("123456");
+                    String stored = user.getPassword();
+                    if (stored.startsWith("$2")) {
+                        // 尝试 BCrypt 哈希验证
+                        try {
+                            passwordValid = userService.validatePassword(password, stored);
+                        } catch (Exception e) {
+                            log.warn("BCrypt 验证异常，尝试明文比对: {}", e.getMessage());
+                        }
+                    }
+                    // BCrypt 验证失败或非 BCrypt 格式，尝试明文比对
+                    if (!passwordValid && password.equals(stored)) {
+                        passwordValid = true;
+                    }
+                    // 明文验证成功，升级为 BCrypt
+                    if (passwordValid && !stored.startsWith("$2")) {
+                        user.setPassword(passwordEncoder.encode(password));
+                        userService.updateUser(user);
+                        log.info("用户 {} 密码已自动升级为 BCrypt 哈希", username);
+                    }
                 }
                 
                 if (passwordValid) {
-                    // 检查用户是否激活
                     if (user.getIsActive() != null && user.getIsActive()) {
-                        // 更新最后登录时间
                         userService.updateLastLogin(username);
-                        
                         Map<String, Object> response = new HashMap<>();
                         response.put("success", true);
                         response.put("message", "登录成功");
@@ -70,6 +83,7 @@ public class AuthController {
                             "fullName", user.getFullName() != null ? user.getFullName() : user.getUsername(),
                             "role", user.getRole().name()
                         ));
+                        log.info("用户 {} 登录成功", username);
                         return ResponseEntity.ok(response);
                     } else {
                         Map<String, Object> response = new HashMap<>();
@@ -78,22 +92,21 @@ public class AuthController {
                         return ResponseEntity.status(401).body(response);
                     }
                 } else {
-                    System.out.println("密码验证失败");
+                    log.warn("用户 {} 密码验证失败", username);
                     Map<String, Object> response = new HashMap<>();
                     response.put("success", false);
                     response.put("message", "用户名或密码错误");
                     return ResponseEntity.status(401).body(response);
                 }
             } else {
-                System.out.println("用户不存在: " + username);
+                log.warn("登录失败，用户不存在: {}", username);
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
                 response.put("message", "用户名或密码错误");
                 return ResponseEntity.status(401).body(response);
             }
         } catch (Exception e) {
-            System.err.println("登录验证异常: " + e.getMessage());
-            e.printStackTrace();
+            log.error("登录验证异常", e);
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
             response.put("message", "系统错误，请稍后重试");
@@ -172,43 +185,5 @@ public class AuthController {
         }
     }
 
-    @PostMapping("/set-plain-password")
-    @Operation(summary = "设置明文密码", description = "临时接口：设置用户明文密码")
-    public ResponseEntity<Map<String, Object>> setPlainPassword(@RequestBody Map<String, String> body) {
-        String username = body.get("username");
-        String password = body.get("password");
-        
-        if (username == null || password == null) {
-            Map<String, Object> resp = new HashMap<>();
-            resp.put("success", false);
-            resp.put("message", "参数不完整");
-            return ResponseEntity.badRequest().body(resp);
-        }
-        
-        try {
-            Optional<User> userOpt = userService.findByUsername(username);
-            if (userOpt.isPresent()) {
-                User user = userOpt.get();
-                user.setPassword(password); // 直接设置明文密码
-                user.setIsActive(true);
-                userService.updateUser(user);
-                
-                Map<String, Object> resp = new HashMap<>();
-                resp.put("success", true);
-                resp.put("message", "密码已设置为明文: " + password);
-                return ResponseEntity.ok(resp);
-            } else {
-                Map<String, Object> resp = new HashMap<>();
-                resp.put("success", false);
-                resp.put("message", "用户不存在");
-                return ResponseEntity.status(404).body(resp);
-            }
-        } catch (Exception e) {
-            Map<String, Object> resp = new HashMap<>();
-            resp.put("success", false);
-            resp.put("message", "设置失败: " + e.getMessage());
-            return ResponseEntity.status(500).body(resp);
-        }
-    }
 }
 

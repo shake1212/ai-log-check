@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Typography, Spin, Alert } from 'antd';
 import { analysisApi } from '@/services/api';
-
 import { format } from 'date-fns';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceArea } from 'recharts';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, ReferenceArea,
+} from 'recharts';
 
 const { Text } = Typography;
 
 interface RealTimeLogChartProps {
-  data: Array<{ time: number; value: number; type: string }>; // 修正time类型为number（时间戳）
+  data?: Array<{ time: number; value: number; type: string }>;
   title: string;
   height?: number;
   loading?: boolean;
@@ -16,330 +18,186 @@ interface RealTimeLogChartProps {
   refreshInterval?: number;
 }
 
-// 简化自定义工具提示（避免复杂逻辑报错）
 const CustomTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    const date = new Date(label);
-    return (
-      <div style={{
-        backgroundColor: 'white',
-        padding: '10px',
-        border: '1px solid #ccc',
-        borderRadius: '4px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-      }}>
-        <p style={{ margin: 0, fontSize: '12px', color: '#666' }}>
-          {format(date, 'yyyy-MM-dd HH:mm:ss')}
-        </p>
-        <p style={{ margin: '4px 0 0 0', fontSize: '14px', fontWeight: 'bold' }}>
-          流量值: <span style={{ color: '#1890ff' }}>{payload[0].value.toFixed(1)}</span>
-        </p>
-        <p style={{ margin: 0, fontSize: '12px' }}>
-          状态: <span style={{ 
-            color: payload[0].payload.type === 'anomaly' ? '#ff4d4f' : '#52c41a',
-            fontWeight: 'bold'
-          }}>
-            {payload[0].payload.type === 'anomaly' ? '异常' : '正常'}
-          </span>
-        </p>
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: 'white', padding: '8px 12px',
+      border: '1px solid #e8e8e8', borderRadius: 6,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.12)', fontSize: 12,
+    }}>
+      <div style={{ color: '#666', marginBottom: 4 }}>
+        {format(new Date(Number(label)), 'HH:mm:ss')}
       </div>
-    );
-  }
-  return null;
+      <div style={{ fontWeight: 600 }}>
+        流量值：<span style={{ color: '#1890ff' }}>{payload[0].value.toFixed(1)}</span>
+      </div>
+      <div>
+        状态：<span style={{ color: payload[0].payload.type === 'anomaly' ? '#ff4d4f' : '#52c41a', fontWeight: 600 }}>
+          {payload[0].payload.type === 'anomaly' ? '异常' : '正常'}
+        </span>
+      </div>
+    </div>
+  );
 };
 
-// 简化自定义点（避免SVG渲染异常）
 const CustomizedDot = (props: any) => {
   const { cx, cy, payload } = props;
-  if (!cx || !cy) return null; // 增加容错
-
+  if (!cx || !cy) return null;
   if (payload.type === 'anomaly') {
-    return (
-      <circle cx={cx} cy={cy} r={6} fill="#ff4d4f">
-        <circle cx={cx} cy={cy} r={3} fill="white" />
-      </circle>
-    );
+    return <circle cx={cx} cy={cy} r={5} fill="#ff4d4f" stroke="white" strokeWidth={1.5} />;
   }
-  
-  return <circle cx={cx} cy={cy} r={4} fill="#1890ff" />;
+  return <circle cx={cx} cy={cy} r={3} fill="#1890ff" />;
 };
 
 const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
   data: initialData = [],
   title,
-  height = 400, // 提高默认高度，避免被统计栏挤压
+  height = 220,
   loading = false,
   isPaused = false,
-  refreshInterval = 10000
+  refreshInterval = 10000,
 }) => {
-  const [chartData, setChartData] = useState<any[]>(initialData || []);
-  const [chartLoading, setChartLoading] = useState(false); // 初始关闭loading，避免遮挡
+  const [chartData, setChartData] = useState<any[]>(initialData);
+  const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [trafficStats, setTrafficStats] = useState({
-    normalTraffic: 0,
-    anomalyTraffic: 0,
-    peakTraffic: 0,
-    avgLatency: 0
-  });
-
   const dataRef = useRef(chartData);
-  const lastFetchTimeRef = useRef<number>(0);
+  const lastFetchRef = useRef(0);
   const cacheRef = useRef<any>(null);
 
   const loadChartData = useCallback(async () => {
-    if (isPaused) {
-      console.log('图表更新已暂停');
-      return;
-    }
-
-    // 检查缓存：如果距离上次请求不到5秒，使用缓存数据
+    if (isPaused) return;
     const now = Date.now();
-    const timeSinceLastFetch = now - lastFetchTimeRef.current;
-    if (timeSinceLastFetch < 5000 && cacheRef.current) {
-      console.log('使用缓存数据');
+    if (now - lastFetchRef.current < 5000 && cacheRef.current) {
       const traffic = cacheRef.current;
-      const currentData = dataRef.current || [];
-      const updatedData = [...currentData, {
+      const updated = [...dataRef.current, {
         time: now,
         value: Number(traffic.currentTraffic || 0),
-        type: Number(traffic.anomalyTraffic || 0) > 0 ? 'anomaly' : 'normal'
+        type: Number(traffic.anomalyTraffic || 0) > 0 ? 'anomaly' : 'normal',
       }].slice(-100);
-
-      setChartData(updatedData);
-      dataRef.current = updatedData;
+      setChartData(updated);
+      dataRef.current = updated;
       return;
     }
-
     setChartLoading(true);
     setError(null);
-
     try {
       const traffic = await analysisApi.getTrafficStats();
-
-      // 更新缓存
       cacheRef.current = traffic;
-      lastFetchTimeRef.current = now;
-
-      const currentData = dataRef.current || [];
-      const updatedData = [...currentData, {
+      lastFetchRef.current = now;
+      const updated = [...dataRef.current, {
         time: now,
         value: Number(traffic.currentTraffic || 0),
-        type: Number(traffic.anomalyTraffic || 0) > 0 ? 'anomaly' : 'normal'
+        type: Number(traffic.anomalyTraffic || 0) > 0 ? 'anomaly' : 'normal',
       }].slice(-100);
-
-      setChartData(updatedData);
-      dataRef.current = updatedData;
-
-      setTrafficStats({
-        normalTraffic: Number(traffic.normalTraffic || 0),
-        anomalyTraffic: Number(traffic.anomalyTraffic || 0),
-        peakTraffic: Number(traffic.peakTraffic || 0),
-        avgLatency: Number(traffic.avgLatency || 0)
-      });
-
-    } catch (error) {
-      console.error('加载图表数据失败:', error);
-      // 只在首次加载失败时显示错误，后续失败使用旧数据
-      if (chartData.length === 0) {
-        setError(`数据加载失败: ${(error as Error).message || '未知错误'}`);
-      } else {
-        console.warn('使用旧数据继续显示');
+      setChartData(updated);
+      dataRef.current = updated;
+    } catch (err) {
+      if (dataRef.current.length === 0) {
+        setError(`数据加载失败: ${(err as Error).message || '未知错误'}`);
       }
     } finally {
       setChartLoading(false);
     }
-  }, [isPaused, chartData.length]);
+  }, [isPaused]);
 
   useEffect(() => {
-    // 立即加载一次数据
     loadChartData();
-    
-    // 定时刷新
     if (!isPaused && refreshInterval > 0) {
-      const interval = setInterval(loadChartData, refreshInterval);
-      return () => clearInterval(interval);
+      const id = setInterval(loadChartData, refreshInterval);
+      return () => clearInterval(id);
     }
   }, [loadChartData, isPaused, refreshInterval]);
 
   if (error && chartData.length === 0) {
     return (
-      <div style={{ height: height, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
-        <Alert
-          message="图表加载失败"
-          description={error}
-          type="error"
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-        <button 
-          onClick={loadChartData}
-          style={{ padding: '8px 16px', background: '#1890ff', color: 'white', border: 'none', borderRadius: '4px' }}
-        >
+      <div style={{ height, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+        <Alert message="图表加载失败" description={error} type="error" showIcon />
+        <button onClick={loadChartData} style={{ padding: '6px 16px', background: '#1890ff', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
           重试
         </button>
       </div>
     );
   }
 
+  // 标题栏高度约 44px，图表占剩余空间
+  const HEADER_H = 44;
+  const chartH = height - HEADER_H;
+
   return (
-    <div style={{ 
-      height: '400px', // 固定像素高度（关键！避免100%高度失效）
-      display: 'flex', 
-      flexDirection: 'column',
-      position: 'relative',
-      border: '1px solid #f0f0f0', // 调试用，可删除
-      borderRadius: 16
-    }}>
-      <Spin spinning={chartLoading} tip="正在更新数据..." style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* 标题栏 */}
-        <div style={{ 
-          padding: '16px 24px 0 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <Text strong style={{ fontSize: '16px' }}>{title}</Text>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#1890ff' }} />
-              <Text type="secondary" style={{ fontSize: '12px' }}>正常流量</Text>
+    <div style={{ height, display: 'flex', flexDirection: 'column' }}>
+      {/* 标题栏 */}
+      <div style={{
+        height: HEADER_H, flexShrink: 0,
+        padding: '0 16px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        borderBottom: '1px solid #f5f5f5',
+      }}>
+        <Text strong style={{ fontSize: 14 }}>{title}</Text>
+        <div style={{ display: 'flex', gap: 12 }}>
+          {[{ color: '#1890ff', label: '正常' }, { color: '#ff4d4f', label: '异常' }].map(({ color, label }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+              <Text type="secondary" style={{ fontSize: 11 }}>{label}</Text>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ff4d4f' }} />
-              <Text type="secondary" style={{ fontSize: '12px' }}>异常流量</Text>
-            </div>
-          </div>
+          ))}
         </div>
-        
-        {/* 图表容器（关键：固定高度，避免flex失效） */}
-        <div style={{ 
-          flex: 1, 
-          padding: '16px 16px 80px 16px', // 底部留统计栏空间
-          height: height - 120, // 固定高度，确保图表有绘制区域
-          minHeight:370 // 最小高度兜底
-        }}>
+      </div>
+
+      {/* 图表区域 */}
+      <Spin spinning={chartLoading} style={{ flex: 1 }}>
+        <div style={{ height: chartH }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={chartData}
-              margin={{ top: 10, right: 20, left: 0, bottom: 20 }} // 调整边距，避免坐标轴被截断
-            >
-              <CartesianGrid 
-                strokeDasharray="3 3" 
-                stroke="#f0f0f0" 
-                vertical={false}
-              />
-              {/* X轴：确保时间戳正确格式化 */}
+            <LineChart data={chartData} margin={{ top: 8, right: 16, left: -10, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
               <XAxis
                 dataKey="time"
-                type="number" // 明确指定为数字类型（时间戳）
-                domain={['dataMin', 'dataMax']} // 自动适配数据范围
-                tickFormatter={(time) => format(new Date(Number(time)), 'HH:mm')}
-                stroke="#999"
-                fontSize={12}
+                type="number"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={(t) => format(new Date(Number(t)), 'HH:mm')}
+                stroke="#bbb"
+                fontSize={11}
+                tickCount={5}
               />
-              {/* Y轴：增加容错，避免数值异常 */}
               <YAxis
-                stroke="#999"
-                fontSize={12}
-                domain={[0, 'dataMax + 20']} // Y轴从0开始，避免折线贴顶
-                label={{ 
-                  value: '流量值', 
-                  angle: -90, 
-                  position: 'insideLeft',
-                  offset: 10,
-                  style: { fontSize: 12, fill: '#666' }
-                }}
+                stroke="#bbb"
+                fontSize={11}
+                domain={[0, 'dataMax + 10']}
+                width={36}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Legend 
-                verticalAlign="top"
-                height={30}
-                iconSize={10}
-                wrapperStyle={{ fontSize: '12px' }}
-              />
-              {/* 折线：简化配置，确保渲染 */}
               <Line
                 type="monotone"
                 dataKey="value"
                 stroke="#1890ff"
                 strokeWidth={2}
                 dot={<CustomizedDot />}
-                activeDot={{ r: 6, fill: '#1890ff' }}
+                activeDot={{ r: 5 }}
                 name="实时流量"
-                isAnimationActive={true}
-                animationDuration={500}
+                isAnimationActive={false}
               />
-              
-              {/* 异常区域标记（修复索引查找逻辑） */}
               {chartData
-                .filter((d, i) => d.type === 'anomaly' && (i === 0 || chartData[i-1].type !== 'anomaly'))
-                .map((d, index) => {
-                  const startIdx = chartData.findIndex(item => item.time === d.time);
-                  let endIdx = startIdx;
-                  while (endIdx < chartData.length && chartData[endIdx].type === 'anomaly') {
-                    endIdx++;
-                  }
-                  endIdx = Math.max(startIdx + 1, endIdx); // 至少占一个单位
-                  
+                .filter((d, i) => d.type === 'anomaly' && (i === 0 || chartData[i - 1].type !== 'anomaly'))
+                .map((d, idx) => {
+                  const start = chartData.findIndex(item => item.time === d.time);
+                  let end = start;
+                  while (end < chartData.length && chartData[end].type === 'anomaly') end++;
+                  end = Math.max(start + 1, end);
                   return (
                     <ReferenceArea
-                      key={`anomaly-${index}`}
-                      x1={chartData[startIdx].time}
-                      x2={chartData[endIdx - 1].time}
+                      key={idx}
+                      x1={chartData[start].time}
+                      x2={chartData[end - 1].time}
                       fill="#ff4d4f"
-                      fillOpacity={0.1}
+                      fillOpacity={0.08}
                       stroke="none"
                     />
                   );
-                })
-              }
+                })}
             </LineChart>
           </ResponsiveContainer>
         </div>
       </Spin>
-      
-      {/* 统计栏（固定底部） */}
-      <div style={{ 
-        position: 'absolute',
-      
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: '16px 24px', 
-        background: '#fafafa',
-        borderTop: '1px solid #f0f0f0',
-        borderBottomLeftRadius: 16,
-        borderBottomRightRadius: 16,
-        boxShadow: '0 -2px 8px rgba(0,0,0,0.05)',
-        zIndex: 10
-      }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
-          <div>
-            <div style={{ fontSize: '12px', color: '#666' }}>正常流量</div>
-            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
-              {(trafficStats.normalTraffic / 1000).toFixed(1)}K/s
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: '12px', color: '#666' }}>异常流量</div>
-            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#ff4d4f' }}>
-              {trafficStats.anomalyTraffic}/s
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: '12px', color: '#666' }}>峰值流量</div>
-            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
-              {(trafficStats.peakTraffic / 1000).toFixed(1)}K/s
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: '12px', color: '#666' }}>数据延迟</div>
-            <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
-              &lt;{trafficStats.avgLatency}ms
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };

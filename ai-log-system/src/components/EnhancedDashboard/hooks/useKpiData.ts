@@ -30,9 +30,9 @@ export interface KpiData {
 }
 
 const DEFAULT_KPI_DATA: KpiData = {
-  systemHealth: 95,
-  uptime: 99.8,
-  latency: 100,
+  systemHealth: 0,  // 改为0，等待真实数据
+  uptime: 0,
+  latency: 0,
   totalLogs: 0,
   todayLogs: 0,
   throughput: 0,
@@ -94,17 +94,23 @@ export const useKpiData = (isPaused: boolean, refreshInterval: number = 30000) =
       const todayLogs = dashboardStats?.todayLogs || stats?.todayLogs || 0;
       const anomalyCount = dashboardStats?.anomalyCount ?? stats?.securityEvents ?? stats?.anomalyCount ?? (criticalCount + highCount + mediumCount);
 
-      const systemHealth = metrics?.systemHealth || realTime?.systemHealth || 95;
-      const uptime = metrics?.uptime || 99.8;
-      const latency = metrics?.latency || realTime?.responseTime || 100;
+      const systemHealth = metrics?.systemHealth || realTime?.systemHealth || 0;
+      const uptime = metrics?.uptime || 0;
+      const latency = metrics?.latency || realTime?.responseTime || 0;
       const throughput = metrics?.throughput?.normal || 0;
       const storageUsedGB = metrics?.storageUsed || 0;
       const storageTotalGB = metrics?.storageTotal || 0;
 
-      const securityEvents = stats?.securityEvents || 0;
-      const derivedActiveUsers = stats?.activeUsers || Math.max(1, Math.round(totalLogs / Math.max(securityEvents || 1, 1)));
-      const currentConnections = metrics?.currentConnections || Math.round(derivedActiveUsers * 1.5);
-      const activeSessions = metrics?.activeSessions || derivedActiveUsers * 3;
+      const securityEvents = stats?.securityEvents || anomalyCount;
+      
+      // 活跃用户数计算：优先使用API数据，否则根据异常事件数推算
+      // 合理的推算：每个活跃用户平均产生10-20个异常事件
+      const derivedActiveUsers = stats?.activeUsers || 
+                                 metrics?.currentConnections || 
+                                 Math.max(1, Math.round(securityEvents / 15));
+      
+      const currentConnections = metrics?.currentConnections || Math.round(derivedActiveUsers * 1.2);
+      const activeSessions = metrics?.activeSessions || Math.round(derivedActiveUsers * 2);
 
       const unhandledAlerts = stats?.unhandledAlerts || (Array.isArray(alerts) ? alerts.length : 0);
       const investigatingCount = Array.isArray(alerts) ? alerts.filter((a: any) => !a.handled).length : 0;

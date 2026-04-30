@@ -77,14 +77,10 @@ class WebSocketService {
           connectHeaders: {},
         });
 
-        this.stompClient.onConnect = (frame) => {
-          console.log('STOMP连接成功:', frame);
+        this.stompClient.onConnect = (_frame) => {
           this.isConnecting = false;
           this.reconnectAttempts = 0;
-          
-          // 订阅默认主题
           this.subscribeToTopics();
-          
           this.connectionHandlers.forEach(handler => handler());
           message.success('WebSocket 连接成功');
           resolve();
@@ -98,8 +94,7 @@ class WebSocketService {
           reject(new Error('STOMP协议错误'));
         };
 
-        this.stompClient.onWebSocketClose = (event) => {
-          console.log('WebSocket连接关闭:', event.code, event.reason);
+        this.stompClient.onWebSocketClose = (_event) => {
           this.isConnecting = false;
           this.handleReconnect();
         };
@@ -183,7 +178,6 @@ class WebSocketService {
     }
     
     this.isConnecting = false;
-    console.log('WebSocket连接已断开');
   }
 
   /**
@@ -303,9 +297,6 @@ class WebSocketService {
    * 处理消息
    */
   private handleMessage(message: WebSocketMessage): void {
-    console.log('收到WebSocket消息:', message);
-
-    // 调用注册的处理器
     const handlers = this.messageHandlers.get(message.type);
     if (handlers) {
       handlers.forEach(handler => {
@@ -363,10 +354,9 @@ class WebSocketService {
    * 手动重连
    */
   reconnect(): void {
-    console.log('手动重连WebSocket');
     this.stopReconnect();
     this.reconnectAttempts = 0;
-    this.disconnect(); // 先完全断开
+    this.disconnect();
     setTimeout(() => {
       this.connect().catch(error => {
         console.error('手动重连失败:', error);
@@ -409,7 +399,6 @@ class WebSocketService {
       });
       
       this.subscriptions[topic] = subscription;
-      console.log(`已订阅主题: ${topic}`);
       
     } catch (error) {
       console.error(`订阅主题 ${topic} 失败:`, error);
@@ -424,7 +413,6 @@ class WebSocketService {
       try {
         this.subscriptions[topic].unsubscribe();
         delete this.subscriptions[topic];
-        console.log(`已取消订阅主题: ${topic}`);
       } catch (error) {
         console.error(`取消订阅主题 ${topic} 失败:`, error);
       }

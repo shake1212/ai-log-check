@@ -4,25 +4,25 @@
 
 This implementation plan addresses the SQL syntax error in migration V1.0.5 by removing the problematic file. The database already contains the required columns, so no schema changes are needed.
 
-## Tasks
+## 任务
 
-- [x] 1. Remove problematic migration file
+- [完成] 1. Remove problematic migration file
   - Delete or rename `back-system/src/main/resources/db/migration/V1.0.5__add_rule_engine_config.sql`
   - Keep V1.0.6 migration file (safe implementation)
   - _Requirements: 1.1_
 
-- [ ]* 1.1 Write unit test to verify required columns exist
+- [待完成]* 1.1 Write unit test to verify required columns exist
   - Test that log_collector_configs table has enable_rule_engine column
   - Test that log_collector_configs table has rule_engine_timeout column
   - Verify column data types are correct
   - _Requirements: 1.2_
 
-- [ ]* 1.2 Write integration test for application startup
+- [待完成]* 1.2 Write integration test for application startup
   - Test that application starts without SQL errors
   - Test that no migration errors occur
   - _Requirements: 1.3_
 
-- [x] 2. Verify application functionality
+- [完成] 2. Verify application functionality
   - Start the application and verify no errors
   - Test rule engine configuration can be read from database
   - Test rule engine configuration can be updated through API

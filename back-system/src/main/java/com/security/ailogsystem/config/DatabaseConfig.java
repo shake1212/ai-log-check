@@ -19,7 +19,6 @@ import java.util.Properties;
 /**
  * 数据库连接池配置类
  * 提供高性能的HikariCP连接池配置和JPA配置
- * 注意：为避免MBean冲突，暂时注释掉手动配置，使用Spring Boot自动配置
  */
 // @Configuration
 @EnableJpaRepositories(basePackages = "com.security.ailogsystem.repository")
@@ -60,8 +59,7 @@ public class DatabaseConfig {
     private boolean autoCommit;
 
     /**
-     * 配置HikariCP数据源
-     * 暂时注释掉以避免MBean冲突，使用Spring Boot自动配置
+     * 配置HikariCP数据源（当前使用Spring Boot自动配置）
      */
     // @Bean
     // @Primary

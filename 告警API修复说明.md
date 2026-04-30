@@ -1,20 +1,20 @@
 # 告警API修复说明
 
-## 🐛 问题描述
+## 问题描述
 
 前端调用告警确认API时出现404错误：
 ```
 No static resource log-collector/alerts/1524/acknowledge
 ```
 
-## 🔍 问题原因
+## 问题原因
 
 `SecurityLogCollectorController` 中缺少以下API接口：
 - `POST /log-collector/alerts/{alertId}/acknowledge` - 确认告警
 - `POST /log-collector/alerts/{alertId}/resolve` - 解决告警
 - `GET /log-collector/test` - 测试连接
 
-## ✅ 修复内容
+## 修复内容
 
 ### 1. SecurityLogCollectorController.java
 
@@ -137,7 +137,7 @@ public boolean resolveAlert(Long id) {
 }
 ```
 
-## 📊 修改统计
+## 修改统计
 
 - **修改文件**: 3个
   - SecurityLogCollectorController.java
@@ -151,7 +151,7 @@ public boolean resolveAlert(Long id) {
   - resolveAlert (Service)
 - **代码行数**: 约150行
 
-## 🧪 测试方法
+## 测试方法
 
 ### 方法1: 使用curl测试
 
@@ -187,7 +187,7 @@ curl -X POST http://localhost:8080/log-collector/alerts/1524/resolve
 4. 发送请求
 5. 检查响应
 
-## 🔄 API完整列表
+## API完整列表
 
 ### 日志采集器相关API
 
@@ -209,7 +209,7 @@ curl -X POST http://localhost:8080/log-collector/alerts/1524/resolve
 | POST | /log-collector/alerts/{id}/resolve | 解决告警 | 🆕 |
 | GET | /log-collector/test | 测试连接 | 🆕 |
 
-## 🎯 预期效果
+## 预期效果
 
 修复后：
 1. ✅ 前端可以成功调用确认告警API
@@ -218,7 +218,7 @@ curl -X POST http://localhost:8080/log-collector/alerts/1524/resolve
 4. ✅ 告警状态可以正确更新
 5. ✅ 不再出现404错误
 
-## 📝 注意事项
+## 注意事项
 
 ### 告警状态说明
 
@@ -238,7 +238,7 @@ curl -X POST http://localhost:8080/log-collector/alerts/1524/resolve
 - `acknowledgeAlert` 和 `resolveAlert` 都使用 `@Transactional` 注解
 - 确保数据库操作的原子性
 
-## 🚀 部署步骤
+## 部署步骤
 
 1. **停止Java后端**
    ```bash
@@ -269,7 +269,7 @@ curl -X POST http://localhost:8080/log-collector/alerts/1524/resolve
    - 访问 `http://localhost:8000/#/log-collector`
    - 测试告警确认和解决功能
 
-## ✅ 验证清单
+## 验证清单
 
 - [ ] Java后端编译成功
 - [ ] Java后端启动成功
@@ -282,7 +282,7 @@ curl -X POST http://localhost:8080/log-collector/alerts/1524/resolve
 - [ ] 数据库中告警状态正确更新
 - [ ] 不再出现404错误
 
-## 🐛 故障排查
+## 故障排查
 
 ### 问题1: 仍然出现404错误
 
@@ -315,7 +315,7 @@ mvn spring-boot:run
 1. 先调用 `/log-collector/alerts` 获取有效的告警ID
 2. 使用返回的ID进行操作
 
-## 📞 需要帮助？
+## 需要帮助？
 
 如果遇到问题：
 1. 查看Java后端日志
@@ -325,6 +325,6 @@ mvn spring-boot:run
 
 ---
 
-**修复时间**: 2026-03-30
-**修复状态**: ✅ 完成
-**测试状态**: ⏳ 待验证
+**修复时间**: 2024-03-30
+**修复状态**: 完成
+**测试状态**: 待验证

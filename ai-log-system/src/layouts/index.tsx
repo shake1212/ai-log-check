@@ -140,10 +140,6 @@ export default function DefaultLayout() {
 
   const handleUserMenuClick = ({ key }: { key: string }) => {
     switch (key) {
-      case 'profile':
-        setCurrentPath('/profile');
-        window.location.hash = '/profile';
-        break;
       case 'logout':
         handleLogout();
         break;
@@ -160,11 +156,6 @@ export default function DefaultLayout() {
   };
 
   const userMenu = [
-    {
-      key: 'profile',
-      icon: <UserOutlined />,
-      label: '个人资料',
-    },
     {
       key: 'logout',
       icon: <LogoutOutlined />,
@@ -203,13 +194,6 @@ export default function DefaultLayout() {
         return <EventsPage initialEventId={tabQuery.eventId ? parseInt(tabQuery.eventId, 10) : undefined} />;
       case '/system':
         return <SystemPage />;
-      case '/profile':
-        return (
-          <div style={{ padding: '20px' }}>
-            <h1>个人资料</h1>
-            <p>个人资料功能正在开发中...</p>
-          </div>
-        );
       default:
         return <EnhancedDashboard />;
     }
@@ -239,6 +223,9 @@ export default function DefaultLayout() {
           overflow: 'hidden'
         }}
       >
+        {/* 内部 flex 容器，撑满 Sider 高度 */}
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
         {/* Logo区域 */}
         <div style={{ 
           padding: '16px', 
@@ -260,7 +247,6 @@ export default function DefaultLayout() {
         <div style={{ 
           flex: 1,
           overflow: 'auto',
-          height: '80%',
           minHeight: 0
         }}>
           <Menu
@@ -284,9 +270,8 @@ export default function DefaultLayout() {
         <div style={{ 
           backgroundColor: 'rgba(0, 0, 0, 0.2)',
           borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-          padding: '16px',
-          flexShrink: 0,
-          marginTop: 'auto' // 确保在Sider最底部
+          padding: collapsed ? '8px' : '8px 16px',
+          flexShrink: 0
         }}>
           <div style={{ 
             display: 'flex',
@@ -300,8 +285,7 @@ export default function DefaultLayout() {
               alignItems: 'center',
               gap: '8px',
               flex: collapsed ? 0 : 1,
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              overflow: 'hidden'
+              justifyContent: collapsed ? 'center' : 'flex-start'
             }}>
               {!collapsed && (
                 <Badge count={unreadCount} size="small">
@@ -327,22 +311,18 @@ export default function DefaultLayout() {
                   display: 'flex', 
                   alignItems: 'center', 
                   cursor: 'pointer',
-                  minWidth: collapsed ? 'auto' : '100px'
+                  gap: '6px'
                 }}>
-                  <Avatar size="small" icon={<UserOutlined />} />
+                  <Avatar size="small" icon={<UserOutlined />} style={{ backgroundColor: '#1890ff' }} />
                   {!collapsed && (
-                    <div style={{ marginLeft: '8px', overflow: 'hidden' }}>
-                      <Text style={{ 
-                        color: 'white', 
-                        display: 'block', 
-                        fontSize: '12px',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis'
-                      }}>
-                        管理员
-                      </Text>
-                    </div>
+                    <span style={{ 
+                      color: '#ffffff', 
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap'
+                    }}>
+                      管理员
+                    </span>
                   )}
                 </div>
               </Dropdown>
@@ -364,6 +344,7 @@ export default function DefaultLayout() {
             </div>
           </div>
         </div>
+        </div>{/* end 内部 flex 容器 */}
       </Sider>
       
       <Layout style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>

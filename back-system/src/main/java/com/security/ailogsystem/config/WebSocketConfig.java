@@ -12,7 +12,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        // 启用简单的消息代理，暂时不配置心跳避免空指针
+        // 启用简单消息代理
         config.enableSimpleBroker("/topic", "/queue");
         // 设置应用程序目的地前缀
         config.setApplicationDestinationPrefixes("/app");

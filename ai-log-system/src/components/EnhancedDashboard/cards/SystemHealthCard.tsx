@@ -59,10 +59,10 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
       ]);
 
       const systemHealth = metricsRes?.data?.systemHealth || 
-                          realTimeRes?.data?.systemHealth || 95;
-      const uptime = metricsRes?.data?.uptime || 99.8;
+                          realTimeRes?.data?.systemHealth || 0;
+      const uptime = metricsRes?.data?.uptime || 0;
       const latency = metricsRes?.data?.latency || 
-                     realTimeRes?.data?.responseTime || 100;
+                     realTimeRes?.data?.responseTime || 0;
 
       setMetrics({
         systemHealth: Math.min(100, Math.max(0, systemHealth)),

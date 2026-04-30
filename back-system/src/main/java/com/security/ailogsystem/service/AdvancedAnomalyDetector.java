@@ -19,6 +19,7 @@ public class AdvancedAnomalyDetector {
 
     private final UnifiedEventRepository eventRepository;
     private final ThreatSignatureService threatSignatureService;
+    private final AdaptiveThresholdManager thresholdManager;
 
     // 关键词模式
     private static final Map<String, Pattern> THREAT_PATTERNS = Map.of(
@@ -85,22 +86,41 @@ public class AdvancedAnomalyDetector {
 
             // 5. 优化的统计异常检测
             result.addScore(detectStatisticalAnomalyOptimized(event), "统计异常");
+            
+            // 6. 新增：时序异常检测
+            double timeSeriesScore = detectTimeSeriesAnomaly(event);
+            
+            // 7. 新增：关联分析
+            double correlationScore = detectCorrelation(event);
+            
+            // 8. 新的评分融合逻辑
+            double finalScore = calculateWeightedScore(
+                timeSeriesScore,           // 时序得分
+                correlationScore,          // 关联得分
+                result.getRuleScore(),     // 规则得分
+                0.0,                       // ML得分（暂不实现）
+                event
+            );
 
             // 应用检测结果
-            if (result.getFinalScore() > 0.6) {
+            if (finalScore > 0.6) {
                 event.setIsAnomaly(true);
-                event.setAnomalyScore(result.getFinalScore());
+                event.setAnomalyScore(finalScore);
+                event.setAiAnomalyScore(finalScore);  // 设置AI分数
                 event.setAnomalyReason(String.join("; ", result.getReasons()));
-                event.setDetectionAlgorithm("MULTI_LAYER");
+                event.setDetectionAlgorithm("MULTI_LAYER_V2");  // 标记新算法
 
                 // 设置威胁等级
-                if (result.getFinalScore() > 0.9) {
+                if (finalScore > 0.9) {
                     event.setThreatLevel("CRITICAL");
-                } else if (result.getFinalScore() > 0.7) {
+                } else if (finalScore > 0.7) {
                     event.setThreatLevel("HIGH");
                 } else {
                     event.setThreatLevel("MEDIUM");
                 }
+                
+                log.debug("检测到异常: eventType={}, score={}, reasons={}", 
+                    event.getEventType(), finalScore, event.getAnomalyReason());
             }
         } catch (Exception e) {
             log.warn("异常检测过程中发生错误: {}", e.getMessage());
@@ -348,12 +368,14 @@ public class AdvancedAnomalyDetector {
         private double totalScore = 0.0;
         private int detectionCount = 0;
         private List<String> reasons = new ArrayList<>();
+        private double ruleScore = 0.0;  // 规则得分
 
         public void addScore(double score, String reason) {
             if (score > 0) {
                 totalScore += score;
                 detectionCount++;
                 reasons.add(reason + "(" + String.format("%.2f", score) + ")");
+                ruleScore = Math.max(ruleScore, score);  // 保存最大规则得分
             }
         }
 
@@ -364,6 +386,10 @@ public class AdvancedAnomalyDetector {
         public List<String> getReasons() {
             return reasons;
         }
+        
+        public double getRuleScore() {
+            return ruleScore;
+        }
     }
 
     /**
@@ -372,5 +398,184 @@ public class AdvancedAnomalyDetector {
     public void cleanupExpiredCache() {
         frequencyCache.entrySet().removeIf(entry -> !entry.getValue().isValid());
         log.debug("清理过期缓存完成，当前缓存大小: {}", frequencyCache.size());
+    }
+    
+    // ==================== 新增：时序异常检测 ====================
+    
+    // 时序数据缓存
+    private final ConcurrentHashMap<String, Deque<Double>> timeSeriesCache = new ConcurrentHashMap<>();
+    private final int timeSeriesWindow = 20;
+    
+    /**
+     * 时序异常检测
+     */
+    private double detectTimeSeriesAnomaly(UnifiedSecurityEvent event) {
+        String key = getTimeSeriesKey(event);
+        double value = extractTimeSeriesValue(event);
+        
+        Deque<Double> series = timeSeriesCache.computeIfAbsent(
+            key, k -> new ArrayDeque<>()
+        );
+        
+        double score = 0.0;
+        
+        if (series.size() >= 5) {
+            // 1. Z-score检测
+            double mean = series.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+            double std = Math.sqrt(series.stream()
+                .mapToDouble(v -> Math.pow(v - mean, 2))
+                .average().orElse(0.0));
+            
+            if (std > 0) {
+                double zScore = Math.abs(value - mean) / std;
+                if (zScore > 3.0) score = Math.max(score, 0.9);
+                else if (zScore > 2.0) score = Math.max(score, 0.7);
+                else if (zScore > 1.5) score = Math.max(score, 0.5);
+            }
+            
+            // 2. 突增检测
+            double recent = series.stream()
+                .skip(Math.max(0, series.size() - 5))
+                .mapToDouble(Double::doubleValue)
+                .average().orElse(0.0);
+            
+            if (recent > 0 && value > recent * 2) {
+                score = Math.max(score, 0.8);
+            } else if (recent > 0 && value < recent * 0.5) {
+                score = Math.max(score, 0.6);
+            }
+        }
+        
+        // 更新缓存
+        series.addLast(value);
+        if (series.size() > timeSeriesWindow) {
+            series.removeFirst();
+        }
+        
+        return score;
+    }
+    
+    private String getTimeSeriesKey(UnifiedSecurityEvent event) {
+        return event.getEventType();
+    }
+    
+    private double extractTimeSeriesValue(UnifiedSecurityEvent event) {
+        String message = event.getNormalizedMessage();
+        if (message == null) message = event.getRawMessage();
+        if (message == null) return 1.0;
+        
+        try {
+            // 提取CPU值
+            if (message.contains("CPU")) {
+                Pattern pattern = Pattern.compile("CPU[=:]\\s*(\\d+\\.?\\d*)");
+                java.util.regex.Matcher matcher = pattern.matcher(message);
+                if (matcher.find()) {
+                    return Double.parseDouble(matcher.group(1));
+                }
+            }
+            
+            // 提取内存值
+            if (message.contains("内存") || message.contains("memory")) {
+                Pattern pattern = Pattern.compile("(?:内存|memory)[=:]\\s*(\\d+\\.?\\d*)");
+                java.util.regex.Matcher matcher = pattern.matcher(message);
+                if (matcher.find()) {
+                    return Double.parseDouble(matcher.group(1));
+                }
+            }
+        } catch (Exception e) {
+            // 忽略解析错误
+        }
+        
+        return 1.0;
+    }
+    
+    // ==================== 新增：关联分析 ====================
+    
+    /**
+     * 关联分析
+     */
+    private double detectCorrelation(UnifiedSecurityEvent event) {
+        double score = 0.0;
+        
+        try {
+            LocalDateTime now = event.getTimestamp();
+            LocalDateTime fiveMinutesAgo = now.minusMinutes(5);
+            
+            // 1. 同一IP关联
+            if (event.getSourceIp() != null) {
+                long ipAnomalyCount = eventRepository
+                    .countBySourceIpAndIsAnomalyTrueAndTimestampBetween(
+                        event.getSourceIp(), fiveMinutesAgo, now
+                    );
+                
+                if (ipAnomalyCount >= 3) score = Math.max(score, 0.9);
+                else if (ipAnomalyCount >= 2) score = Math.max(score, 0.7);
+                else if (ipAnomalyCount >= 1) score = Math.max(score, 0.5);
+            }
+            
+            // 2. 同一用户关联
+            if (event.getUserId() != null) {
+                long userAnomalyCount = eventRepository
+                    .countByUserIdAndIsAnomalyTrueAndTimestampBetween(
+                        event.getUserId(), fiveMinutesAgo, now
+                    );
+                
+                if (userAnomalyCount >= 3) score = Math.max(score, 0.85);
+                else if (userAnomalyCount >= 2) score = Math.max(score, 0.6);
+            }
+            
+        } catch (Exception e) {
+            log.debug("关联分析失败: {}", e.getMessage());
+        }
+        
+        return score;
+    }
+    
+    // ==================== 新增：加权评分融合 ====================
+    
+    /**
+     * 计算加权评分
+     */
+    private double calculateWeightedScore(double timeSeriesScore, double correlationScore, 
+                                          double ruleScore, double mlScore,
+                                          UnifiedSecurityEvent event) {
+        // 基础权重
+        double wTimeSeries = 0.3;
+        double wCorrelation = 0.2;
+        double wRule = 0.4;
+        double wML = 0.1;
+        
+        // 动态权重调整
+        double adjustmentFactor = 1.0;
+        
+        // 1. 高危事件加权
+        if ("CRITICAL".equals(event.getSeverity())) {
+            adjustmentFactor += 0.4;
+        } else if ("HIGH".equals(event.getSeverity())) {
+            adjustmentFactor += 0.2;
+        }
+        
+        // 2. 连续异常加权（通过关联分数判断）
+        if (correlationScore > 0.7) {
+            adjustmentFactor += 0.2;
+        }
+        
+        // 限制调整范围
+        adjustmentFactor = Math.max(0.5, Math.min(1.5, adjustmentFactor));
+        
+        // 应用动态权重
+        wTimeSeries *= adjustmentFactor;
+        wCorrelation *= adjustmentFactor;
+        wRule *= adjustmentFactor;
+        wML *= adjustmentFactor;
+        
+        // 归一化
+        double total = wTimeSeries + wCorrelation + wRule + wML;
+        
+        // 计算最终得分
+        return (wTimeSeries * timeSeriesScore + 
+                wCorrelation * correlationScore + 
+                wRule * ruleScore + 
+                wML * mlScore) / total;
     }
 }

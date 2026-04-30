@@ -1,10 +1,10 @@
 # Requirements Document
 
-## Introduction
+## 引言
 
 The AI Log System frontend (`ai-log-system`) currently contains widespread mock/simulated data across multiple services and pages. This mock data was used during development but now prevents the system from reflecting real operational state. The goal is to replace all mock data with real API calls to the existing Spring Boot backend (`back-system`), ensuring the system accurately reflects live data. Where backend APIs do not yet exist, new endpoints must be added.
 
-## Glossary
+## 术语表
 
 - **Mock_Data**: Hardcoded or randomly generated data used as a placeholder during development, marked with `// TODO: REMOVE MOCK DATA` comments.
 - **Frontend**: The React/UMI application in `ai-log-system/src`.
@@ -22,13 +22,13 @@ The AI Log System frontend (`ai-log-system`) currently contains widespread mock/
 
 ---
 
-## Requirements
+## 需求
 
-### Requirement 1: Replace PerformanceMonitor Mock Data
+### 需求1: Replace PerformanceMonitor Mock Data
 
 **User Story:** As a system operator, I want the performance monitor to display real system metrics, so that I can accurately assess system health and respond to actual performance issues.
 
-#### Acceptance Criteria
+#### 验收标准
 
 1. WHEN the PerformanceMonitor collects metrics, THE PerformanceMonitor SHALL call the backend `/api/performance/stats` endpoint instead of generating random values.
 2. WHEN the backend performance endpoint is unavailable, THE PerformanceMonitor SHALL log the error and retain the last known metrics rather than generating random fallback data.
@@ -37,11 +37,11 @@ The AI Log System frontend (`ai-log-system`) currently contains widespread mock/
 
 ---
 
-### Requirement 2: Replace IncrementalLogCollector Mock Data
+### 需求2: Replace IncrementalLogCollector Mock Data
 
 **User Story:** As a system operator, I want the incremental log collector to fetch real log data from the backend, so that collection statistics and checkpoints reflect actual system activity.
 
-#### Acceptance Criteria
+#### 验收标准
 
 1. WHEN a collection task executes, THE IncrementalLogCollector SHALL call the backend `/api/events/recent` endpoint to fetch real incremental log data instead of generating random events.
 2. WHEN the backend returns log data, THE IncrementalLogCollector SHALL use the real event timestamps and IDs to update checkpoints.
@@ -54,7 +54,7 @@ The AI Log System frontend (`ai-log-system`) currently contains widespread mock/
 
 **User Story:** As a developer, I want the DatabasePool service to reflect real database connectivity status, so that health checks and statistics are meaningful.
 
-#### Acceptance Criteria
+#### 验收标准
 
 1. WHEN `DatabasePool.healthCheck()` is called, THE DatabasePool SHALL call the backend `/api/performance/health` endpoint to determine real connectivity status.
 2. WHEN `DatabasePool.getStats()` is called, THE DatabasePool SHALL call the backend `/api/performance/stats` endpoint to retrieve real pool statistics.
@@ -67,7 +67,7 @@ The AI Log System frontend (`ai-log-system`) currently contains widespread mock/
 
 **User Story:** As a security analyst, I want the real-time monitor page to display actual security events from the backend, so that I can respond to genuine threats.
 
-#### Acceptance Criteria
+#### 验收标准
 
 1. WHEN the RealTimeMonitor page loads, THE RealTimeMonitor SHALL call `GET /api/events/recent` to fetch the initial list of security events.
 2. WHEN the real-time update interval fires and the monitor is playing, THE RealTimeMonitor SHALL call `GET /api/events/recent` to refresh the event list rather than generating random mock events.
@@ -81,7 +81,7 @@ The AI Log System frontend (`ai-log-system`) currently contains widespread mock/
 
 **User Story:** As a system administrator, I want the system management page to show real users and audit logs from the backend, so that user management actions are persisted.
 
-#### Acceptance Criteria
+#### 验收标准
 
 1. WHEN the SystemPage loads, THE SystemPage SHALL call `GET /api/users` to fetch the real user list instead of using hardcoded mock users.
 2. WHEN the SystemPage loads, THE SystemPage SHALL call `GET /api/logs` with appropriate filters to fetch real audit log entries instead of generating random mock logs.
@@ -96,7 +96,7 @@ The AI Log System frontend (`ai-log-system`) currently contains widespread mock/
 
 **User Story:** As a system operator, I want the batch operations page to display real operation history from the backend, so that I can audit past batch actions.
 
-#### Acceptance Criteria
+#### 验收标准
 
 1. WHEN the BatchOperationsPage loads, THE BatchOperationsPage SHALL call `GET /api/logs/batch/stats` to fetch real batch statistics.
 2. WHEN the BatchOperationsPage loads, THE BatchOperationsPage SHALL call a backend endpoint to fetch real operation history instead of using hardcoded mock history records.
@@ -109,7 +109,7 @@ The AI Log System frontend (`ai-log-system`) currently contains widespread mock/
 
 **User Story:** As a data scientist, I want the model metrics component to display real training history and performance data, so that I can accurately evaluate model quality.
 
-#### Acceptance Criteria
+#### 验收标准
 
 1. WHEN the ModelMetrics modal opens for a model, THE ModelMetrics SHALL call `GET /api/models/{id}/metrics` to fetch real metrics data instead of generating random confusion matrix, ROC curve, and training history data.
 2. WHEN the backend returns metrics, THE ModelMetrics SHALL render the real confusion matrix, ROC curve, feature importance, and training history charts.
@@ -122,7 +122,7 @@ The AI Log System frontend (`ai-log-system`) currently contains widespread mock/
 
 **User Story:** As a security analyst, I want the real-time log chart to display actual log traffic data, so that the chart reflects genuine system activity patterns.
 
-#### Acceptance Criteria
+#### 验收标准
 
 1. WHEN the RealTimeLogChart initializes, THE RealTimeLogChart SHALL call `GET /api/events/statistics/timeseries` to fetch historical time-series data for the initial chart render instead of generating random data points.
 2. WHEN the refresh interval fires and the chart is not paused, THE RealTimeLogChart SHALL call the backend time-series endpoint to fetch new data points.
@@ -136,7 +136,7 @@ The AI Log System frontend (`ai-log-system`) currently contains widespread mock/
 
 **User Story:** As a developer, I want certain fallback and default behaviors to remain in place, so that the system degrades gracefully when optional features are unavailable.
 
-#### Acceptance Criteria
+#### 验收标准
 
 1. THE LogCollectorService SHALL retain its existing fallback behavior when the backend API is unavailable, as it is an intentional degradation mechanism.
 2. THE SecurityLogParser SHALL retain its default parsing mode as it does not depend on live data.

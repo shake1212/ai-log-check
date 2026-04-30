@@ -114,3 +114,16 @@ back-system/database/
 back-system/logs/
 back-system/target/
 ai-log-system/node_modules/
+
+# Windows 保留设备名（无法被 git 正常处理）
+back-system/nul
+nul
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+back-system/src/scripts/__pycache__/
+
+# 临时采集脚本
+temp_collector.py

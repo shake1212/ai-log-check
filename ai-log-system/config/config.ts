@@ -21,7 +21,6 @@ export default defineConfig({
         { path: '/log-collector', component: '@/pages/log-collector', name: 'log-collector', icon: 'LineChartOutlined' },
         { path: '/rules', component: '@/pages/rules/index', name: 'rules', icon: 'SafetyOutlined' },
         { path: '/system', component: '@/pages/system/index', name: 'system', icon: 'TeamOutlined', access: 'admin' },
-        { path: '/profile', component: '@/pages/profile', name: 'profile', hideInMenu: true },
         { path: '*', component: '@/pages/404', layout: false },
       ],
     },

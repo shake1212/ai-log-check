@@ -27,10 +27,10 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
     private static final Logger logger = LoggerFactory.getLogger(ThreatDetectionServiceImpl.class);
 
     @Autowired
-    private SecurityAlertRepository securityAlertRepository; // 旧的仓库，可以暂时保留
+    private SecurityAlertRepository securityAlertRepository;
 
     @Autowired
-    private AlertService alertService; // 新的告警服务
+    private AlertService alertService;
 
     @Autowired
     private WebSocketService webSocketService;
@@ -124,9 +124,8 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
             analyzeThreat(log);
         }
 
-        // 获取最近创建的警报（从旧的仓库中获取）
+        // 获取最近创建的警报
         try {
-            // 这里我们暂时从旧的仓库获取，后续可以迁移到新的仓库
             List<SecurityAlert> recentAlerts = securityAlertRepository.findTop10ByOrderByCreatedTimeDesc();
             alerts.addAll(recentAlerts);
         } catch (Exception e) {
@@ -270,10 +269,7 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
             alertRequest.setAiConfidence(confidence);
 
             try {
-                // 使用新的 alertService 创建告警
                 AlertResponse alertResponse = alertService.createAlert(alertRequest);
-
-                // 如果需要，也可以创建旧的 SecurityAlert 用于兼容性（可选）
                 createCompatibilityAlert(log, threatType, alertLevel, description);
 
                 logger.warn("创建安全警报: {} - {}", threatType, description);
@@ -315,14 +311,11 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
      */
     private void createCompatibilityAlert(SecurityLog log, String threatType, String alertLevel, String description) {
         try {
-            // 这里可以创建旧的 SecurityAlert 实体用于兼容性
             SecurityAlert.AlertLevel level = convertToOldAlertLevel(alertLevel);
             SecurityAlert oldAlert = new SecurityAlert(level, threatType, description);
             oldAlert.setSecurityLog(log);
             oldAlert.setCreatedTime(LocalDateTime.now());
             oldAlert.setHandled(false);
-
-            // 保存到旧的仓库
             securityAlertRepository.save(oldAlert);
         } catch (Exception e) {
             logger.warn("创建兼容性告警失败: {}", e.getMessage());

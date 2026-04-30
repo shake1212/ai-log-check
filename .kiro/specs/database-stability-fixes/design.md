@@ -1,10 +1,10 @@
 # Design Document: Database Stability Fixes
 
-## Overview
+## 概述
 
 This design addresses a SQL syntax error in the AI Log System's database migration script V1.0.5. Database inspection confirms that the required columns (`enable_rule_engine` and `rule_engine_timeout`) already exist in the `log_collector_configs` table. The solution is to simply remove the problematic V1.0.5 migration file.
 
-## Architecture
+## 架构
 
 No architectural changes needed. Simply remove the problematic migration file:
 
@@ -21,7 +21,7 @@ back-system/src/main/resources/db/migration/
 
 **Remove Problematic File**: Since the database already has the required columns (added by V1.0.6 or manually), and V1.0.5 has incorrect syntax, the simplest solution is to delete or rename V1.0.5 to prevent it from being executed.
 
-## Components and Interfaces
+## 组件和接口
 
 ### 1. File to Remove
 
@@ -35,12 +35,12 @@ The `log_collector_configs` table already contains:
 - `enable_rule_engine`: bit(1) NOT NULL - Controls whether rule engine analysis is enabled  
 - `rule_engine_timeout`: int(11) DEFAULT NULL - Timeout in seconds for rule engine operations
 
-## Data Models
+## 数据模型
 
 No changes to data models. The existing columns in `log_collector_configs` table are already correct.
 
 
-## Correctness Properties
+## 正确性属性
 
 A property is a characteristic or behavior that should hold true across all valid executions of a system—essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.
 
@@ -50,7 +50,7 @@ A property is a characteristic or behavior that should hold true across all vali
 
 **Validates: Requirements 1.2**
 
-## Error Handling
+## 错误处理
 
 ### File Removal
 
@@ -63,7 +63,7 @@ A property is a characteristic or behavior that should hold true across all vali
 
 **Prevention**: Keep V1.0.6 migration file which provides safe column addition logic
 
-## Testing Strategy
+## 测试策略
 
 This feature will use simple unit tests to verify the database schema.
 

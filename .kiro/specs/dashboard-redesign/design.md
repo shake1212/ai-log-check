@@ -1,10 +1,10 @@
 # Design Document: Dashboard Redesign
 
-## Overview
+## 概述
 
 重新设计 `/dashboard` 仪表盘页面，解决当前界面层级混乱、操作按钮过多、内容分散等问题。目标是让仪表盘真正做到"一屏掌握全局"：顶部紧凑导航栏 + KPI 卡片行 + 图表行 + 事件列表，所有核心信息在 1080p 屏幕上无需滚动即可看到。
 
-## Architecture
+## 架构
 
 重构采用"精简层级"策略，不引入新的外部依赖，在现有 Ant Design + React 技术栈内完成。
 
@@ -31,7 +31,7 @@ EnhancedDashboard (容器，保留数据逻辑)
 - 底部信息栏（系统版本、数据延迟等）
 - "前往告警处置"、"前往事件分析"、"重新连接"三个按钮
 
-## Components and Interfaces
+## 组件和接口
 
 ### DashboardTopBar
 
@@ -99,7 +99,7 @@ interface EventListProps {
 
 每行只渲染：色点 + 事件类型 + 消息（截断 60 字符）+ 时间 + 状态 Tag，点击整行跳转 `/events?id={event.id}`。
 
-## Data Models
+## 数据模型
 
 无新增数据模型，复用现有 `SecurityEvent`、`EventStats` 类型。
 
@@ -116,7 +116,7 @@ interface EventStats {
 }
 ```
 
-## Correctness Properties
+## 正确性属性
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system—essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
 
@@ -136,13 +136,13 @@ Property 4: 事件列表默认过滤高危事件
 *For any* 包含 CRITICAL、HIGH、MEDIUM、LOW 各级别事件的列表，默认状态下 EventList 渲染的事件行应只包含 CRITICAL 和 HIGH 级别，不包含 MEDIUM 和 LOW 级别
 **Validates: Requirements 5.4**
 
-## Error Handling
+## 错误处理
 
 - 单个 KPI 卡片 API 失败时，卡片显示"--"占位符，不影响其他卡片
 - 全部 API 失败时，在 KpiRow 上方显示 Alert 提示，提供重试按钮
 - WebSocket 断开时，DashboardTopBar 连接状态变红，显示"点击重连"链接，不弹出全局错误
 
-## Testing Strategy
+## 测试策略
 
 使用 **Vitest + @testing-library/react** 进行单元测试和属性测试。
 

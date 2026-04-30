@@ -145,4 +145,11 @@ public interface UnifiedEventRepository extends JpaRepository<UnifiedSecurityEve
     // 6. 添加：统计威胁级别（threatLevel）分组
     @Query("SELECT e.threatLevel, COUNT(e) FROM UnifiedSecurityEvent e GROUP BY e.threatLevel")
     List<Object[]> countByThreatLevelGroupAll();
+    
+    // 7. 新增：关联分析查询方法
+    long countBySourceIpAndIsAnomalyTrueAndTimestampBetween(
+        String sourceIp, LocalDateTime start, LocalDateTime end);
+    
+    long countByUserIdAndIsAnomalyTrueAndTimestampBetween(
+        String userId, LocalDateTime start, LocalDateTime end);
 }

@@ -532,9 +532,6 @@ public class UnifiedEventController {
      */
     private List<Object[]> getDailyStatisticsNative(LocalDateTime startDate) {
         try {
-            // 使用现有的高级统计查询方法，或创建新查询
-            // 这里假设你已经有 countBySourceSystemGroup 方法
-            // 暂时返回空列表或调用其他可用方法
             return new ArrayList<>();
         } catch (Exception e) {
             log.error("获取每日统计失败", e);

@@ -1,10 +1,10 @@
 # Design Document
 
-## Overview
+## 概述
 
 从 `ai-log-system/src/pages/log-collector/index.tsx` 中删除"告警列表"功能模块，将"活跃告警"统计卡片改为跳转到 `#/alerts` 页面的入口。这是一次纯前端的代码清理，不涉及后端改动。
 
-## Architecture
+## 架构
 
 变更范围仅限单个文件：`ai-log-system/src/pages/log-collector/index.tsx`
 
@@ -22,7 +22,7 @@ LogCollectorPage
 
 导航使用 Umi 4 内置的 `history` 对象（`import { history } from 'umi'`）实现跳转。
 
-## Components and Interfaces
+## 组件和接口
 
 ### 删除的代码
 
@@ -89,7 +89,7 @@ LogCollectorPage
 - `import { history } from 'umi';`
 - `LinkOutlined` 加入 `@ant-design/icons` 的 import 列表
 
-## Data Models
+## 数据模型
 
 无数据模型变更。删除后 `loading` 对象类型简化为：
 
@@ -103,7 +103,7 @@ LogCollectorPage
 }
 ```
 
-## Correctness Properties
+## 正确性属性
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system — essentially, a formal statement about what the system should do.*
 
@@ -117,11 +117,11 @@ Property 2: 告警相关代码不存在
 *For any* render of LogCollectorPage, no alert list table, no `loadAlerts` call in refresh handler, and no `handleAcknowledgeAlert`/`handleResolveAlert` functions should be present
 **Validates: Requirements 1.1, 1.4, 1.5**
 
-## Error Handling
+## 错误处理
 
 无新增错误处理逻辑。删除告警加载后，`useEffect` 的 `Promise.allSettled` 调用减少一个并发项，不影响其他加载流程。
 
-## Testing Strategy
+## 测试策略
 
 本次变更为纯删除 + 小改动，测试策略以单元测试为主：
 

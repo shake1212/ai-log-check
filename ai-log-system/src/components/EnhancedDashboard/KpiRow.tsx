@@ -3,7 +3,7 @@ import { Row, Col, Skeleton } from 'antd';
 import SystemHealthCard from './cards/SystemHealthCard';
 import TotalLogsCard from './cards/TotalLogsCard';
 import SecurityEventsCard from './cards/SecurityEventsCard';
-import ActiveUsersCard from './cards/ActiveUsersCard';
+import UnhandledAlertsCard from './cards/UnhandledAlertsCard';
 import { useKpiData, KpiData } from './hooks/useKpiData';
 
 interface EventStats {
@@ -67,7 +67,7 @@ const KpiRow: React.FC<KpiRowProps> = ({ isPaused, eventStats, loading = false }
           {isLoading ? (
             <Skeleton active paragraph={{ rows: 2 }} />
           ) : (
-            <ActiveUsersCard isPaused={isPaused} compact kpiData={kpiData} />
+            <UnhandledAlertsCard isPaused={isPaused} compact kpiData={kpiData} />
           )}
         </div>
       </Col>

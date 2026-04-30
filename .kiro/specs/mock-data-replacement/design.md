@@ -1,6 +1,6 @@
 # Design Document: Mock Data Replacement
 
-## Overview
+## 概述
 
 This feature replaces all mock/randomly-generated data in the `ai-log-system` frontend with real API calls to the Spring Boot backend (`back-system`). The work is organized by priority: high-priority items affect core business correctness, medium-priority items affect user experience, and low-priority items are preserved as intentional fallbacks.
 
@@ -9,7 +9,7 @@ The backend already exposes most required endpoints. One new backend endpoint is
 
 ---
 
-## Architecture
+## 架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -51,7 +51,7 @@ The backend already exposes most required endpoints. One new backend endpoint is
 
 ---
 
-## Components and Interfaces
+## 组件和接口
 
 ### 1. New `performanceApi` in `api.ts`
 
@@ -148,7 +148,7 @@ Add `GET /api/logs/batch/history` returning a list of `BatchOperationRecord` obj
 
 ---
 
-## Data Models
+## 数据模型
 
 ### Frontend `SecurityEvent` ↔ Backend `UnifiedSecurityEventDTO` Mapping
 
@@ -185,7 +185,7 @@ public class BatchOperationRecord {
 
 ---
 
-## Correctness Properties
+## 正确性属性
 
 *A property is a characteristic or behavior that should hold true across all valid executions of a system — essentially, a formal statement about what the system should do. Properties serve as the bridge between human-readable specifications and machine-verifiable correctness guarantees.*
 
@@ -226,7 +226,7 @@ public class BatchOperationRecord {
 
 ---
 
-## Error Handling
+## 错误处理
 
 | Scenario | Behavior |
 |---|---|
@@ -241,7 +241,7 @@ public class BatchOperationRecord {
 
 ---
 
-## Testing Strategy
+## 测试策略
 
 ### Dual Testing Approach
 

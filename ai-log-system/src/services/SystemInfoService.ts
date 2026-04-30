@@ -138,7 +138,6 @@ export interface HealthCheckResult {
 class SystemInfoApiService {
   private baseUrl = '/api/system-info';
   private defaultTimeout = 15000; // 15秒超时
-
   /** 带超时的 fetch 封装 */
   private async fetchWithTimeout(url: string, options?: RequestInit, timeoutMs?: number): Promise<Response> {
     const controller = new AbortController();
@@ -155,8 +154,6 @@ class SystemInfoApiService {
   // ==================== 数据转换方法 ====================
   
   private transformSystemInfo(data: any): RealTimeSystemInfo {
-    console.log('原始系统数据:', data);
-    
     // 提取实际的系统数据
     const systemData = data.data || data;
     
@@ -189,8 +186,6 @@ class SystemInfoApiService {
   }
 
   private transformCpuInfo(data: any): RealTimeCpuInfo {
-    console.log('原始CPU数据:', data);
-    
     const cpuData = data.data || data;
     
     const result: RealTimeCpuInfo = {
@@ -211,8 +206,6 @@ class SystemInfoApiService {
   }
 
   private transformMemoryInfo(data: any): RealTimeMemoryInfo {
-    console.log('原始内存数据:', data);
-    
     const memoryData = data.data || data;
     
     const result: RealTimeMemoryInfo = {
@@ -236,8 +229,6 @@ class SystemInfoApiService {
   }
 
   private transformDiskInfo(data: any): RealTimeDiskInfo {
-    console.log('原始磁盘数据:', data);
-    
     const diskData = data.data || data;
     
     const result: RealTimeDiskInfo = {
@@ -262,8 +253,6 @@ class SystemInfoApiService {
   }
 
   private transformProcessInfo(data: any): RealTimeProcessInfo {
-    console.log('原始进程数据:', data);
-    
     const processData = data.data || data;
     
     const result: RealTimeProcessInfo = {
