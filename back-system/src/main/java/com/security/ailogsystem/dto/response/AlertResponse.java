@@ -53,6 +53,8 @@ public class AlertResponse {
                 .createdTime(alert.getCreatedTime())
                 .updatedTime(alert.getUpdatedTime())
                 .handled(alert.getHandled())
+                .metricValue(alert.getMetricValue())
+                .threshold(alert.getThreshold())
                 .build();
     }
 }

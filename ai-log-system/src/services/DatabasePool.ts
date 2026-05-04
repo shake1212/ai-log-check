@@ -3,6 +3,7 @@
  * 提供数据库连接池的创建、管理和监控
  */
 
+import request from '@/utils/request';
 import { 
   DatabaseConfig, 
   PoolConfig, 
@@ -99,18 +100,16 @@ export class DatabasePool {
    * 调用后端数据库网关
    */
   private async callDatabaseApi<T = any>(path: string, method: string = 'GET', body?: any): Promise<T> {
-    const response = await fetch(`/api/database/${path}`, {
-      method,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: body ? JSON.stringify(body) : undefined
-    });
-    if (!response.ok) {
-      throw new Error(`数据库接口调用失败: ${response.status} ${response.statusText}`);
+    if (method === 'GET') {
+      return request.get(`/api/database/${path}`);
+    } else if (method === 'POST') {
+      return request.post(`/api/database/${path}`, body || {});
+    } else if (method === 'PUT') {
+      return request.put(`/api/database/${path}`, body || {});
+    } else if (method === 'DELETE') {
+      return request.delete(`/api/database/${path}`);
     }
-    return response.json();
+    throw new Error(`Unsupported HTTP method: ${method}`);
   }
 
   /**

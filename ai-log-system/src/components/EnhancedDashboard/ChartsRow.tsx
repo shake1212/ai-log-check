@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Row, Col, Card, Typography, Empty } from 'antd';
+﻿import React, { useMemo } from 'react';
+import { Row, Col, Card, Typography, Empty, Skeleton } from 'antd';
 import RealTimeLogChart from './charts/RealTimeLogChart';
 import { SecurityEvent, LEVEL_COLORS } from './types/dashboard';
 
@@ -15,6 +15,7 @@ interface ChartsRowProps {
   events: SecurityEvent[];
   isPaused: boolean;
   threatData: ThreatDataItem[];
+  loading?: boolean;
 }
 
 // 紧凑的 conic-gradient 饼图，内嵌右侧图例列表
@@ -95,7 +96,7 @@ const InlinePieChart: React.FC<{ data: ThreatDataItem[] }> = ({ data }) => {
   );
 };
 
-const ChartsRow: React.FC<ChartsRowProps> = ({ events, isPaused, threatData }) => {
+const ChartsRow: React.FC<ChartsRowProps> = ({ events, isPaused, threatData, loading = false }) => {
   const isEmpty = events.length === 0;
 
   // Build chart data from events for RealTimeLogChart (useMemo 避免每次渲染重新计算)
@@ -117,10 +118,12 @@ const ChartsRow: React.FC<ChartsRowProps> = ({ events, isPaused, threatData }) =
       {/* Left: Real-time log chart (60%) */}
       <Col span={14}>
         <Card
-          bodyStyle={{ padding: 0, height: ROW_HEIGHT, overflow: 'hidden' }}
+          styles={{ body: { padding: loading ? 16 : 0, height: ROW_HEIGHT, overflow: 'hidden' } }}
           style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflow: 'hidden' }}
         >
-          {isEmpty ? (
+          {loading ? (
+            <Skeleton active paragraph={{ rows: 4 }} style={{ height: ROW_HEIGHT }} />
+          ) : isEmpty ? (
             <div style={{ height: ROW_HEIGHT, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Empty description="暂无数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             </div>
@@ -140,15 +143,19 @@ const ChartsRow: React.FC<ChartsRowProps> = ({ events, isPaused, threatData }) =
       <Col span={10}>
         <Card
           title={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>🛡️</span>
-              <Text strong>威胁等级分布</Text>
-            </div>
+            loading ? undefined : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>🛡️</span>
+                <Text strong>威胁等级分布</Text>
+              </div>
+            )
           }
-          bodyStyle={{ padding: '8px 0', height: ROW_HEIGHT - 46, overflow: 'hidden', display: 'flex', alignItems: 'center' }}
+          styles={{ body: { padding: loading ? 16 : '8px 0', height: loading ? ROW_HEIGHT : ROW_HEIGHT - 46, overflow: 'hidden', display: 'flex', alignItems: 'center' } }}
           style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
         >
-          {isEmpty ? (
+          {loading ? (
+            <Skeleton active paragraph={{ rows: 4 }} style={{ height: ROW_HEIGHT }} />
+          ) : isEmpty ? (
             <div style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Empty description="暂无数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             </div>

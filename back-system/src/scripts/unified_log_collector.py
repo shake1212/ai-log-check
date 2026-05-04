@@ -52,7 +52,7 @@ class CollectorConfig:
 
     # 收集间隔（分钟）
     security_collection_interval: int = 5      # 安全日志收集间隔
-    performance_collection_interval: int = 2   # 性能数据收集间隔
+    performance_collection_interval: int = 1   # 性能数据收集间隔（1分钟）
     alert_check_interval: int = 1              # 告警检查间隔（分钟）
 
     # 自动告警配置
@@ -111,10 +111,9 @@ class AlertStatus(Enum):
     FALSE_POSITIVE = "FALSE_POSITIVE"
 
 class EventSeverity(Enum):
-    DEBUG = "DEBUG"
-    INFO = "INFO"
-    WARN = "WARN"
-    ERROR = "ERROR"
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
     CRITICAL = "CRITICAL"
 
 # 可疑端口列表
@@ -840,7 +839,7 @@ class IntegratedSecurityAlertCollector:
         """从安全事件创建告警"""
         try:
             event_type = event.get('event_type', '')
-            severity = event.get('severity', 'INFO')
+            severity = event.get('severity', 'LOW')
             alert_level = self._map_severity_to_alert_level(severity)
 
             if not self._should_create_alert_for_event(alert_level, event_type):
@@ -1049,10 +1048,10 @@ class IntegratedSecurityAlertCollector:
                             source_system="NETWORK",
                             event_type="NETWORK_INTERFACE",
                             category="NETWORK_INFO",
-                            severity="INFO",
+                            severity="LOW",
                             normalized_message=f"网络接口: {interface} - {addr.address}",
                             event_data={"interface": interface, "ip_address": addr.address, "collectorHost": self.collector_host},
-                            threat_level="INFO",
+                            threat_level="LOW",
                             anomaly_score=0.0
                         )
                         events.append(event.to_dict())
@@ -1071,10 +1070,10 @@ class IntegratedSecurityAlertCollector:
                         source_system="SECURITY",
                         event_type="FIREWALL_STATUS",
                         category="NETWORK_SECURITY",
-                        severity="INFO",
+                        severity="LOW",
                         normalized_message="Windows防火墙状态检查",
                         event_data={"collectorHost": self.collector_host},
-                        threat_level="INFO",
+                        threat_level="LOW",
                         anomaly_score=0.0
                     )
                     events.append(event.to_dict())
@@ -1088,10 +1087,10 @@ class IntegratedSecurityAlertCollector:
                                 source_system="SECURITY",
                                 event_type="FIREWALL_STATUS",
                                 category="NETWORK_SECURITY",
-                                severity="INFO",
+                                severity="LOW",
                                 normalized_message=f"防火墙规则检查: {' '.join(cmd)}",
                                 event_data={"collectorHost": self.collector_host},
-                                threat_level="INFO",
+                                threat_level="LOW",
                                 anomaly_score=0.0
                             )
                             events.append(event.to_dict())
@@ -1291,7 +1290,7 @@ class IntegratedSecurityAlertCollector:
                 source_system="NETWORK",
                 event_type="SUSPICIOUS_CONNECTION" if is_susp else "NETWORK_CONNECTION",
                 category="NETWORK_SECURITY",
-                severity="HIGH" if is_susp else "INFO",
+                severity="HIGH" if is_susp else "LOW",
                 raw_message=str(conn),
                 threat_level="HIGH" if is_susp else "LOW",
                 anomaly_score=0.8 if is_susp else 0.1
@@ -1349,7 +1348,7 @@ class IntegratedSecurityAlertCollector:
             source_system="COLLECTOR",
             event_type="COLLECTOR_STATUS",
             category="SYSTEM",
-            severity="INFO",
+            severity="LOW",
             normalized_message=f"收集器状态：{cnt} 事件",
             anomaly_score=0.0
         ).to_dict()
@@ -1360,7 +1359,7 @@ class IntegratedSecurityAlertCollector:
             source_system="COLLECTOR",
             event_type="COLLECTOR_ERROR",
             category="SYSTEM",
-            severity="ERROR",
+            severity="HIGH",
             normalized_message=f"{collector} 错误：{err}",
             anomaly_score=0.0
         ).to_dict()
@@ -1374,7 +1373,7 @@ class IntegratedSecurityAlertCollector:
         crit = {4625, 4724, 4740}
         if eid in crit:
             return "CRITICAL"
-        return "ERROR" if level == "Error" else "WARN" if level == "Warning" else "INFO"
+        return "HIGH" if level == "Error" else "MEDIUM" if level == "Warning" else "LOW"
 
     def _map_severity_to_alert_level(self, s: str) -> str:
         m = {"CRITICAL": "CRITICAL", "ERROR": "HIGH", "WARN": "MEDIUM", "INFO": "LOW"}
@@ -1391,8 +1390,8 @@ class IntegratedSecurityAlertCollector:
     def _detect_unix_severity(self, line: str) -> str:
         l = line.lower()
         if any(w in l for w in ["failed", "denied"]):
-            return "ERROR"
-        return "INFO"
+            return "HIGH"
+        return "LOW"
 
     def _extract_ip_from_message(self, msg: str) -> Optional[str]:
         match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', msg)
@@ -1400,7 +1399,7 @@ class IntegratedSecurityAlertCollector:
 
     # ==================== 评分 ====================
     def _calculate_threat_level(self, eid, sev):
-        return "HIGH" if sev in ["CRITICAL", "ERROR"] else "MEDIUM"
+        return "HIGH" if sev in ["CRITICAL", "HIGH"] else "MEDIUM" if sev == "MEDIUM" else "LOW"
 
     def _calculate_unix_threat_level(self, line):
         return "HIGH" if "attack" in line.lower() else "MEDIUM"
@@ -1452,6 +1451,21 @@ class IntegratedSecurityAlertCollector:
             response = self.session.post(url, json=core_events, timeout=self.config.request_timeout)
             if response.status_code in (200, 201):
                 logger.info(f"成功发送 {len(events)} 个安全事件")
+                try:
+                    resp_data = response.json()
+                    saved_events = None
+                    if isinstance(resp_data, dict):
+                        saved_events = resp_data.get('data') or resp_data.get('events')
+                    elif isinstance(resp_data, list):
+                        saved_events = resp_data
+                    if saved_events and isinstance(saved_events, list):
+                        for i, saved in enumerate(saved_events):
+                            if i < len(events) and isinstance(saved, dict):
+                                db_id = saved.get('id') or saved.get('eventId')
+                                if db_id is not None:
+                                    events[i]['database_id'] = db_id
+                except Exception as parse_err:
+                    logger.debug(f"解析事件保存响应失败: {parse_err}")
                 return True
             else:
                 logger.error(f"发送失败，状态码: {response.status_code}, 响应: {response.text[:500]}")

@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Card, Tabs, Button, Space, Badge, Dropdown } from 'antd';
 import {
   DashboardFilled,
@@ -82,7 +82,7 @@ const ControlBar: React.FC<ControlBarProps> = ({
         boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
         border: '1px solid rgba(0,0,0,0.06)'
       }}
-      bodyStyle={{ padding: '12px 14px' }}
+      styles={{ body: { padding: '12px 14px' } }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
         <div>

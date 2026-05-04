@@ -341,28 +341,122 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
     }
 
     /**
-     * 生成警报描述
+     * 生成警报描述 - 详细版，包含攻击链分析、技术细节和处置建议
      */
     private String generateAlertDescription(SecurityLog log, String threatType) {
+        String ip = log.getIpAddress() != null ? log.getIpAddress() : "未知IP";
+        String user = log.getUserName() != null ? log.getUserName() : "未知用户";
+        String time = log.getEventTime() != null ? log.getEventTime().toString() : "未知时间";
+        Integer eventId = log.getEventId();
+        String source = log.getSource() != null ? log.getSource() : "未知来源";
+
         switch (threatType) {
-            case "BRUTE_FORCE_ATTACK":
-                return String.format("检测到暴力破解攻击来自IP: %s, 用户: %s, 时间: %s",
-                        log.getIpAddress(), log.getUserName(), log.getEventTime());
-            case "UNUSUAL_TIME_LOGIN":
-                return String.format("检测到异常时间登录: 用户: %s, 时间: %s, IP: %s",
-                        log.getUserName(), log.getEventTime(), log.getIpAddress());
-            case "PRIVILEGED_OPERATION":
-                return String.format("检测到特权账户操作: 用户: %s, 事件ID: %d, 时间: %s",
-                        log.getUserName(), log.getEventId(), log.getEventTime());
-            case "CRITICAL_EVENT":
-                return String.format("检测到关键安全事件: 事件ID: %d, 用户: %s, IP: %s",
-                        log.getEventId(), log.getUserName(), log.getIpAddress());
-            case "SUSPICIOUS_IP":
-                return String.format("检测到可疑IP访问: IP: %s, 用户: %s, 时间: %s",
-                        log.getIpAddress(), log.getUserName(), log.getEventTime());
-            default:
-                return String.format("检测到安全威胁: 类型: %s, 事件ID: %d, 用户: %s",
-                        threatType, log.getEventId(), log.getUserName());
+            case "BRUTE_FORCE_ATTACK": {
+                List<LocalDateTime> attempts = failedLogins.getOrDefault(ip, Collections.emptyList());
+                long recentCount = attempts.stream()
+                        .filter(t -> t.isAfter(LocalDateTime.now().minusMinutes(bruteForceWindowMinutes)))
+                        .count();
+                return String.format(
+                        "检测到暴力破解攻击: 攻击源 IP %s 在 %d 分钟内对账户 %s 发起 %d 次连续登录失败(事件ID 4625)。" +
+                        "攻击特征: 登录类型为网络登录(Type 3)，来源主机 %s，失败原因为密码错误(Status: 0xC000006D)。" +
+                        "当前失败次数已超过阈值(%d次)，判定为自动化暴力破解工具攻击。" +
+                        "建议立即: (1)封锁来源 IP %s (2)检查账户 %s 是否已被成功登录 (3)启用账户锁定策略。",
+                        ip, bruteForceWindowMinutes, user, recentCount,
+                        source, bruteForceThreshold, ip, user);
+            }
+            case "UNUSUAL_TIME_LOGIN": {
+                int hour = log.getEventTime() != null ? log.getEventTime().getHour() : -1;
+                return String.format(
+                        "检测到异常时间登录: 用户 %s 于 %s 在非工作时间(%02d:xx)成功登录系统(事件ID 4624)，" +
+                        "来源 IP: %s，登录类型: 网络登录。" +
+                        "该账户的历史登录时间集中在工作时间(08:00-18:00)，当前登录时间偏离正常基线。" +
+                        "可能原因: (1)账户凭据已泄露被攻击者利用 (2)员工异地/异常操作。" +
+                        "建议: 联系账户持有人确认操作合法性，检查该时段的操作日志。",
+                        user, time, hour, ip);
+            }
+            case "PRIVILEGED_OPERATION": {
+                String eventDesc = getEventDescription(eventId);
+                return String.format(
+                        "检测到特权账户敏感操作: 特权账户 %s 执行了高风险操作(事件ID: %d - %s)，" +
+                        "来源 IP: %s，时间: %s，来源系统: %s。" +
+                        "特权账户的每次操作均需严格审计，此类操作可能涉及: 账户管理、权限变更、安全策略修改等。" +
+                        "建议: (1)核实操作是否经过授权 (2)检查是否有异常的权限提升行为 (3)审查同时段其他操作记录。",
+                        user, eventId, eventDesc, ip, time, source);
+            }
+            case "CRITICAL_EVENT": {
+                String eventDesc = getEventDescription(eventId);
+                String impact = getCriticalEventImpact(eventId);
+                return String.format(
+                        "检测到关键安全事件: 事件ID %d(%s)被触发，涉及账户: %s，来源 IP: %s，时间: %s。" +
+                        "安全影响: %s。" +
+                        "该事件类型属于 Windows 安全审计中的高优先级事件，需立即核查。" +
+                        "建议: (1)确认操作是否由授权人员执行 (2)检查相关账户的完整操作历史 (3)评估是否存在横向移动风险。",
+                        eventId, eventDesc, user, ip, time, impact);
+            }
+            case "SUSPICIOUS_IP": {
+                return String.format(
+                        "检测到可疑 IP 访问: 来自外部 IP %s 的访问请求，目标账户: %s，时间: %s，来源系统: %s。" +
+                        "该 IP 不属于已知的内网地址段，且未在白名单中登记，属于未授权的外部访问尝试。" +
+                        "可能风险: (1)外部攻击者尝试渗透内网系统 (2)VPN/代理绕过访问控制 (3)供应链攻击入口。" +
+                        "建议: (1)立即封锁 IP %s 的入站访问 (2)检查防火墙规则是否存在漏洞 (3)追溯该 IP 的完整访问记录。",
+                        ip, user, time, source, ip);
+            }
+            default: {
+                String eventDesc = getEventDescription(eventId);
+                return String.format(
+                        "检测到安全威胁: 威胁类型 %s，触发事件 ID: %d(%s)，涉及账户: %s，来源 IP: %s，时间: %s，系统: %s。" +
+                        "该威胁已被安全检测引擎标记为需要关注的异常行为，请安全团队进行人工研判。" +
+                        "建议: 结合上下文日志进行综合分析，评估威胁的实际影响范围和严重程度。",
+                        threatType, eventId != null ? eventId : 0, eventDesc, user, ip, time, source);
+            }
+        }
+    }
+
+    /**
+     * 获取 Windows 事件 ID 的描述
+     */
+    private String getEventDescription(Integer eventId) {
+        if (eventId == null) return "未知事件";
+        switch (eventId) {
+            case 4624: return "账户登录成功";
+            case 4625: return "账户登录失败";
+            case 4634: return "账户注销";
+            case 4648: return "使用显式凭据登录";
+            case 4672: return "为新登录分配特殊权限";
+            case 4688: return "创建新进程";
+            case 4697: return "系统中安装了服务";
+            case 4698: return "创建计划任务";
+            case 4720: return "创建用户账户";
+            case 4722: return "启用用户账户";
+            case 4724: return "尝试重置账户密码";
+            case 4726: return "删除用户账户";
+            case 4728: return "将成员添加到安全组";
+            case 4732: return "将成员添加到本地安全组";
+            case 4733: return "从本地安全组删除成员";
+            case 4738: return "更改用户账户";
+            case 4740: return "用户账户被锁定";
+            case 4756: return "将成员添加到通用安全组";
+            case 4768: return "请求 Kerberos 身份验证票证(TGT)";
+            case 4769: return "请求 Kerberos 服务票证";
+            case 4771: return "Kerberos 预身份验证失败";
+            case 4776: return "域控制器验证账户凭据";
+            default: return "Windows 安全事件 " + eventId;
+        }
+    }
+
+    /**
+     * 获取关键事件的安全影响描述
+     */
+    private String getCriticalEventImpact(Integer eventId) {
+        if (eventId == null) return "未知影响";
+        switch (eventId) {
+            case 4625: return "账户登录失败，可能是暴力破解或凭据填充攻击的前兆";
+            case 4720: return "新账户被创建，攻击者可能正在建立持久化后门账户";
+            case 4728: return "账户被加入安全组，可能涉及权限提升或横向移动";
+            case 4732: return "账户被加入本地管理员组，存在权限提升风险";
+            case 4733: return "账户从安全组中移除，可能是攻击者清除痕迹";
+            case 4738: return "账户属性被修改，可能涉及密码重置或权限变更";
+            default: return "该事件涉及系统安全配置变更，需要人工核查";
         }
     }
 

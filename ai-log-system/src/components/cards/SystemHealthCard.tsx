@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from 'react';
+﻿import React, { useState, useEffect, memo, useCallback } from 'react';
 import { Card, Progress, Typography, Tooltip, Badge, Spin } from 'antd';
 import { 
   CheckCircleOutlined, 
@@ -158,7 +158,7 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = memo(({
           border: `2px solid ${config.color}20`,
           background: 'white'
         }}
-        bodyStyle={{ padding: '16px' }}
+        styles={{ body: { padding: '16px' } }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
@@ -204,11 +204,11 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = memo(({
         boxShadow: '0 6px 16px rgba(0,0,0,0.08)',
         position: 'relative'
       }}
-      bodyStyle={{ 
+      styles={{ body: { 
         padding: '24px',
         display: 'flex',
         flexDirection: 'column'
-      }}
+      } }}
       extra={
         <Tooltip title="手动刷新">
           <Badge dot={loading}>

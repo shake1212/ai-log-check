@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { eventApi, analysisApi, logApi, alertApi } from '@/services/api';
+import { eventApi, analysisApi, logApi } from '@/services/api';
 
 // 统一的 KPI 数据接口，合并4个Card所需的所有数据
 export interface KpiData {
@@ -20,7 +20,6 @@ export interface KpiData {
   mediumCount: number;
   lowCount: number;
   unhandledAlerts: number;
-  investigatingCount: number;
   // ActiveUsersCard
   activeUsers: number;
   currentConnections: number;
@@ -44,7 +43,6 @@ const DEFAULT_KPI_DATA: KpiData = {
   mediumCount: 0,
   lowCount: 0,
   unhandledAlerts: 0,
-  investigatingCount: 0,
   activeUsers: 0,
   currentConnections: 0,
   activeSessions: 0,
@@ -66,10 +64,10 @@ export const useKpiData = (isPaused: boolean, refreshInterval: number = 30000) =
     setLoading(true);
     try {
       // 合并所有API请求为并行调用，只发一次批量请求
-      const [statsRes, metricsRes, alertsRes, dashboardRes, realTimeRes] = await Promise.allSettled([
+      // 注意：不再调用 getUnhandledAlerts()，unhandledAlerts 直接从 getStatistics() 的 stats.unhandledAlerts 获取
+      const [statsRes, metricsRes, dashboardRes, realTimeRes] = await Promise.allSettled([
         logApi.getStatistics(),
         analysisApi.getSystemMetrics(),
-        alertApi.getUnhandledAlerts(),
         eventApi.getDashboardStats(),
         eventApi.getRealTimeStats(),
       ]);
@@ -79,16 +77,15 @@ export const useKpiData = (isPaused: boolean, refreshInterval: number = 30000) =
       // 解析各响应
       const stats = statsRes.status === 'fulfilled' ? (statsRes.value?.data || statsRes.value) : null;
       const metrics = metricsRes.status === 'fulfilled' ? (metricsRes.value?.data || metricsRes.value) : null;
-      const alerts = alertsRes.status === 'fulfilled' ? (alertsRes.value?.data || alertsRes.value || []) : [];
       const dashboardStats = dashboardRes.status === 'fulfilled' ? (dashboardRes.value?.data || dashboardRes.value || {}) : {};
       const realTime = realTimeRes.status === 'fulfilled' ? (realTimeRes.value?.data || realTimeRes.value) : null;
 
       // 提取数据
       const severityCounts = dashboardStats?.severityCounts || dashboardStats?.levelCounts || {};
       const criticalCount = severityCounts.CRITICAL || 0;
-      const highCount = (severityCounts.HIGH || 0) + (severityCounts.ERROR || 0);
-      const mediumCount = (severityCounts.MEDIUM || 0) + (severityCounts.WARN || 0);
-      const lowCount = (severityCounts.LOW || 0) + (severityCounts.INFO || 0) + (severityCounts.DEBUG || 0);
+      const highCount = severityCounts.HIGH || 0;
+      const mediumCount = severityCounts.MEDIUM || 0;
+      const lowCount = severityCounts.LOW || 0;
 
       const totalLogs = dashboardStats?.totalLogs || stats?.totalLogs || 0;
       const todayLogs = dashboardStats?.todayLogs || stats?.todayLogs || 0;
@@ -112,8 +109,7 @@ export const useKpiData = (isPaused: boolean, refreshInterval: number = 30000) =
       const currentConnections = metrics?.currentConnections || Math.round(derivedActiveUsers * 1.2);
       const activeSessions = metrics?.activeSessions || Math.round(derivedActiveUsers * 2);
 
-      const unhandledAlerts = stats?.unhandledAlerts || (Array.isArray(alerts) ? alerts.length : 0);
-      const investigatingCount = Array.isArray(alerts) ? alerts.filter((a: any) => !a.handled).length : 0;
+      const unhandledAlerts = stats?.unhandledAlerts ?? 0;
 
       setData({
         systemHealth: Math.min(100, Math.max(0, systemHealth)),
@@ -130,7 +126,6 @@ export const useKpiData = (isPaused: boolean, refreshInterval: number = 30000) =
         mediumCount,
         lowCount,
         unhandledAlerts,
-        investigatingCount,
         activeUsers: derivedActiveUsers,
         currentConnections,
         activeSessions,

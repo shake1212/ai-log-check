@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Card, Typography, Badge, Tooltip } from 'antd';
 import { AlertOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { CardProps, formatNumber } from '../types/dashboard';
@@ -21,15 +21,13 @@ const UnhandledAlertsCard: React.FC<UnhandledAlertsCardProps> = ({
 }) => {
   const displayData = kpiData ? {
     unhandledAlerts: kpiData.unhandledAlerts,
-    investigatingCount: kpiData.investigatingCount,
     lastUpdate: kpiData.lastUpdate,
   } : {
     unhandledAlerts: 0,
-    investigatingCount: 0,
     lastUpdate: '',
   };
 
-  const { unhandledAlerts, investigatingCount, lastUpdate } = displayData;
+  const { unhandledAlerts, lastUpdate } = displayData;
   
   // 根据未处理告警数量确定状态
   const getStatus = () => {
@@ -52,7 +50,7 @@ const UnhandledAlertsCard: React.FC<UnhandledAlertsCardProps> = ({
           height: '100%',
           ...style,
         }}
-        bodyStyle={{ padding: '12px 16px' }}
+        styles={{ body: { padding: '12px 16px' } }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ flex: 1 }}>
@@ -69,13 +67,6 @@ const UnhandledAlertsCard: React.FC<UnhandledAlertsCardProps> = ({
               status={unhandledAlerts === 0 ? 'success' : unhandledAlerts < 10 ? 'warning' : 'error'} 
               text={<Text style={{ fontSize: 11 }}>{status.text}</Text>}
             />
-            {investigatingCount > 0 && (
-              <div style={{ marginTop: 4 }}>
-                <Text type="secondary" style={{ fontSize: 10 }}>
-                  处理中: {investigatingCount}
-                </Text>
-              </div>
-            )}
           </div>
         </div>
         {lastUpdate && (
@@ -109,11 +100,6 @@ const UnhandledAlertsCard: React.FC<UnhandledAlertsCardProps> = ({
           {formatNumber(unhandledAlerts, 0)}
         </Title>
         <Text type="secondary">待处理告警</Text>
-        {investigatingCount > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <Text>处理中: {investigatingCount}</Text>
-          </div>
-        )}
       </div>
       {lastUpdate && (
         <div style={{ textAlign: 'center', marginTop: 8 }}>

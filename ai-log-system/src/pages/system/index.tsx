@@ -8,6 +8,7 @@ import {
   UserOutlined, LockOutlined, PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import { api } from '@/services/api';
+import { handleError } from '@/utils/errorHandler';
 
 const { Text } = Typography;
 
@@ -44,9 +45,8 @@ const SystemPage: React.FC = () => {
       const response = await api.user.getUsers({ page: 0, size: 200 });
       const userData = response?.data?.content || response?.content || [];
       setUsers(userData.map(mapApiUserToPageUser));
-    } catch (error) {
-      console.error('加载用户失败:', error);
-      message.error('加载用户失败');
+    } catch (error: any) {
+      handleError(error, '加载用户');
     } finally {
       setLoading(false);
     }

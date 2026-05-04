@@ -1076,50 +1076,17 @@ public class RealTimeSystemController {
     @GetMapping("/health")
     public ResponseEntity<Map<String, Object>> healthCheck() {
         Map<String, Object> health = new HashMap<>();
-
         try {
-            // 1. 先尝试获取数据（这是最真实的测试）
-            boolean dataOk = false;
-            try {
-                Map<String, Object> performance = realTimeSystemService.getSystemPerformanceMetrics();
-                dataOk = performance != null && !performance.isEmpty();
-            } catch (Exception e) {
-                log.warn("数据采集测试异常: {}", e.getMessage());
-            }
-
-            // 2. 如果数据采集成功，认为一切正常
-            if (dataOk) {
-                health.put("status", "healthy");
-                health.put("message", "系统信息采集服务运行正常");
-                health.put("pythonEnvironment", "available");
-                health.put("dataCollection", "working");
-                health.put("timestamp", System.currentTimeMillis());
-
-                return ResponseEntity.ok(createSuccessResponse(health));
-            }
-
-            // 3. 数据采集失败，才测试Python环境
             boolean pythonOk = realTimeSystemService.testSystemInfoEnvironment();
-
-            health.put("timestamp", System.currentTimeMillis());
+            health.put("status", pythonOk ? "healthy" : "unhealthy");
+            health.put("message", pythonOk ? "系统信息采集服务运行正常" : "Python环境不可用");
             health.put("pythonEnvironment", pythonOk ? "available" : "unavailable");
-            health.put("dataCollection", "failed");
-
-            if (!pythonOk) {
-                health.put("status", "unhealthy");
-                health.put("message", "Python环境不可用，请检查Python安装和脚本配置");
-            } else {
-                health.put("status", "degraded");
-                health.put("message", "Python环境正常，但数据采集失败");
-            }
-
+            health.put("timestamp", System.currentTimeMillis());
             return ResponseEntity.ok(createSuccessResponse(health));
-
         } catch (Exception e) {
             health.put("status", "unhealthy");
             health.put("error", e.getMessage());
             health.put("timestamp", System.currentTimeMillis());
-            health.put("message", "健康检查异常");
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(createSuccessResponse(health));
         }
@@ -1232,17 +1199,27 @@ public class RealTimeSystemController {
 
             String[] types = {"system_basic", "cpu_info", "memory_info", "disk_info", "process_info"};
 
+            List<java.util.concurrent.CompletableFuture<Void>> futures = new java.util.ArrayList<>();
             for (String type : types) {
-                try {
-                    List<Map<String, Object>> data = realTimeSystemService.executeSystemInfoQuery(type);
-                    if (!data.isEmpty()) {
-                        batchData.put(type, data.get(0));
+                futures.add(java.util.concurrent.CompletableFuture.runAsync(() -> {
+                    try {
+                        List<Map<String, Object>> data = realTimeSystemService.executeSystemInfoQuery(type);
+                        if (!data.isEmpty()) {
+                            synchronized (batchData) {
+                                batchData.put(type, data.get(0));
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.warn("获取 {} 数据失败: {}", type, e.getMessage());
+                        synchronized (batchData) {
+                            batchData.put(type, createRealtimeErrorData(type, e));
+                        }
                     }
-                } catch (Exception e) {
-                    log.warn("获取 {} 数据失败: {}", type, e.getMessage());
-                    batchData.put(type, createRealtimeErrorData(type, e));
-                }
+                }));
             }
+
+            java.util.concurrent.CompletableFuture.allOf(futures.toArray(new java.util.concurrent.CompletableFuture[0]))
+                    .get(25, java.util.concurrent.TimeUnit.SECONDS);
 
             batchData.put("timestamp", System.currentTimeMillis());
             batchData.put("dataTypes", types.length);

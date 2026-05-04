@@ -519,13 +519,16 @@ public class MetricsServiceImpl implements MetricsService {
      */
     private UnifiedSecurityEvent buildPerformanceEvent(SystemMetrics metrics, Map<String, Object> rawData) {
         // 根据指标值确定严重程度
-        String severity = "INFO";
+        String severity = "LOW";
         if (metrics.getCpuUsage() != null && metrics.getCpuUsage() > 90) severity = "CRITICAL";
-        else if (metrics.getCpuUsage() != null && metrics.getCpuUsage() > 80) severity = "WARN";
+        else if (metrics.getCpuUsage() != null && metrics.getCpuUsage() > 80) severity = "HIGH";
+        else if (metrics.getCpuUsage() != null && metrics.getCpuUsage() > 60) severity = "MEDIUM";
         else if (metrics.getMemoryUsage() != null && metrics.getMemoryUsage() > 95) severity = "CRITICAL";
-        else if (metrics.getMemoryUsage() != null && metrics.getMemoryUsage() > 90) severity = "WARN";
+        else if (metrics.getMemoryUsage() != null && metrics.getMemoryUsage() > 90) severity = "HIGH";
+        else if (metrics.getMemoryUsage() != null && metrics.getMemoryUsage() > 80) severity = "MEDIUM";
         else if (metrics.getDiskUsage() != null && metrics.getDiskUsage() > 95) severity = "CRITICAL";
-        else if (metrics.getDiskUsage() != null && metrics.getDiskUsage() > 85) severity = "WARN";
+        else if (metrics.getDiskUsage() != null && metrics.getDiskUsage() > 85) severity = "HIGH";
+        else if (metrics.getDiskUsage() != null && metrics.getDiskUsage() > 70) severity = "MEDIUM";
 
         String message = String.format("系统性能指标: CPU=%.1f%%, 内存=%.1f%%, 磁盘=%.1f%%",
                 metrics.getCpuUsage() != null ? metrics.getCpuUsage() : 0.0,

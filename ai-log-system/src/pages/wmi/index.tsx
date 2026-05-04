@@ -4,19 +4,15 @@ import {
   Card,
   Row,
   Col,
-  Table,
   Button,
-  Space,
   Tag,
   Statistic,
   Spin,
   Alert,
-  Modal,
   Descriptions,
-  Badge,
-  Empty,
   Progress,
-  List
+  List,
+  Empty
 } from 'antd';
 import {
   BarChartOutlined,
@@ -24,15 +20,12 @@ import {
   DatabaseOutlined,
   SettingOutlined,
   WarningOutlined,
-  EyeOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
-import dayjs from 'dayjs';
+import { handleError, logError } from '@/utils/errorHandler';
 
 import {
   systemInfoApiService,
-  SystemInfoQueryResult,
   SystemInfoStatistics,
   SystemPerformanceMetrics,
   HealthCheckResult,
@@ -77,7 +70,6 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 
 const SystemInfoManagement: React.FC = () => {
   // 状态管理
-  const [queryResults, setQueryResults] = useState<SystemInfoQueryResult[]>([]);
   const [statistics, setStatistics] = useState<SystemInfoStatistics | null>(null);
   const [performanceMetrics, setPerformanceMetrics] = useState<SystemPerformanceMetrics | null>(null);
   const [healthStatus, setHealthStatus] = useState<HealthCheckResult | null>(null);
@@ -88,10 +80,6 @@ const SystemInfoManagement: React.FC = () => {
   const [memoryInfo, setMemoryInfo] = useState<RealTimeMemoryInfo | null>(null);
   const [diskInfo, setDiskInfo] = useState<RealTimeDiskInfo | null>(null);
   const [processInfo, setProcessInfo] = useState<RealTimeProcessInfo | null>(null);
-
-  // 模态框状态
-  const [resultModalVisible, setResultModalVisible] = useState(false);
-  const [selectedResult, setSelectedResult] = useState<SystemInfoQueryResult | null>(null);
 
   // 加载状态
   const [loading, setLoading] = useState({
@@ -111,17 +99,6 @@ const SystemInfoManagement: React.FC = () => {
     return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
   };
 
-  // 加载查询结果
-  const loadQueryResults = useCallback(async () => {
-    if (!isMountedRef.current) return;
-    try {
-      const data = await systemInfoApiService.getQueryResults();
-      if (isMountedRef.current) setQueryResults(data);
-    } catch (error) {
-      console.error('Failed to load query results:', error);
-    }
-  }, []);
-
   // 加载统计信息
   const loadStatistics = useCallback(async () => {
     if (!isMountedRef.current) return;
@@ -137,8 +114,10 @@ const SystemInfoManagement: React.FC = () => {
         if (metrics.status === 'fulfilled') setPerformanceMetrics(metrics.value);
         if (health.status === 'fulfilled') setHealthStatus(health.value);
       }
-    } catch (error) {
-      console.error('Failed to load statistics:', error);
+    } catch (error: any) {
+      if (isMountedRef.current) {
+        handleError(error, '加载统计信息', { showMessage: false });
+      }
     } finally {
       if (isMountedRef.current) setLoading(prev => ({ ...prev, statistics: false }));
     }
@@ -153,65 +132,17 @@ const SystemInfoManagement: React.FC = () => {
       return rest;
     });
     try {
-      const [system, cpu, memory, disk, processes] = await Promise.allSettled([
-        systemInfoApiService.getRealTimeSystemInfo(),
-        systemInfoApiService.getRealTimeCpuInfo(),
-        systemInfoApiService.getRealTimeMemoryInfo(),
-        systemInfoApiService.getRealTimeDiskInfo(),
-        systemInfoApiService.getRealTimeProcessInfo()
-      ]);
-      if (isMountedRef.current) {
-        const newErrors: string[] = [];
-
-        if (system.status === 'fulfilled') {
-          setSystemInfo(system.value);
-          if (system.value.hostname === 'localhost' && system.value.platform === 'Unknown') {
-            newErrors.push('系统信息获取失败，后端可能未正确执行Python脚本');
-          }
-        } else {
-          newErrors.push('系统信息请求失败');
-        }
-
-        if (cpu.status === 'fulfilled') {
-          setCpuInfo(cpu.value);
-          if (cpu.value.usage === 0 && cpu.value.cores === 1 && cpu.value.frequency === 0) {
-            newErrors.push('CPU信息获取失败');
-          }
-        } else {
-          newErrors.push('CPU信息请求失败');
-        }
-
-        if (memory.status === 'fulfilled') {
-          setMemoryInfo(memory.value);
-          if (memory.value.total === 0) {
-            newErrors.push('内存信息获取失败');
-          }
-        } else {
-          newErrors.push('内存信息请求失败');
-        }
-
-        if (disk.status === 'fulfilled') {
-          setDiskInfo(disk.value);
-          if (disk.value.total === 0) {
-            newErrors.push('磁盘信息获取失败');
-          }
-        } else {
-          newErrors.push('磁盘信息请求失败');
-        }
-
-        if (processes.status === 'fulfilled') {
-          setProcessInfo(processes.value);
-        } else {
-          newErrors.push('进程信息请求失败');
-        }
-
-        if (newErrors.length > 0) {
-          setErrors(prev => ({ ...prev, realtime: newErrors.join('; ') }));
-        }
+      const batchData = await systemInfoApiService.getBatchRealTimeData();
+      if (isMountedRef.current && batchData) {
+        if (batchData.system) setSystemInfo(batchData.system);
+        if (batchData.cpu) setCpuInfo(batchData.cpu);
+        if (batchData.memory) setMemoryInfo(batchData.memory);
+        if (batchData.disk) setDiskInfo(batchData.disk);
+        if (batchData.processes) setProcessInfo(batchData.processes);
       }
-    } catch (error) {
-      console.error('Failed to load realtime info:', error);
+    } catch (error: any) {
       if (isMountedRef.current) {
+        handleError(error, '加载实时信息', { showMessage: false });
         setErrors(prev => ({ ...prev, realtime: '实时数据加载异常' }));
       }
     } finally {
@@ -223,21 +154,10 @@ const SystemInfoManagement: React.FC = () => {
   useEffect(() => {
     isMountedRef.current = true;
 
-    const initializeData = async () => {
-      try {
-        await Promise.allSettled([
-          loadQueryResults(),
-          loadStatistics(),
-          loadRealTimeInfo()
-        ]);
-      } catch (error) {
-        console.error('Initialization failed:', error);
-      } finally {
-        if (isMountedRef.current) setInitialLoading(false);
-      }
-    };
+    setInitialLoading(false);
 
-    initializeData();
+    loadStatistics();
+    loadRealTimeInfo();
 
     const interval = setInterval(() => {
       loadStatistics();
@@ -251,75 +171,26 @@ const SystemInfoManagement: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 查看结果详情
-  const handleViewResult = (result: SystemInfoQueryResult) => {
-    setSelectedResult(result);
-    setResultModalVisible(true);
-  };
-
-  // 查询结果列定义
-  const resultColumns: ColumnsType<SystemInfoQueryResult> = [
-    {
-      title: '查询ID',
-      dataIndex: 'queryId',
-      key: 'queryId'
-    },
-    {
-      title: '执行时间',
-      dataIndex: 'timestamp',
-      key: 'timestamp',
-      render: (time) => time ? dayjs(time).format('YYYY-MM-DD HH:mm:ss') : '-'
-    },
-    {
-      title: '记录数',
-      dataIndex: 'recordCount',
-      key: 'recordCount'
-    },
-    {
-      title: '执行耗时(ms)',
-      dataIndex: 'executionTime',
-      key: 'executionTime'
-    },
-    {
-      title: '状态',
-      key: 'status',
-      render: (_, record) => (
-        <Tag color={record.error ? 'red' : 'green'}>
-          {record.error ? '失败' : '成功'}
-        </Tag>
-      )
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (_, record) => (
-        <Button size="small" icon={<EyeOutlined />} onClick={() => handleViewResult(record)}>
-          查看
-        </Button>
-      )
-    }
-  ];
-
   // 统计卡片
   const renderStatisticsCards = () => (
     <Row gutter={16}>
       <Col span={6}>
-        <Card>
+        <Card loading={loading.statistics}>
           <Statistic title="总连接数" value={statistics?.totalConnections || 0} prefix={<CloudServerOutlined />} />
         </Card>
       </Col>
       <Col span={6}>
-        <Card>
+        <Card loading={loading.statistics}>
           <Statistic title="数据源数量" value={statistics?.totalDataSources || 0} prefix={<DatabaseOutlined />} />
         </Card>
       </Col>
       <Col span={6}>
-        <Card>
+        <Card loading={loading.statistics}>
           <Statistic title="活跃查询" value={statistics?.activeQueries || 0} prefix={<BarChartOutlined />} />
         </Card>
       </Col>
       <Col span={6}>
-        <Card>
+        <Card loading={loading.statistics}>
           <Statistic title="数据点总数" value={statistics?.totalDataPoints || 0} prefix={<SettingOutlined />} />
         </Card>
       </Col>
@@ -552,16 +423,6 @@ const SystemInfoManagement: React.FC = () => {
     );
   };
 
-  if (initialLoading) {
-    return (
-      <div style={{ padding: 24, textAlign: 'center' }}>
-        <Spin size="large" tip="正在加载系统信息管理界面...">
-          <div style={{ minHeight: 100 }} />
-        </Spin>
-      </div>
-    );
-  }
-
   return (
     <div style={{ padding: 24 }}>
       {renderErrorAlerts()}
@@ -582,8 +443,9 @@ const SystemInfoManagement: React.FC = () => {
           </Button>
         }
       >
-        {loading.realtime && (
-          <Alert message="正在刷新实时数据..." type="info" showIcon style={{ marginBottom: 16 }} />
+        {/* 只在首次加载（无数据）时显示 Spin，后续刷新不遮挡内容 */}
+        {loading.realtime && !cpuInfo && !memoryInfo && (
+          <div style={{ textAlign: 'center', padding: 8 }}><Spin /></div>
         )}
         {/* 优化布局：使用flex布局确保卡片高度一致 */}
         <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
@@ -596,59 +458,6 @@ const SystemInfoManagement: React.FC = () => {
           <div style={{ flex: 1 }}>{renderProcessInfo()}</div>
         </div>
       </Card>
-
-      {/* 查询结果 */}
-      <Card title="查询结果" style={{ marginTop: 16 }}>
-        {queryResults.length > 0 ? (
-          <Table
-            columns={resultColumns}
-            dataSource={queryResults}
-            rowKey="id"
-            pagination={{ pageSize: 10 }}
-          />
-        ) : (
-          <Empty description="暂无查询结果" />
-        )}
-      </Card>
-
-      {/* 结果详情模态框 */}
-      <Modal
-        title="查询结果详情"
-        open={resultModalVisible}
-        onCancel={() => setResultModalVisible(false)}
-        footer={[
-          <Button key="close" onClick={() => setResultModalVisible(false)}>关闭</Button>
-        ]}
-        width={800}
-      >
-        {selectedResult && (
-          <div>
-            <Descriptions column={2} bordered size="small">
-              <Descriptions.Item label="查询ID">{selectedResult.queryId}</Descriptions.Item>
-              <Descriptions.Item label="执行时间">
-                {dayjs(selectedResult.timestamp).format('YYYY-MM-DD HH:mm:ss')}
-              </Descriptions.Item>
-              <Descriptions.Item label="记录数">{selectedResult.recordCount}</Descriptions.Item>
-              <Descriptions.Item label="执行耗时">{selectedResult.executionTime}ms</Descriptions.Item>
-            </Descriptions>
-            <div style={{ marginTop: 16 }}>
-              <h4>数据预览</h4>
-              <pre style={{
-                background: '#f5f5f5',
-                padding: 12,
-                borderRadius: 4,
-                maxHeight: 400,
-                overflow: 'auto'
-              }}>
-                {JSON.stringify(selectedResult.data, null, 2)}
-              </pre>
-            </div>
-            {selectedResult.error && (
-              <Alert message="执行错误" description={selectedResult.error} type="error" style={{ marginTop: 16 }} />
-            )}
-          </div>
-        )}
-      </Modal>
     </div>
   );
 };

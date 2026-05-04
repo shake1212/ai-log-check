@@ -1,11 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Result, Button, Typography, Spin } from 'antd';
-import {
-  ReloadOutlined,
-  SyncOutlined,
-  QuestionCircleOutlined,
-  ExclamationCircleOutlined
-} from '@ant-design/icons';
 import { useNotification } from '../../hooks/useNotification';
 import { useWebSocket } from '@/services/websocket';
 import { logApi, alertApi } from '@/services/api';
@@ -15,8 +8,6 @@ import NotificationPanel from '../NotificationPanel';
 import {
   SecurityEvent,
 } from './types/dashboard';
-
-const { Paragraph } = Typography;
 
 const EnhancedDashboard: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
@@ -43,7 +34,9 @@ const EnhancedDashboard: React.FC = () => {
     if (upper === 'CRITICAL' || upper === 'HIGH' || upper === 'MEDIUM' || upper === 'LOW') {
       return upper as SecurityEvent['level'];
     }
-    return upper === 'ERROR' ? 'HIGH' : 'LOW';
+    if (upper === 'ERROR') return 'HIGH';
+    if (upper === 'WARN' || upper === 'WARNING') return 'MEDIUM';
+    return 'LOW';
   }, []);
 
   const hydrateFromSocket = useCallback(() => {
@@ -102,14 +95,16 @@ const EnhancedDashboard: React.FC = () => {
   const loadInitialData = useCallback(async () => {
     if (!isMounted.current) return;
 
+    const startTime = performance.now();
     setLoading(true);
     setFetchError(null);
 
     try {
+      // 减少初始加载数据量：从100条减少到20条
       const [statsResult, alertsResult, recentLogsResult] = await Promise.allSettled([
         logApi.getStatistics(),
         alertApi.getUnhandledAlerts(),
-        logApi.getRecentLogs(100),
+        logApi.getRecentLogs(20),  // 从100减少到20
       ]);
 
       if (!isMounted.current) return;
@@ -142,7 +137,7 @@ const EnhancedDashboard: React.FC = () => {
 
       const merged = [...mappedAlerts, ...mappedLogs]
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, 100);
+        .slice(0, 50);  // 从100减少到50
       setEvents(merged);
       setEventLoading(false);
 
@@ -155,6 +150,12 @@ const EnhancedDashboard: React.FC = () => {
       } else {
         setFetchError(null);
       }
+
+      // 性能监控日志
+      const endTime = performance.now();
+      const loadTime = Math.round(endTime - startTime);
+      console.log(`✅ 仪表盘数据加载完成，耗时: ${loadTime}ms`);
+      console.log(`📊 加载数据: ${mappedAlerts.length}条告警, ${mappedLogs.length}条日志`);
     } catch (error) {
       if (!isMounted.current) return;
       console.error('加载实时数据失败', error);
@@ -188,73 +189,6 @@ const EnhancedDashboard: React.FC = () => {
   const hasCriticalAlert = useMemo(() => eventStats.critical >= 3, [eventStats.critical]);
 
   if (!isMounted.current) return null;
-
-  if (loading) {
-    return (
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '70vh',
-        flexDirection: 'column',
-        gap: '24px'
-      }}>
-        <div style={{
-          width: '80px',
-          height: '80px',
-          borderRadius: '50%',
-          background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <Spin size="large" style={{ color: 'white' }} />
-        </div>
-        <Typography.Title level={4} style={{ margin: 0 }}>加载安全监控数据...</Typography.Title>
-        <Paragraph type="secondary">正在获取实时安全指标和威胁情报</Paragraph>
-      </div>
-    );
-  }
-
-  if (!loading && fetchError) {
-    return (
-      <div style={{ padding: '80px 20px' }}>
-        <Result
-          icon={<ExclamationCircleOutlined style={{ color: '#fa8c16', fontSize: '64px' }} />}
-          title="无法连接监控系统"
-          subTitle={fetchError || '请检查网络连接或系统状态'}
-          extra={
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-              <Button
-                type="primary"
-                icon={<ReloadOutlined />}
-                onClick={loadInitialData}
-                size="large"
-                style={{ padding: '0 32px', height: '48px' }}
-              >
-                重新连接
-              </Button>
-              <Button
-                icon={<SyncOutlined />}
-                onClick={reconnect}
-                size="large"
-                style={{ padding: '0 32px', height: '48px' }}
-              >
-                检测网络
-              </Button>
-              <Button
-                icon={<QuestionCircleOutlined />}
-                size="large"
-                style={{ padding: '0 32px', height: '48px' }}
-              >
-                获取帮助
-              </Button>
-            </div>
-          }
-        />
-      </div>
-    );
-  }
 
   return (
     <div>

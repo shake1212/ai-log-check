@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Typography, Tag, Progress, Badge, Tooltip } from 'antd';
 import { FireOutlined, SyncOutlined } from '@ant-design/icons';
 import { logApi, alertApi, eventApi } from '@/services/api';
@@ -14,7 +14,6 @@ interface SecurityEventsData {
   mediumCount: number;
   lowCount: number;
   unhandledAlerts: number;
-  investigatingCount: number;
   lastUpdate: string;
 }
 
@@ -43,7 +42,6 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
     mediumCount: 0,
     lowCount: 0,
     unhandledAlerts: 0,
-    investigatingCount: 0,
     lastUpdate: new Date().toISOString()
   });
   const [internalLoading, setLoading] = useState(false);
@@ -58,7 +56,6 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
     mediumCount: kpiData.mediumCount,
     lowCount: kpiData.lowCount,
     unhandledAlerts: kpiData.unhandledAlerts,
-    investigatingCount: kpiData.investigatingCount,
     lastUpdate: kpiData.lastUpdate,
   } : eventsData;
 
@@ -81,9 +78,9 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
       // 统一口径：优先使用 /events/dashboard-stats 的 severityCounts；
       // WARN 归入中风险，ERROR 归入高风险，避免“有日志但异常全为0”的展示偏差。
       const criticalCount = severityCounts.CRITICAL || 0;
-      const highCount = (severityCounts.HIGH || 0) + (severityCounts.ERROR || 0);
-      const mediumCount = (severityCounts.MEDIUM || 0) + (severityCounts.WARN || 0);
-      const lowCount = (severityCounts.LOW || 0) + (severityCounts.INFO || 0) + (severityCounts.DEBUG || 0);
+      const highCount = severityCounts.HIGH || 0;
+      const mediumCount = severityCounts.MEDIUM || 0;
+      const lowCount = severityCounts.LOW || 0;
 
       const anomalyCount = dashboardStats?.anomalyCount ??
                           stats?.securityEvents ??
@@ -99,7 +96,6 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
         mediumCount,
         lowCount,
         unhandledAlerts: fallbackUnhandled,
-        investigatingCount: alerts.filter((a: any) => !a.handled).length,
         lastUpdate: new Date().toISOString()
       });
       
@@ -135,12 +131,12 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
           flexDirection: 'column',
           ...style
         }}
-        bodyStyle={{ 
+        styles={{ body: { 
           padding: '16px',
           flex: 1,
           display: 'flex',
           flexDirection: 'column'
-        }}
+        } }}
       >
         <div style={{ 
           display: 'flex', 
@@ -185,13 +181,13 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
         flexDirection: 'column',
         ...style
       }}
-      bodyStyle={{ 
+      styles={{ body: { 
         padding: '24px',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
         flex: 1
-      }}
+      } }}
       extra={
         <Tooltip title="手动刷新">
           <Badge dot={loading}>
@@ -277,22 +273,12 @@ const SecurityEventsCard: React.FC<SecurityEventsCardProps> = ({
       </div>
       
       <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between',
         marginTop: 'auto'
       }}>
-        <div>
-          <Text style={{ fontSize: '12px', color: '#666' }}>未处理</Text>
-          <Text strong style={{ fontSize: '16px', display: 'block' }}>
-            {displayData.unhandledAlerts}
-          </Text>
-        </div>
-        <div>
-          <Text style={{ fontSize: '12px', color: '#666' }}>处理中</Text>
-          <Text strong style={{ fontSize: '16px', display: 'block' }}>
-            {displayData.investigatingCount}
-          </Text>
-        </div>
+        <Text style={{ fontSize: '12px', color: '#666' }}>未处理</Text>
+        <Text strong style={{ fontSize: '16px', display: 'block' }}>
+          {displayData.unhandledAlerts}
+        </Text>
       </div>
     </Card>
   );

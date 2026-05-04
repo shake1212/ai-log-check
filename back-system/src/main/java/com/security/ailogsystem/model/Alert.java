@@ -63,6 +63,12 @@ public class Alert {
     @Column(name = "unified_event_id")
     private Long unifiedEventId;
 
+    @Column(name = "metric_value")
+    private Double metricValue;
+
+    @Column(name = "threshold")
+    private Double threshold;
+
     @Column(name = "created_time", nullable = false, updatable = false)
     private LocalDateTime createdTime;
 

@@ -128,6 +128,10 @@ public interface AlertRepository extends JpaRepository<Alert, Long>, JpaSpecific
     // 查询指定时间之前的告警（用于数据清理）
     List<Alert> findByCreatedTimeBefore(LocalDateTime time);
 
+    // 查询最近同类型未处理告警（用于去重）
+    @Query("SELECT COUNT(a) FROM Alert a WHERE a.alertType = :alertType AND a.handled = false AND a.createdTime >= :since")
+    long countRecentUnhandledByType(@Param("alertType") String alertType, @Param("since") LocalDateTime since);
+
     // 获取用于Dashboard的告警统计
     default java.util.Map<String, Object> getDashboardStatistics() {
         java.util.Map<String, Object> stats = new java.util.HashMap<>();

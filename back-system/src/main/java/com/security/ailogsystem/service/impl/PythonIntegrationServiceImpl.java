@@ -28,20 +28,14 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
     @Override
     public Map<String, Object> runThreatAnalysis() {
         if (!pythonCollectorEnabled) {
-            log.warn("Python收集器已禁用，返回错误状态");
             return createUnavailableResult("threat_hunting", "Python collector is disabled");
         }
 
-        String url = pythonCollectorUrl + "/api/analysis/threat";
-
         try {
-            // 测试连接
             if (!testPythonCollectorConnection()) {
-                log.warn("Python收集器连接失败，返回错误状态");
                 return createUnavailableResult("threat_hunting", "Python collector connection failed");
             }
 
-            // 创建请求
             Map<String, Object> request = new HashMap<>();
             request.put("analysis_type", "threat_hunting");
             request.put("time_range", "24h");
@@ -55,25 +49,21 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
-            // 发送请求到Python收集器
             ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
-                    url,
+                    pythonCollectorUrl + "/api/analysis/threat",
                     HttpMethod.POST,
                     entity,
                     new ParameterizedTypeReference<Map<String, Object>>() {}
             );
 
-            Map<String, Object> body = response.getBody();
-            if (response.getStatusCode() == HttpStatus.OK && body != null) {
-                log.info("Python威胁分析成功，返回 {} 个结果", body.size());
-                return body;
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                return response.getBody();
             } else {
-                log.warn("Python收集器响应异常: {}", response.getStatusCode());
                 return createUnavailableResult("threat_hunting", "Python collector returned non-OK status");
             }
 
         } catch (Exception e) {
-            log.error("调用Python威胁分析失败: {}", e.getMessage(), e);
+            log.error("调用Python威胁分析失败: {}", e.getMessage());
             return createUnavailableResult("threat_hunting", e.getMessage());
         }
     }
@@ -81,15 +71,11 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
     @Override
     public Map<String, Object> runComplianceScan() {
         if (!pythonCollectorEnabled) {
-            log.warn("Python收集器已禁用，返回错误状态");
             return createUnavailableResult("compliance", "Python collector is disabled");
         }
 
-        String url = pythonCollectorUrl + "/api/analysis/compliance";
-
         try {
             if (!testPythonCollectorConnection()) {
-                log.warn("Python收集器连接失败，返回错误状态");
                 return createUnavailableResult("compliance", "Python collector connection failed");
             }
 
@@ -105,22 +91,20 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
             ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
-                    url,
+                    pythonCollectorUrl + "/api/analysis/compliance",
                     HttpMethod.POST,
                     entity,
                     new ParameterizedTypeReference<Map<String, Object>>() {}
             );
 
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                log.info("Python合规扫描成功");
                 return response.getBody();
             } else {
-                log.warn("Python收集器响应异常: {}", response.getStatusCode());
                 return createUnavailableResult("compliance", "Python collector returned non-OK status");
             }
 
         } catch (Exception e) {
-            log.error("调用Python合规扫描失败: {}", e.getMessage(), e);
+            log.error("调用Python合规扫描失败: {}", e.getMessage());
             return createUnavailableResult("compliance", e.getMessage());
         }
     }
@@ -128,15 +112,11 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
     @Override
     public Map<String, Object> runAnomalyDetection() {
         if (!pythonCollectorEnabled) {
-            log.warn("Python收集器已禁用，返回错误状态");
             return createUnavailableResult("anomaly_detection", "Python collector is disabled");
         }
 
-        String url = pythonCollectorUrl + "/api/analysis/anomaly";
-
         try {
             if (!testPythonCollectorConnection()) {
-                log.warn("Python收集器连接失败，返回错误状态");
                 return createUnavailableResult("anomaly_detection", "Python collector connection failed");
             }
 
@@ -152,22 +132,20 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(request, headers);
 
             ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
-                    url,
+                    pythonCollectorUrl + "/api/analysis/anomaly",
                     HttpMethod.POST,
                     entity,
                     new ParameterizedTypeReference<Map<String, Object>>() {}
             );
 
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                log.info("Python异常检测成功");
                 return response.getBody();
             } else {
-                log.warn("Python收集器响应异常: {}", response.getStatusCode());
                 return createUnavailableResult("anomaly_detection", "Python collector returned non-OK status");
             }
 
         } catch (Exception e) {
-            log.error("调用Python异常检测失败: {}", e.getMessage(), e);
+            log.error("调用Python异常检测失败: {}", e.getMessage());
             return createUnavailableResult("anomaly_detection", e.getMessage());
         }
     }
@@ -191,19 +169,24 @@ public class PythonIntegrationServiceImpl implements PythonIntegrationService {
     @Override
     public Map<String, Object> getPythonCollectorStatus() {
         Map<String, Object> status = new HashMap<>();
+        status.put("enabled", pythonCollectorEnabled);
+        status.put("collectorUrl", pythonCollectorUrl);
+
+        if (!pythonCollectorEnabled) {
+            status.put("connected", false);
+            status.put("status", "disabled");
+            return status;
+        }
 
         try {
             boolean connected = testPythonCollectorConnection();
             status.put("connected", connected);
-            status.put("collectorUrl", pythonCollectorUrl);
-            status.put("enabled", pythonCollectorEnabled);
             status.put("lastCheck", new Date());
 
             if (connected) {
                 try {
-                    String infoUrl = pythonCollectorUrl + "/api/status";
                     ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
-                            infoUrl,
+                            pythonCollectorUrl + "/api/status",
                             HttpMethod.GET,
                             HttpEntity.EMPTY,
                             new ParameterizedTypeReference<Map<String, Object>>() {}

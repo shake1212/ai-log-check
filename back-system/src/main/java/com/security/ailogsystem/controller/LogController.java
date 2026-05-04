@@ -102,31 +102,41 @@ public class LogController {
     }
 
     /**
-     * 获取统计信息
+     * 获取统计信息（优化版）
      */
     @GetMapping("/statistics")
     public ResponseEntity<Map<String, Object>> getStatistics() {
         LocalDateTime last24Hours = LocalDateTime.now().minusHours(24);
 
+        // 优化：用1次GROUP BY替代4次独立威胁等级查询
+        List<Object[]> threatLevelRows = logRepository.countByThreatLevelGroup(last24Hours);
+        Map<String, Long> threatLevels = new HashMap<>();
+        for (Object[] row : threatLevelRows) {
+            if (row[0] != null) {
+                threatLevels.put((String) row[0], (Long) row[1]);
+            }
+        }
+        // 确保所有等级都有值
+        threatLevels.putIfAbsent("LOW", 0L);
+        threatLevels.putIfAbsent("MEDIUM", 0L);
+        threatLevels.putIfAbsent("HIGH", 0L);
+        threatLevels.putIfAbsent("CRITICAL", 0L);
+
+        // 优化：直接计数，不加载数据
+        long totalAlerts = alertRepository.count();
+        long unhandledAlerts = alertRepository.countByHandledFalse();
+
+        // 其他统计（已有索引，较快）
         List<Object[]> eventCounts = logRepository.countEventsByType(last24Hours);
         List<Object[]> dailyCounts = logRepository.getDailyLogCounts(last24Hours);
         List<Object[]> bruteForceAttempts = logRepository.findBruteForceAttempts(last24Hours, 5L);
-
-        // 添加威胁等级统计
-        Map<String, Long> threatLevels = new HashMap<>();
-        threatLevels.put("LOW", logRepository.countByThreatLevelAndEventTimeAfter("LOW", last24Hours));
-        threatLevels.put("MEDIUM", logRepository.countByThreatLevelAndEventTimeAfter("MEDIUM", last24Hours));
-        threatLevels.put("HIGH", logRepository.countByThreatLevelAndEventTimeAfter("HIGH", last24Hours));
-        threatLevels.put("CRITICAL", logRepository.countByThreatLevelAndEventTimeAfter("CRITICAL", last24Hours));
 
         Map<String, Object> stats = new HashMap<>();
         stats.put("eventCounts", eventCounts);
         stats.put("dailyCounts", dailyCounts);
         stats.put("bruteForceAttempts", bruteForceAttempts);
-        stats.put("totalAlerts", alertRepository.count());
-        stats.put("unhandledAlerts", alertRepository.findByHandledFalseOrderByCreatedTimeDesc().size());
-
-        // 添加威胁等级数据
+        stats.put("totalAlerts", totalAlerts);
+        stats.put("unhandledAlerts", unhandledAlerts);
         stats.put("threatLevels", threatLevels);
 
         return ResponseEntity.ok(stats);
@@ -176,13 +186,18 @@ public class LogController {
 
         LocalDateTime since = LocalDateTime.now().minusHours(hours);
 
-        // 实现获取威胁等级统计的逻辑
-        // 如果SecurityLogRepository没有这个方法，需要添加
+        // 优化：1次GROUP BY替代4次独立查询
+        List<Object[]> rows = logRepository.countByThreatLevelGroup(since);
         Map<String, Long> threatLevels = new HashMap<>();
-        threatLevels.put("LOW", logRepository.countByThreatLevelAndEventTimeAfter("LOW", since));
-        threatLevels.put("MEDIUM", logRepository.countByThreatLevelAndEventTimeAfter("MEDIUM", since));
-        threatLevels.put("HIGH", logRepository.countByThreatLevelAndEventTimeAfter("HIGH", since));
-        threatLevels.put("CRITICAL", logRepository.countByThreatLevelAndEventTimeAfter("CRITICAL", since));
+        for (Object[] row : rows) {
+            if (row[0] != null) {
+                threatLevels.put((String) row[0], (Long) row[1]);
+            }
+        }
+        threatLevels.putIfAbsent("LOW", 0L);
+        threatLevels.putIfAbsent("MEDIUM", 0L);
+        threatLevels.putIfAbsent("HIGH", 0L);
+        threatLevels.putIfAbsent("CRITICAL", 0L);
 
         return ResponseEntity.ok(threatLevels);
     }

@@ -168,7 +168,7 @@ log:
 scripts:
   base-path: "src/scripts"
   python:
-    executable: ".venv/Scripts/python.exe"
+    executable: "python"
   allowed:
     unified_log_collector:
       name: "安全日志采集脚本"
@@ -203,10 +203,10 @@ alert:
 
 python:
   collector:
-    url: http://localhost:5000  # Python收集器的地址
-    enabled: true  # 是否启用Python收集器
-    timeout: 30000  # 超时时间(毫秒)
-    retry-count: 3  # 重试次数
+    url: http://localhost:5000  # Python收集器的地址（预留，当前无服务实现）
+    enabled: false  # 端口5000无Python服务实现，禁用以避免连接超时
+    timeout: 3000  # 超时时间(毫秒)
+    retry-count: 0  # 无服务时不重试
 
 # Log collector metrics configuration
 log-collector:
@@ -216,7 +216,7 @@ log-collector:
     cache-ttl: 30  # Cache TTL in seconds for real-time metrics
   python:
     collection-interval: 300  # Python collector interval in seconds (default: 5 minutes)
-    timeout: 120  # Python collector timeout in seconds (default: 2 minutes)
+    timeout: 5  # Python collector timeout in seconds (collector disabled, use short timeout)
 
 
 # 线程池配置
@@ -236,8 +236,6 @@ security:
 
 ai:
   service:
-    python:
-      command: .venv/Scripts/python.exe   # 相对路径，注意斜杠方向（Windows 也可用 /）
     script:
       path: src/scripts/ai_service/ai_service.py
     auto-start: true

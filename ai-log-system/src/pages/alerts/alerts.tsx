@@ -1,6 +1,5 @@
-// src/pages/Alerts.tsx
+﻿// src/pages/Alerts.tsx
 import React, { useState, useEffect, useCallback } from 'react';
-import { history } from 'umi';
 import { 
   Table, 
   Card, 
@@ -59,6 +58,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { api } from '@/services/api';
 import type { SecurityAlert } from '@/types/alert';
 import { getAlertSourceLabel, getAlertTypeLabel, getSeverity, getStatus, normalizeStatusValue } from '@/utils/enumLabels';
+import { handleError, logError } from '@/utils/errorHandler';
 
 const { Option } = Select;
 const { Title, Text, Paragraph } = Typography;
@@ -261,9 +261,8 @@ const AlertsPage: React.FC = () => {
         setAlertList([]);
         setTotal(0);
       }
-    } catch (error) {
-      console.error('加载告警失败:', error);
-      message.error('加载告警失败: ' + (error.message || '未知错误'));
+    } catch (error: any) {
+      handleError(error, '加载告警');
       setAlertList([]);
       setTotal(0);
     } finally {
@@ -369,9 +368,8 @@ const AlertsPage: React.FC = () => {
             const errorMsg = (response as any)?.message || '操作失败';
             message.error(errorMsg);
           }
-        } catch (error) {
-          console.error('标记告警失败:', error);
-          message.error('操作失败，请重试');
+        } catch (error: any) {
+          handleError(error, '标记告警');
         } finally {
           setLoading(false);
         }
@@ -422,9 +420,8 @@ const AlertsPage: React.FC = () => {
             const errorMsg = (response as any)?.message || '删除失败';
             message.error(errorMsg);
           }
-        } catch (error) {
-          console.error('删除告警失败:', error);
-          message.error('删除失败，请重试');
+        } catch (error: any) {
+          handleError(error, '删除告警');
         } finally {
           setLoading(false);
         }
@@ -468,9 +465,8 @@ const AlertsPage: React.FC = () => {
       } else {
         message.error('获取告警详情失败');
       }
-    } catch (error) {
-      console.error('获取告警详情错误:', error);
-      message.error('获取告警详情失败');
+    } catch (error: any) {
+      handleError(error, '获取告警详情');
     } finally {
       setDetailLoading(false);
     }
@@ -523,8 +519,8 @@ const AlertsPage: React.FC = () => {
         console.warn('统计API返回数据为空');
         // 不显示错误消息，使用本地计算
       }
-    } catch (error) {
-      console.error('加载统计信息失败:', error);
+    } catch (error: any) {
+      logError(error, '加载统计信息');
       // 静默失败，不影响主要功能
     } finally {
       setStatisticsLoading(false);
@@ -556,23 +552,15 @@ const AlertsPage: React.FC = () => {
           status: searchParams.status
         });
 
-        // 优先加载主要数据（告警列表）
-        await loadAlerts(1, pagination.pageSize);
-        
-        // 设置加载完成
-        setLoading(false);
+        // 并行加载告警列表和统计数据
+        await Promise.allSettled([
+          loadAlerts(1, pagination.pageSize),
+          loadStatistics(),
+        ]);
 
-        // 延迟加载统计和趋势数据（非关键数据）
-        setTimeout(async () => {
-          try {
-            await loadStatistics();
-          } catch (error) {
-            console.error('加载统计数据失败:', error);
-            // 不影响主要功能，静默失败
-          }
-        }, 300); // 延迟300ms加载，避免阻塞初始渲染
-      } catch (error) {
-        console.error('初始化数据错误:', error);
+        setLoading(false);
+      } catch (error: any) {
+        logError(error, '初始化数据');
         // 如果主要API失败，尝试获取最近告警
         try {
           // 可以添加获取最近告警的备用方案
@@ -790,11 +778,6 @@ const AlertsPage: React.FC = () => {
     },
   ];
 
-  // 计算处理率
-  const handleRate = displayStats.totalAlerts > 0 
-    ? ((displayStats.totalAlerts - displayStats.unhandledAlerts) / displayStats.totalAlerts * 100).toFixed(1)
-    : 0;
-
   const todayAddedCount = alertList.filter((alert) => dayjs(alert.createdTime).isSame(dayjs(), 'day')).length;
   const yesterdayAddedCount = alertList.filter((alert) =>
     dayjs(alert.createdTime).isSame(dayjs().subtract(1, 'day'), 'day')
@@ -940,9 +923,6 @@ const AlertsPage: React.FC = () => {
           <Statistic title="未处理" value={displayStats.unhandledAlerts} valueStyle={{ color: '#fa8c16' }} />
         </Col>
         <Col span={4}>
-          <Statistic title="处理率" value={handleRate} suffix="%" valueStyle={{ color: '#52c41a' }} />
-        </Col>
-        <Col span={4}>
           <Statistic title="平均响应" value={avgHandleMinutes} suffix="min" />
         </Col>
         <Col span={4}>
@@ -1037,7 +1017,7 @@ const AlertsPage: React.FC = () => {
           marginBottom: '16px',
           boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
         }}
-        bodyStyle={{ padding: '14px' }}
+        styles={{ body: { padding: '14px' } }}
       >
         <div>
           {/* 统计数字区 */}
@@ -1055,7 +1035,6 @@ const AlertsPage: React.FC = () => {
             <Text style={{ fontSize: '13px' }}>匹配: <Text strong>{pagination.total}</Text></Text>
             <Text style={{ fontSize: '13px' }}>未处理: <Text strong style={{ color: '#ff4d4f' }}>{displayStats.unhandledAlerts}</Text></Text>
             <Text style={{ fontSize: '13px' }}>严重: <Text strong style={{ color: '#cf1322' }}>{displayStats.alertsByLevel.CRITICAL}</Text></Text>
-            <Text style={{ fontSize: '13px' }}>处理率: <Text strong>{handleRate}%</Text></Text>
           </div>
 
           {/* 筛选区 */}

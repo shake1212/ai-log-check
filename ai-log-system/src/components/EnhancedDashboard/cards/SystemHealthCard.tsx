@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Progress, Typography, Badge, Tooltip } from 'antd';
 import { CheckCircleOutlined, SyncOutlined } from '@ant-design/icons';
 import { analysisApi, eventApi } from '@/services/api';
@@ -126,12 +126,12 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
           flexDirection: 'column',
           ...style
         }}
-        bodyStyle={{ 
+        styles={{ body: { 
           padding: '16px',
           flex: 1,
           display: 'flex',
           flexDirection: 'column'
-        }}
+        } }}
       >
         <div style={{ 
           display: 'flex', 
@@ -186,12 +186,12 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
         flexDirection: 'column',
         ...style
       }}
-      bodyStyle={{ 
+      styles={{ body: { 
         padding: '24px',
         display: 'flex',
         flexDirection: 'column',
         flex: 1
-      }}
+      } }}
       extra={
         <Tooltip title="手动刷新">
           <Badge dot={loading}>

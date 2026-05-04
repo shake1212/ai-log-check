@@ -84,16 +84,16 @@ def predict():
 
         # 编码字符串特征
         try:
-            proc_enc = proc_encoder.transform([proc_name])[0]
+            proc_enc = int(proc_encoder.transform([proc_name])[0])
         except:
-            proc_enc = 0   # 未知进程名
+            proc_enc = 0
         try:
-            evt_enc = evt_encoder.transform([evt_type])[0]
+            evt_enc = int(evt_encoder.transform([evt_type])[0])
         except:
             evt_enc = 0
 
         # 组合特征
-        X = np.array(numeric + [proc_enc, evt_enc]).reshape(1, -1)
+        X = np.array(numeric + [proc_enc, evt_enc], dtype=np.float64).reshape(1, -1)
 
         # 预测
         pred = model.predict(X)[0]   # -1异常, 1正常
@@ -115,4 +115,10 @@ def health():
     return jsonify({'status': 'ok'})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=False)
+    import os
+    if os.environ.get('FLASK_ENV') == 'development':
+        app.run(host='0.0.0.0', port=5001, debug=False)
+    else:
+        from waitress import serve
+        logger.info("AI服务启动(生产模式 waitress)，端口 5001")
+        serve(app, host='0.0.0.0', port=5001)

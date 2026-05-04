@@ -69,12 +69,12 @@ public class ScriptProperties {
         // 降级：尝试 venv 相对路径和系统 python
         String projectRoot = getProjectRoot();
         String[] fallbackPaths = {
-            projectRoot + "/back-system/.venv/Scripts/python.exe",  // Windows venv
-            projectRoot + "/back-system/.venv/bin/python",           // Linux/Mac venv
-            projectRoot + "/back-system/venv/Scripts/python.exe",    // Windows venv (另一种命名)
-            projectRoot + "/back-system/venv/bin/python",            // Linux/Mac venv
-            "python",   // 系统 PATH 中的 python
+            "python",   // 系统 PATH 中的 python（优先，跨环境最可靠）
             "python3",  // 系统 PATH 中的 python3
+            projectRoot + "/back-system/.venv/Scripts/python.exe",
+            projectRoot + "/back-system/.venv/bin/python",
+            projectRoot + "/back-system/venv/Scripts/python.exe",
+            projectRoot + "/back-system/venv/bin/python",
         };
 
         for (String path : fallbackPaths) {

@@ -59,22 +59,20 @@ class WebSocketService {
       try {
         this.stompClient = new Client({
           webSocketFactory: () => {
-            // 添加 SockJS 配置选项，解决 CORS 问题
             return new SockJS(this.config.url, null, {
               transports: ['websocket', 'xhr-streaming', 'xhr-polling'],
               timeout: 5000,
             });
           },
-          reconnectDelay: 0, // 禁用自动重连，我们手动控制
-          heartbeatIncoming: this.config.heartbeatInterval,
-          heartbeatOutgoing: this.config.heartbeatInterval,
+          reconnectDelay: 0,
+          heartbeatIncoming: this.config.heartbeatInterval ?? 10000,
+          heartbeatOutgoing: this.config.heartbeatInterval ?? 10000,
           debug: (str) => {
             if (process.env.NODE_ENV === 'development') {
               console.log('STOMP Debug:', str);
             }
           },
-          // 添加连接头
-          connectHeaders: {},
+          connectHeaders: {} as Record<string, string>,
         });
 
         this.stompClient.onConnect = (_frame) => {
@@ -195,8 +193,8 @@ class WebSocketService {
       data: message.data,
       timestamp: new Date().toISOString(),
       sender: message.sender || 'client',
-      receiver: message.receiver,
-      attributes: message.attributes,
+      receiver: message.receiver ?? '',
+      attributes: message.attributes ?? {},
     };
 
     try {

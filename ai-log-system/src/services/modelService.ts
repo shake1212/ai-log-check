@@ -1,4 +1,4 @@
-import { api } from './api';
+import request from '@/utils/request';
 
 // 模型类型
 export enum ModelType {
@@ -76,55 +76,50 @@ export interface TrainingStatus {
 // 模型服务
 export const modelService = {
   // 获取所有模型
-  getModels: () => api.get<ModelInfo[]>('/models'),
+  getModels: () => request.get<ModelInfo[]>('/api/models'),
   
   // 获取单个模型详情
-  getModel: (id: string) => api.get<ModelInfo>(`/models/${id}`),
+  getModel: (id: string) => request.get<ModelInfo>(`/api/models/${id}`),
   
   // 创建新模型
-  createModel: (data: TrainingRequest) => api.post<ModelInfo>('/models', data),
+  createModel: (data: TrainingRequest) => request.post<ModelInfo>('/api/models', data),
   
   // 更新模型
-  updateModel: (id: string, data: Partial<TrainingRequest>) => api.put<ModelInfo>(`/models/${id}`, data),
+  updateModel: (id: string, data: Partial<TrainingRequest>) => request.put<ModelInfo>(`/api/models/${id}`, data),
   
   // 删除模型
-  deleteModel: (id: string) => api.delete<void>(`/models/${id}`),
+  deleteModel: (id: string) => request.delete<void>(`/api/models/${id}`),
   
   // 获取模型训练状态
-  getTrainingStatus: (id: string) => api.get<TrainingStatus>(`/models/${id}/training`),
+  getTrainingStatus: (id: string) => request.get<TrainingStatus>(`/api/models/${id}/training`),
   
   // 开始模型训练
-  startTraining: (id: string, data: Partial<TrainingRequest>) => api.post<TrainingStatus>(`/models/${id}/training`, data),
+  startTraining: (id: string, data: Partial<TrainingRequest>) => request.post<TrainingStatus>(`/api/models/${id}/training`, data),
   
   // 停止模型训练
-  stopTraining: (id: string) => api.post<TrainingStatus>(`/models/${id}/training/stop`, {}),
+  stopTraining: (id: string) => request.post<TrainingStatus>(`/api/models/${id}/training/stop`, {}),
   
   // 使用模型进行预测
-  predict: (data: PredictionRequest) => api.post<PredictionResponse>('/predict', data),
+  predict: (data: PredictionRequest) => request.post<PredictionResponse>('/api/predict', data),
   
   // 批量预测
-  batchPredict: (data: { modelId: string, items: any[] }) => api.post<PredictionResponse[]>('/batch-predict', data),
+  batchPredict: (data: { modelId: string, items: any[] }) => request.post<PredictionResponse[]>('/api/batch-predict', data),
   
   // 上传模型文件
   uploadModel: (formData: FormData) => {
-    return fetch(`${'/api'}/models/upload`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    }).then(response => {
-      if (!response.ok) {
-        throw new Error(`上传失败: ${response.status} ${response.statusText}`);
-      }
-      return response.json();
+    return request.post('/api/models/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
     });
   },
   
   // 获取模型性能指标
-  getModelMetrics: (id: string) => api.get<any>(`/models/${id}/metrics`),
+  getModelMetrics: (id: string) => request.get<any>(`/api/models/${id}/metrics`),
   
   // 模型部署
-  deployModel: (id: string) => api.post<ModelInfo>(`/models/${id}/deploy`, {}),
+  deployModel: (id: string) => request.post<ModelInfo>(`/api/models/${id}/deploy`, {}),
   
   // 停用模型
-  deactivateModel: (id: string) => api.post<ModelInfo>(`/models/${id}/deactivate`, {}),
+  deactivateModel: (id: string) => request.post<ModelInfo>(`/api/models/${id}/deactivate`, {}),
 };

@@ -2,6 +2,7 @@
  * 系统信息采集服务 - 适配真实后端控制器
  */
 import { message } from 'antd';
+import request from '@/utils/request';
 
 // 接口定义
 export interface RealTimeSystemInfo {
@@ -137,19 +138,8 @@ export interface HealthCheckResult {
 // 主服务类
 class SystemInfoApiService {
   private baseUrl = '/api/system-info';
-  private defaultTimeout = 15000; // 15秒超时
-  /** 带超时的 fetch 封装 */
-  private async fetchWithTimeout(url: string, options?: RequestInit, timeoutMs?: number): Promise<Response> {
-    const controller = new AbortController();
-    const timeout = timeoutMs ?? this.defaultTimeout;
-    const id = setTimeout(() => controller.abort(), timeout);
-    try {
-      const response = await fetch(url, { ...options, signal: controller.signal });
-      return response;
-    } finally {
-      clearTimeout(id);
-    }
-  }
+  private defaultTimeout = 8000;  // 从15秒降到8秒
+  private realtimeTimeout = 5000; // 实时接口专用5秒超时
 
   // ==================== 数据转换方法 ====================
   
@@ -188,18 +178,25 @@ class SystemInfoApiService {
   private transformCpuInfo(data: any): RealTimeCpuInfo {
     const cpuData = data.data || data;
     
+    // load_average 和 usage_per_core 可能是空格分隔的字符串
+    const parseArray = (val: any): number[] => {
+      if (Array.isArray(val)) return val.map(Number);
+      if (typeof val === 'string') return val.trim().split(/\s+/).map(Number).filter(n => !isNaN(n));
+      return [];
+    };
+
     const result: RealTimeCpuInfo = {
       usage: cpuData.usage || cpuData.cpu_percent || 0,
       cores: cpuData.cores || cpuData.physical_cores || 1,
       frequency: cpuData.frequency || cpuData.max_frequency || 0,
-      load_average: cpuData.load_average || [0, 0, 0],
+      load_average: parseArray(cpuData.load_average),
     };
 
     if (cpuData.timestamp !== undefined) {
       result.timestamp = cpuData.timestamp;
     }
     if (cpuData.usage_per_core !== undefined) {
-      result.usage_per_core = cpuData.usage_per_core;
+      result.usage_per_core = parseArray(cpuData.usage_per_core);
     }
 
     return result;
@@ -231,12 +228,21 @@ class SystemInfoApiService {
   private transformDiskInfo(data: any): RealTimeDiskInfo {
     const diskData = data.data || data;
     
+    // partitions 可能是空格字符串或空格分隔的字符串
+    const parsePartitions = (val: any) => {
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string' && val.trim()) {
+        try { return JSON.parse(val); } catch { return []; }
+      }
+      return [];
+    };
+
     const result: RealTimeDiskInfo = {
       usage: diskData.usage || diskData.usage_percent || 0,
       used: diskData.used || 0,
       available: diskData.available || 0,
       total: diskData.total || 0,
-      partitions: diskData.partitions || [],
+      partitions: parsePartitions(diskData.partitions),
     };
 
     if (diskData.read_bytes !== undefined) {
@@ -255,11 +261,20 @@ class SystemInfoApiService {
   private transformProcessInfo(data: any): RealTimeProcessInfo {
     const processData = data.data || data;
     
+    // processes 可能是空格字符串
+    const parseProcesses = (val: any) => {
+      if (Array.isArray(val)) return val;
+      if (typeof val === 'string' && val.trim()) {
+        try { return JSON.parse(val); } catch { return []; }
+      }
+      return [];
+    };
+
     const result: RealTimeProcessInfo = {
       total: processData.total || processData.total_count || 0,
       running: processData.running || 0,
       sleeping: processData.sleeping || 0,
-      processes: processData.processes || [],
+      processes: parseProcesses(processData.processes),
     };
 
     if (processData.timestamp !== undefined) {
@@ -274,19 +289,10 @@ class SystemInfoApiService {
   // 创建连接
   async createConnection(connectionData: Partial<SystemInfoConnection>): Promise<SystemInfoConnection> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/connections`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(connectionData),
+      const result = await request.post(`${this.baseUrl}/connections`, connectionData, {
+        timeout: this.defaultTimeout
       });
 
-      if (!response.ok) {
-        throw new Error(`创建连接失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
       if (result.success && result.data) {
         return result.data;
       }
@@ -300,12 +306,9 @@ class SystemInfoApiService {
   // 获取所有连接
   async getAllConnections(): Promise<SystemInfoConnection[]> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/connections`);
-      if (!response.ok) {
-        throw new Error(`获取连接列表失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      const result = await request.get(`${this.baseUrl}/connections`, {
+        timeout: this.defaultTimeout
+      });
       if (result.success && result.data) {
         return result.data;
       }
@@ -319,15 +322,10 @@ class SystemInfoApiService {
   // 测试连接
   async testConnection(connectionId: string): Promise<SystemInfoConnectionStatus> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/connections/${connectionId}/test`, {
-        method: 'POST',
+      const result = await request.post(`${this.baseUrl}/connections/${connectionId}/test`, {}, {
+        timeout: this.defaultTimeout
       });
 
-      if (!response.ok) {
-        throw new Error(`测试连接失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
       if (result.success && result.data) {
         return {
           connected: result.data.connected || false,
@@ -350,15 +348,9 @@ class SystemInfoApiService {
   // 删除连接
   async deleteConnection(connectionId: string): Promise<boolean> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/connections/${connectionId}`, {
-        method: 'DELETE',
+      const result = await request.delete(`${this.baseUrl}/connections/${connectionId}`, {
+        timeout: this.defaultTimeout
       });
-
-      if (!response.ok) {
-        throw new Error(`删除连接失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
       return result.success || false;
     } catch (error) {
       console.error('删除连接失败:', error);
@@ -371,19 +363,10 @@ class SystemInfoApiService {
   // 创建查询
   async createQuery(queryData: Partial<SystemInfoQuery>): Promise<SystemInfoQuery> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/queries`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(queryData),
+      const result = await request.post(`${this.baseUrl}/queries`, queryData, {
+        timeout: this.defaultTimeout
       });
 
-      if (!response.ok) {
-        throw new Error(`创建查询失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
       if (result.success && result.data) {
         return result.data;
       }
@@ -397,12 +380,9 @@ class SystemInfoApiService {
   // 获取所有查询
   async getAllQueries(): Promise<SystemInfoQuery[]> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/queries`);
-      if (!response.ok) {
-        throw new Error(`获取查询列表失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      const result = await request.get(`${this.baseUrl}/queries`, {
+        timeout: this.defaultTimeout
+      });
       if (result.success && result.data) {
         return result.data;
       }
@@ -418,19 +398,10 @@ class SystemInfoApiService {
     try {
       const executionRequest = { connectionId };
 
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/queries/${queryId}/execute`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(executionRequest),
+      const result = await request.post(`${this.baseUrl}/queries/${queryId}/execute`, executionRequest, {
+        timeout: this.defaultTimeout
       });
 
-      if (!response.ok) {
-        throw new Error(`执行查询失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
       if (result.success && result.data) {
         return {
           id: Date.now(),
@@ -460,15 +431,9 @@ class SystemInfoApiService {
   // 删除查询
   async deleteQuery(queryId: string): Promise<boolean> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/queries/${queryId}`, {
-        method: 'DELETE',
+      const result = await request.delete(`${this.baseUrl}/queries/${queryId}`, {
+        timeout: this.defaultTimeout
       });
-
-      if (!response.ok) {
-        throw new Error(`删除查询失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
       return result.success || false;
     } catch (error) {
       console.error('删除查询失败:', error);
@@ -485,12 +450,9 @@ class SystemInfoApiService {
         ? `${this.baseUrl}/query-results?queryId=${queryId}`
         : `${this.baseUrl}/query-results`;
 
-      const response = await this.fetchWithTimeout(url);
-      if (!response.ok) {
-        throw new Error(`获取查询结果失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      const result = await request.get(url, {
+        timeout: this.defaultTimeout
+      });
       if (result.success && result.data) {
         return result.data.map((item: any, index: number) => ({
           id: index + 1,
@@ -514,12 +476,9 @@ class SystemInfoApiService {
   // 获取统计信息
   async getStatistics(): Promise<SystemInfoStatistics> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/statistics`);
-      if (!response.ok) {
-        throw new Error(`获取统计信息失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
+      const result = await request.get(`${this.baseUrl}/statistics`, {
+        timeout: this.defaultTimeout
+      });
       if (result.success && result.data) {
         return result.data;
       }
@@ -549,12 +508,9 @@ class SystemInfoApiService {
   // 获取性能指标
   async getPerformanceMetrics(): Promise<SystemPerformanceMetrics> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/performance-metrics`);
-      if (!response.ok) {
-        throw new Error(`获取性能指标失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
+      const result = await request.get(`${this.baseUrl}/performance-metrics`, {
+        timeout: this.defaultTimeout
+      });
       if (result.success && result.data) {
         return {
           cpuPercent: result.data.cpu_percent || result.data.cpuPercent || 0,
@@ -593,12 +549,9 @@ class SystemInfoApiService {
   // 获取支持的信息类型
   async getAvailableInfoTypes(): Promise<string[]> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/info-types`);
-      if (!response.ok) {
-        throw new Error(`获取信息类型列表失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      const result = await request.get(`${this.baseUrl}/info-types`, {
+        timeout: this.defaultTimeout
+      });
       if (result.success && result.data) {
         return result.data;
       }
@@ -613,12 +566,9 @@ class SystemInfoApiService {
   // 获取信息类型属性
   async getInfoTypeProperties(infoType: string): Promise<string[]> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/info-types/${infoType}/properties`);
-      if (!response.ok) {
-        throw new Error(`获取信息类型属性失败: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      const result = await request.get(`${this.baseUrl}/info-types/${infoType}/properties`, {
+        timeout: this.defaultTimeout
+      });
       if (result.success && result.data) {
         return result.data;
       }
@@ -635,155 +585,65 @@ class SystemInfoApiService {
   // 获取实时系统信息
   async getRealTimeSystemInfo(): Promise<RealTimeSystemInfo> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/real-time/system`);
-      if (!response.ok) {
-        throw new Error(`获取实时系统信息失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      if (result.success) {
-        return this.transformSystemInfo(result.data || result);
-      }
-      throw new Error(result.message || '获取系统信息失败');
+      const result = await request.get(`${this.baseUrl}/real-time/system`, {
+        timeout: this.realtimeTimeout
+      });
+      if (result.success) return this.transformSystemInfo(result.data || result);
+      throw new Error(result.message);
     } catch (error) {
-      console.error('获取系统信息失败:', error);
-      // 返回默认数据
-      return {
-        hostname: 'localhost',
-        platform: 'Unknown',
-        architecture: 'Unknown',
-        processor: 'Unknown',
-        users: 1,
-      };
+      return { hostname: 'localhost', platform: 'Unknown', architecture: 'Unknown', processor: 'Unknown', users: 1 };
     }
   }
 
   // 获取实时CPU信息
   async getRealTimeCpuInfo(): Promise<RealTimeCpuInfo> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/real-time/cpu`);
-      if (!response.ok) {
-        throw new Error(`获取实时CPU信息失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      if (result.success) {
-        return this.transformCpuInfo(result.data || result);
-      }
-      throw new Error(result.message || '获取CPU信息失败');
+      const result = await request.get(`${this.baseUrl}/real-time/cpu`, {
+        timeout: this.realtimeTimeout
+      });
+      if (result.success) return this.transformCpuInfo(result.data || result);
+      throw new Error(result.message);
     } catch (error) {
-      console.error('获取CPU信息失败:', error);
-      // 尝试从collect接口获取CPU信息
-      try {
-        const fallback = await this.collectSpecificInfo('cpu_info');
-        return this.transformCpuInfo(fallback);
-      } catch (e) {
-        // 忽略fallback错误
-      }
-      
-      return {
-        usage: 0,
-        cores: 1,
-        frequency: 0,
-        load_average: [0, 0, 0],
-      };
+      return { usage: 0, cores: 1, frequency: 0, load_average: [0, 0, 0] };
     }
   }
 
   // 获取实时内存信息
   async getRealTimeMemoryInfo(): Promise<RealTimeMemoryInfo> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/real-time/memory`);
-      if (!response.ok) {
-        throw new Error(`获取实时内存信息失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      if (result.success) {
-        return this.transformMemoryInfo(result.data || result);
-      }
-      throw new Error(result.message || '获取内存信息失败');
+      const result = await request.get(`${this.baseUrl}/real-time/memory`, {
+        timeout: this.realtimeTimeout
+      });
+      if (result.success) return this.transformMemoryInfo(result.data || result);
+      throw new Error(result.message);
     } catch (error) {
-      console.error('获取内存信息失败:', error);
-      // 尝试从collect接口获取内存信息
-      try {
-        const fallback = await this.collectSpecificInfo('memory_info');
-        return this.transformMemoryInfo(fallback);
-      } catch (e) {
-        // 忽略fallback错误
-      }
-      
-      return {
-        usage: 0,
-        used: 0,
-        available: 0,
-        total: 0,
-      };
+      return { usage: 0, used: 0, available: 0, total: 0 };
     }
   }
 
   // 获取实时磁盘信息
   async getRealTimeDiskInfo(): Promise<RealTimeDiskInfo> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/real-time/disk`);
-      if (!response.ok) {
-        throw new Error(`获取实时磁盘信息失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      if (result.success) {
-        return this.transformDiskInfo(result.data || result);
-      }
-      throw new Error(result.message || '获取磁盘信息失败');
+      const result = await request.get(`${this.baseUrl}/real-time/disk`, {
+        timeout: this.realtimeTimeout
+      });
+      if (result.success) return this.transformDiskInfo(result.data || result);
+      throw new Error(result.message);
     } catch (error) {
-      console.error('获取磁盘信息失败:', error);
-      // 尝试从collect接口获取磁盘信息
-      try {
-        const fallback = await this.collectSpecificInfo('disk_info');
-        return this.transformDiskInfo(fallback);
-      } catch (e) {
-        // 忽略fallback错误
-      }
-      
-      return {
-        usage: 0,
-        used: 0,
-        available: 0,
-        total: 0,
-        partitions: [],
-      };
+      return { usage: 0, used: 0, available: 0, total: 0, partitions: [] };
     }
   }
 
   // 获取实时进程信息
   async getRealTimeProcessInfo(): Promise<RealTimeProcessInfo> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/real-time/processes`);
-      if (!response.ok) {
-        throw new Error(`获取实时进程信息失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      if (result.success) {
-        return this.transformProcessInfo(result.data || result);
-      }
-      throw new Error(result.message || '获取进程信息失败');
+      const result = await request.get(`${this.baseUrl}/real-time/processes`, {
+        timeout: this.realtimeTimeout
+      });
+      if (result.success) return this.transformProcessInfo(result.data || result);
+      throw new Error(result.message);
     } catch (error) {
-      console.error('获取进程信息失败:', error);
-      // 尝试从collect接口获取进程信息
-      try {
-        const fallback = await this.collectSpecificInfo('process_info');
-        return this.transformProcessInfo(fallback);
-      } catch (e) {
-        // 忽略fallback错误
-      }
-      
-      return {
-        total: 0,
-        running: 0,
-        sleeping: 0,
-        processes: [],
-      };
+      return { total: 0, running: 0, sleeping: 0, processes: [] };
     }
   }
 
@@ -792,27 +652,11 @@ class SystemInfoApiService {
   // 健康检查
   async healthCheck(): Promise<HealthCheckResult> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/health`);
-      if (!response.ok) {
-        // 即使返回503，也尝试解析响应
-        const text = await response.text();
-        try {
-          const data = JSON.parse(text);
-          return {
-            status: data.status || 'unhealthy',
-            message: data.message,
-            pythonEnvironment: data.pythonEnvironment,
-            dataCollection: data.dataCollection,
-            timestamp: data.timestamp || Date.now(),
-            version: data.version,
-            error: data.error
-          };
-        } catch (e) {
-          throw new Error(`健康检查失败: ${response.statusText}`);
-        }
-      }
+      const data = await request.get(`${this.baseUrl}/health`, {
+        timeout: this.defaultTimeout,
+        validateStatus: (status) => status < 600 // Accept all status codes < 600
+      });
       
-      const data = await response.json();
       if (data.success && data.data) {
         return {
           status: data.data.status || 'unhealthy',
@@ -825,10 +669,15 @@ class SystemInfoApiService {
         };
       }
       
+      // Handle direct response format
       return {
-        status: 'unhealthy',
-        message: '健康检查响应格式错误',
-        timestamp: Date.now(),
+        status: data.status || 'unhealthy',
+        message: data.message,
+        pythonEnvironment: data.pythonEnvironment,
+        dataCollection: data.dataCollection,
+        timestamp: data.timestamp || String(Date.now()),
+        version: data.version,
+        error: data.error
       };
     } catch (error) {
       console.error('健康检查失败:', error);
@@ -845,12 +694,10 @@ class SystemInfoApiService {
   // 获取实时性能数据
   async getRealTimePerformance(): Promise<any> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/real-time/performance`);
-      if (!response.ok) {
-        throw new Error(`获取实时性能数据失败: ${response.statusText}`);
-      }
+      const result = await request.get(`${this.baseUrl}/real-time/performance`, {
+        timeout: this.defaultTimeout
+      });
       
-      const result = await response.json();
       if (result.success) {
         return result.data || result;
       }
@@ -870,12 +717,10 @@ class SystemInfoApiService {
   // 获取实时网络数据
   async getRealTimeNetwork(): Promise<any> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/real-time/network`);
-      if (!response.ok) {
-        throw new Error(`获取实时网络数据失败: ${response.statusText}`);
-      }
+      const result = await request.get(`${this.baseUrl}/real-time/network`, {
+        timeout: this.defaultTimeout
+      });
       
-      const result = await response.json();
       if (result.success) {
         return result.data || result;
       }
@@ -889,12 +734,10 @@ class SystemInfoApiService {
   // 获取实时系统状态
   async getRealTimeStatus(): Promise<any> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/real-time/status`);
-      if (!response.ok) {
-        throw new Error(`获取实时系统状态失败: ${response.statusText}`);
-      }
+      const result = await request.get(`${this.baseUrl}/real-time/status`, {
+        timeout: this.defaultTimeout
+      });
       
-      const result = await response.json();
       if (result.success) {
         return result.data || result;
       }
@@ -908,14 +751,21 @@ class SystemInfoApiService {
   // 获取批量实时数据
   async getBatchRealTimeData(): Promise<any> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/real-time/batch-data`);
-      if (!response.ok) {
-        throw new Error(`获取批量实时数据失败: ${response.statusText}`);
-      }
+      const result = await request.get(`${this.baseUrl}/real-time/batch-data`, {
+        timeout: 20000
+      });
       
-      const result = await response.json();
-      if (result.success) {
-        return result.data || result;
+      if (result.success && result.data) {
+        const raw = result.data;
+        // 后端返回键名为 cpu_info/memory_info/disk_info/process_info/system_basic
+        // 前端页面期望 cpu/memory/disk/processes/system，且每项数据在 .data 子字段中
+        return {
+          cpu:       raw.cpu_info      ? this.transformCpuInfo(raw.cpu_info)         : null,
+          memory:    raw.memory_info   ? this.transformMemoryInfo(raw.memory_info)   : null,
+          disk:      raw.disk_info     ? this.transformDiskInfo(raw.disk_info)       : null,
+          processes: raw.process_info  ? this.transformProcessInfo(raw.process_info) : null,
+          system:    raw.system_basic  ? this.transformSystemInfo(raw.system_basic)  : null,
+        };
       }
       throw new Error(result.message || '获取批量数据失败');
     } catch (error) {
@@ -951,18 +801,10 @@ class SystemInfoApiService {
   async collectSpecificInfo(infoType: string): Promise<any> {
     try {
       // 修改：使用POST请求，因为后端接口是POST
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/collect?type=${infoType}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      const result = await request.post(`${this.baseUrl}/collect?type=${infoType}`, {}, {
+        timeout: this.defaultTimeout
       });
       
-      if (!response.ok) {
-        throw new Error(`收集${infoType}信息失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
       if (result.success) {
         return result.data || result;
       }
@@ -978,21 +820,14 @@ class SystemInfoApiService {
   // 获取数据采集接口
   async collectSystemInfoData(hostname: string, ipAddress: string, dataType: string): Promise<any> {
     try {
-      const response = await this.fetchWithTimeout(
+      const result = await request.post(
         `${this.baseUrl}/collect?hostname=${hostname}&ipAddress=${ipAddress}&type=${dataType}`,
+        {},
         {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          timeout: this.defaultTimeout
         }
       );
       
-      if (!response.ok) {
-        throw new Error(`采集系统信息数据失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
       if (result.success) {
         return result.data || result;
       }
@@ -1011,12 +846,9 @@ class SystemInfoApiService {
         url += `&hostname=${hostname}`;
       }
       
-      const response = await this.fetchWithTimeout(url);
-      if (!response.ok) {
-        throw new Error(`获取系统信息数据分页失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
+      const result = await request.get(url, {
+        timeout: this.defaultTimeout
+      });
       if (result.success) {
         return result.data || result;
       }
@@ -1063,12 +895,9 @@ class SystemInfoApiService {
   // 获取采集间隔
   async getCollectionIntervals(): Promise<Map<string, number>> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/collection-intervals`);
-      if (!response.ok) {
-        throw new Error(`获取采集间隔失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
+      const result = await request.get(`${this.baseUrl}/collection-intervals`, {
+        timeout: this.defaultTimeout
+      });
       if (result.success && result.data) {
         const intervalMap = new Map<string, number>();
         Object.entries(result.data).forEach(([key, value]) => {
@@ -1096,18 +925,10 @@ class SystemInfoApiService {
   // 获取所有数据
   async collectAllInfo(): Promise<any> {
     try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/collect/all`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      const result = await request.post(`${this.baseUrl}/collect/all`, {}, {
+        timeout: this.defaultTimeout
       });
       
-      if (!response.ok) {
-        throw new Error(`采集所有信息失败: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
       if (result.success) {
         return result.data || result;
       }

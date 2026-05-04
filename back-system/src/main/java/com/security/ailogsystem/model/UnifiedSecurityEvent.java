@@ -45,7 +45,7 @@ public class UnifiedSecurityEvent {
 
     // 严重级别
     @Column(nullable = false)
-    private String severity; // INFO, WARN, ERROR, CRITICAL
+    private String severity; // LOW, MEDIUM, HIGH, CRITICAL
 
     // 原始消息
     @Column(columnDefinition = "TEXT")

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Typography, Tag, Progress, Badge, Tooltip, Button } from 'antd';
 import { SafetyCertificateOutlined, ArrowUpOutlined, SyncOutlined } from '@ant-design/icons';
 import { eventApi, analysisApi } from '@/services/api';
@@ -142,14 +142,14 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
           flexDirection: 'column',
           ...style
         }}
-        bodyStyle={{ 
+        styles={{ body: { 
           padding: '24px',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
           flex: 1
-        }}
+        } }}
       >
         <SafetyCertificateOutlined style={{ fontSize: '32px', color: '#ff4d4f', marginBottom: '16px' }} />
         <Text type="danger" strong style={{ marginBottom: '8px' }}>数据加载失败</Text>
@@ -180,12 +180,12 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
           flexDirection: 'column',
           ...style
         }}
-        bodyStyle={{ 
+        styles={{ body: { 
           padding: '16px',
           flex: 1,
           display: 'flex',
           flexDirection: 'column'
-        }}
+        } }}
       >
         <div style={{ 
           display: 'flex', 
@@ -235,13 +235,13 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
         flexDirection: 'column',
         ...style
       }}
-      bodyStyle={{ 
+      styles={{ body: { 
         padding: '24px',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
         flex: 1
-      }}
+      } }}
       extra={
         <Tooltip title={`上次更新: ${displayLastUpdated}`}>
           <Badge dot={loading}>

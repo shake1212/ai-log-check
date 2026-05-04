@@ -24,8 +24,9 @@ export interface SecurityAlert {
   handled: boolean;
   createdTime: string;
   securityLog?: SecurityLog;
-  eventId?: number; // 添加 eventId 字段
-  source?: string; // 添加 source 字段
+  eventId?: number;
+  source?: string;
+  computerName?: string;
 }
 
 /**

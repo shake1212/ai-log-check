@@ -106,7 +106,7 @@ def validate_event(event):
 def collect_performance():
     """收集性能数据"""
     try:
-        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_percent = psutil.cpu_percent(interval=0.1)
         memory = psutil.virtual_memory()
         
         data = {
@@ -132,7 +132,7 @@ def collect_performance():
 def collect_cpu_info():
     """收集CPU详细信息"""
     try:
-        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_percent = psutil.cpu_percent(interval=0.1)
         cpu_freq = psutil.cpu_freq()
         cpu_times = psutil.cpu_times()
         
@@ -145,7 +145,7 @@ def collect_cpu_info():
             "user_time": getattr(cpu_times, 'user', 0),
             "system_time": getattr(cpu_times, 'system', 0),
             "idle_time": getattr(cpu_times, 'idle', 0),
-            "usage_per_core": psutil.cpu_percent(interval=1, percpu=True),
+            "usage_per_core": psutil.cpu_percent(interval=0.1, percpu=True),
             "load_average": get_load_average(),
             "timestamp": time.time(),
             "host": HOST_NAME,
@@ -313,13 +313,23 @@ def send_to_backend(data, data_type):
     """发送数据到Java后端 - 带重试"""
     try:
         enriched = build_enriched_payload(data_type, data)
-        
+        severity = "LOW"
+        if isinstance(data, dict):
+            cpu = data.get("cpu_percent") or data.get("cpu_usage")
+            mem = data.get("memory_percent") or data.get("memory_usage")
+            disk = data.get("disk_percent") or data.get("disk_usage")
+            if cpu is not None and cpu > 90: severity = "CRITICAL"
+            elif mem is not None and mem > 95: severity = "CRITICAL"
+            elif disk is not None and disk > 95: severity = "CRITICAL"
+            elif cpu is not None and cpu > 80: severity = "MEDIUM"
+            elif mem is not None and mem > 90: severity = "MEDIUM"
+            elif disk is not None and disk > 85: severity = "MEDIUM"
         event = {
             "timestamp": datetime.now().isoformat(),
             "sourceSystem": "SYSTEM_INFO_COLLECTOR",
             "eventType": f"SYSTEM_{data_type.upper()}",
             "category": "SYSTEM_PERFORMANCE",
-            "severity": "INFO",
+            "severity": severity,
             "normalizedMessage": f"系统{data_type}信息收集",
             "hostName": HOST_NAME,
             "eventData": enriched,
@@ -422,29 +432,17 @@ def main():
     # 执行收集
     result = collectors[data_type]()
     
-    # 输出JSON
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    
-    # 如果收集失败,退出
     if "error" in result:
         logger.error(f"收集失败: {result['error']}")
         return 1
     
-    # 发送数据
-    try:
-        enriched_payload = send_to_backend(result, data_type)
-        if enriched_payload:
-            send_to_system_info_service(enriched_payload, data_type)
-        
-        logger.info("=" * 60)
-        logger.info("✅ 采集完成")
-        logger.info("=" * 60)
-        return 0
-        
-    except Exception as e:
-        logger.error(f"发送数据失败: {e}")
-        logger.warning("数据已收集但未能发送到后端")
-        return 1
+    # 输出结果（Java后端通过ProcessBuilder直接读取stdout，只输出一次）
+    print(json.dumps(result))
+    
+    logger.info("=" * 60)
+    logger.info("采集完成")
+    logger.info("=" * 60)
+    return 0
 
 if __name__ == "__main__":
     sys.exit(main())

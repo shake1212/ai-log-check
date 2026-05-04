@@ -78,7 +78,7 @@ public class UnifiedLogCollector {
                     .sourceSystem("APPLICATION")
                     .eventType("MEMORY_USAGE")
                     .category("PERFORMANCE")
-                    .severity(memoryUsage > 0.8 ? "WARN" : "INFO")
+                    .severity(memoryUsage > 0.8 ? "MEDIUM" : "LOW")
                     .normalizedMessage(String.format("JVM内存使用: %dMB/%dMB (%.1f%%)",
                             usedMemory, totalMemory, memoryUsage * 100))
                     .build();
@@ -114,7 +114,7 @@ public class UnifiedLogCollector {
                 .sourceSystem("COLLECTOR")
                 .eventType("COLLECTOR_ERROR")
                 .category("SYSTEM")
-                .severity("ERROR")
+                .severity("HIGH")
                 .normalizedMessage(String.format("收集器 %s 错误: %s", collector, error))
                 .isAnomaly(false)
                 .build();

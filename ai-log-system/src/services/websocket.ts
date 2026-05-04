@@ -4,6 +4,7 @@ import { message } from 'antd';
 import SockJS from 'sockjs-client';
 import { Client, IMessage } from '@stomp/stompjs';
 import type { WebSocketMessage, SecurityLog, SecurityAlert, Statistics } from '@/types/log';
+import request from '@/utils/request';
 
 // WebSocket 配置
 const WEBSOCKET_CONFIG = {
@@ -468,8 +469,8 @@ export const webSocketTest = {
   // 发送测试消息
   sendTestMessage: async (): Promise<boolean> => {
     try {
-      const response = await fetch(`${API_BASE}/websocket/test-connection`, { method: 'POST' });
-      return response.ok;
+      await request.post(`${API_BASE}/websocket/test-connection`);
+      return true;
     } catch (error) {
       console.error('发送测试消息失败:', error);
       return false;
@@ -479,11 +480,9 @@ export const webSocketTest = {
   // 检查状态
   checkStatus: async (): Promise<any> => {
     try {
-      const response = await fetch(`${API_BASE}/websocket/status`);
-      return await response.json();
+      return await request.get(`${API_BASE}/websocket/status`);
     } catch (error) {
       console.error('检查状态失败:', error);
-      // 类型断言确保 error 对象有 message 属性
       const errorMessage = (error as Error).message;
       return { status: 'error', error: errorMessage };
     }

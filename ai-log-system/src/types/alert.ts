@@ -15,6 +15,8 @@ export interface SecurityAlert {
   resolution?: string;
   logEntryId?: number;
   unifiedEventId?: number;
+  eventId?: number;
+  computerName?: string;
 }
 
 export interface AlertResponse {

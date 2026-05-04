@@ -39,7 +39,7 @@ def collect_performance():
     """收集性能数据"""
     try:
         # CPU使用率
-        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_percent = psutil.cpu_percent(interval=0.1)
 
         # 内存信息
         memory = psutil.virtual_memory()
@@ -65,7 +65,7 @@ def collect_cpu_info():
     """收集CPU详细信息"""
     try:
         # CPU使用率
-        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_percent = psutil.cpu_percent(interval=0.1)
 
         # CPU频率
         cpu_freq = psutil.cpu_freq()
@@ -80,7 +80,7 @@ def collect_cpu_info():
         cpu_times = psutil.cpu_times()
 
         # 每个核心的使用率
-        cpu_percent_per_core = psutil.cpu_percent(interval=1, percpu=True)
+        cpu_percent_per_core = psutil.cpu_percent(interval=0.1, percpu=True)
 
         return {
             "usage": cpu_percent,
@@ -261,7 +261,7 @@ def get_load_average():
             return list(os.getloadavg())
         else:
             # Windows系统返回模拟值
-            cpu_percent = psutil.cpu_percent(interval=1)
+            cpu_percent = psutil.cpu_percent(interval=0.1)
             return [cpu_percent / 100, 0, 0]
     except:
         return [0, 0, 0]
@@ -271,12 +271,23 @@ def send_to_backend(data, data_type):
     try:
         # 构造符合后端要求的事件格式
         enriched = build_enriched_payload(data_type, data)
+        severity = "LOW"
+        if isinstance(data, dict):
+            cpu = data.get("cpu_percent") or data.get("cpu_usage")
+            mem = data.get("memory_percent") or data.get("memory_usage")
+            disk = data.get("disk_percent") or data.get("disk_usage")
+            if cpu is not None and cpu > 90: severity = "CRITICAL"
+            elif mem is not None and mem > 95: severity = "CRITICAL"
+            elif disk is not None and disk > 95: severity = "CRITICAL"
+            elif cpu is not None and cpu > 80: severity = "MEDIUM"
+            elif mem is not None and mem > 90: severity = "MEDIUM"
+            elif disk is not None and disk > 85: severity = "MEDIUM"
         event = {
             "timestamp": datetime.now().isoformat(),
             "sourceSystem": "SYSTEM_INFO_COLLECTOR",
             "eventType": f"SYSTEM_{data_type.upper()}",
             "category": "SYSTEM_PERFORMANCE",
-            "severity": "INFO",
+            "severity": severity,
             "normalizedMessage": f"系统{data_type}信息收集",
             "hostName": HOST_NAME,
             "eventData": enriched,
@@ -356,13 +367,8 @@ def main():
         else:
             result = {"error": f"未知的数据类型: {data_type}"}
 
-    # 输出JSON结果
+    # 输出JSON结果（Java后端通过ProcessBuilder直接读取stdout）
     print(json.dumps(result))
-
-    # 将数据发送到后端（如果收集成功）
-    if "error" not in result:
-        enriched_payload = send_to_backend(result, data_type)
-        send_to_system_info_service(enriched_payload, data_type)
 
 if __name__ == "__main__":
     main()

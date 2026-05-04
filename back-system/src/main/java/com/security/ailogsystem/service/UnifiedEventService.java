@@ -335,7 +335,11 @@ public class UnifiedEventService {
                 .map(row -> {
                     Map<String, Object> result = new HashMap<>();
                     result.put("timestamp", row[0] != null ? row[0] : "未知时间");
-                    result.put("count", row[1] != null ? row[1] : 0L);
+                    long eventCount = row[1] != null ? ((Number) row[1]).longValue() : 0L;
+                    long anomalyCount = row[2] != null ? ((Number) row[2]).longValue() : 0L;
+                    result.put("eventCount", eventCount);
+                    result.put("anomalyCount", anomalyCount);
+                    result.put("anomalyRate", eventCount > 0 ? (double) anomalyCount / eventCount : 0.0);
                     return result;
                 })
                 .collect(Collectors.toList());

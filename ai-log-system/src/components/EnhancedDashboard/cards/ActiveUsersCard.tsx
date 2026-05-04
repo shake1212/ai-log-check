@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Typography, Progress, Badge, Tooltip } from 'antd';
 import { TeamOutlined, SyncOutlined } from '@ant-design/icons';
 import { analysisApi, logApi } from '@/services/api';
@@ -111,12 +111,12 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
           flexDirection: 'column',
           ...style
         }}
-        bodyStyle={{ 
+        styles={{ body: { 
           padding: '16px',
           flex: 1,
           display: 'flex',
           flexDirection: 'column'
-        }}
+        } }}
       >
         <div style={{ 
           display: 'flex', 
@@ -161,13 +161,13 @@ const ActiveUsersCard: React.FC<ActiveUsersCardProps> = ({
         flexDirection: 'column',
         ...style
       }}
-      bodyStyle={{ 
+      styles={{ body: { 
         padding: '24px',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
         flex: 1
-      }}
+      } }}
       extra={
         <Tooltip title="手动刷新">
           <Badge dot={loading}>

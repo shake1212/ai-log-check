@@ -185,42 +185,44 @@ const WMITestConnection: React.FC = () => {
       setTestProgress(20);
       stepResults.push({
         id: `${testId}-0`,
-        testName: testSteps[0].title,
+        testName: testSteps[0]!.title,
         status: host ? 'passed' : 'failed',
         message: host ? '连接参数有效' : '主机地址为空',
         duration: 10,
         details: `目标主机: ${host || '-'}`,
       });
-      appendTestResult(testId, stepResults[stepResults.length - 1]);
+      appendTestResult(testId, stepResults[stepResults.length - 1]!);
 
-      // Step 2: 权限与可用性检查
+      // Step 2 & 3: 并行执行权限检查和命名空间能力检查
       setCurrentStep(1);
       setTestProgress(40);
-      const statusResp = await systemApi.getSystemStatus();
-      const statusOk = !!statusResp;
+      const [statusResp, availableResp] = await Promise.allSettled([
+        systemApi.getSystemStatus(),
+        scriptApi.getAvailableScripts(),
+      ]);
+      const statusOk = statusResp.status === 'fulfilled' && !!statusResp.value;
       stepResults.push({
         id: `${testId}-1`,
-        testName: testSteps[1].title,
+        testName: testSteps[1]!.title,
         status: statusOk ? 'passed' : 'failed',
         message: statusOk ? '系统状态接口可访问' : '系统状态接口不可用',
         duration: 200,
       });
-      appendTestResult(testId, stepResults[stepResults.length - 1]);
+      appendTestResult(testId, stepResults[stepResults.length - 1]!);
 
-      // Step 3: 命名空间能力检查（通过可用脚本判断）
       setCurrentStep(2);
       setTestProgress(60);
-      const available = await scriptApi.getAvailableScripts();
+      const available = availableResp.status === 'fulfilled' ? availableResp.value : null;
       const scripts = Array.isArray(available?.data) ? available.data : (Array.isArray(available) ? available : []);
       const namespaceOk = scripts.length > 0;
       stepResults.push({
         id: `${testId}-2`,
-        testName: testSteps[2].title,
+        testName: testSteps[2]!.title,
         status: namespaceOk ? 'passed' : 'warning',
         message: namespaceOk ? 'WMI相关脚本可用' : '未发现可执行采集脚本',
         duration: 250,
       });
-      appendTestResult(testId, stepResults[stepResults.length - 1]);
+      appendTestResult(testId, stepResults[stepResults.length - 1]!);
 
       // Step 4: 执行实际脚本
       setCurrentStep(3);
@@ -233,12 +235,12 @@ const WMITestConnection: React.FC = () => {
       }
       stepResults.push({
         id: `${testId}-3`,
-        testName: testSteps[3].title,
+        testName: testSteps[3]!.title,
         status: runOk ? 'passed' : 'warning',
         message: runOk ? '查询脚本触发成功' : '未执行脚本（无可用脚本）',
         duration: 400,
       });
-      appendTestResult(testId, stepResults[stepResults.length - 1]);
+      appendTestResult(testId, stepResults[stepResults.length - 1]!);
 
       // Step 5: 性能指标
       setCurrentStep(4);
@@ -246,12 +248,12 @@ const WMITestConnection: React.FC = () => {
       await refreshConnectionMetrics();
       stepResults.push({
         id: `${testId}-4`,
-        testName: testSteps[4].title,
+        testName: testSteps[4]!.title,
         status: 'passed',
         message: '性能指标已更新',
         duration: 200,
       });
-      appendTestResult(testId, stepResults[stepResults.length - 1]);
+      appendTestResult(testId, stepResults[stepResults.length - 1]!);
 
       const finalStatus = stepResults.every(r => r.status !== 'failed') ? 'success' : 'failed';
       setConnectionTests(prev =>

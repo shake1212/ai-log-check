@@ -36,6 +36,8 @@ public class AlertServiceImpl implements AlertService {
                 .alertLevel(request.getAlertLevel())
                 .description(request.getDescription())
                 .aiConfidence(request.getAiConfidence())
+                .metricValue(request.getMetricValue())
+                .threshold(request.getThreshold())
                 .handled(false)
                 .status(Alert.AlertStatus.PENDING)
                 .build();
@@ -108,21 +110,7 @@ public class AlertServiceImpl implements AlertService {
     @Override
     public Page<AlertResponse> getAllAlerts(Pageable pageable) {
         Page<Alert> alerts = alertRepository.findAll(pageable);
-        return alerts.map(alert -> {
-            AlertResponse response = AlertResponse.fromEntity(alert);
-            // 从SecurityAlert表补充metricValue和threshold
-            try {
-                com.security.ailogsystem.entity.SecurityAlert secAlert =
-                    securityAlertRepository.findById(alert.getId()).orElse(null);
-                if (secAlert != null) {
-                    response.setMetricValue(secAlert.getMetricValue());
-                    response.setThreshold(secAlert.getThreshold());
-                }
-            } catch (Exception e) {
-                log.debug("补充告警指标信息失败: {}", e.getMessage());
-            }
-            return response;
-        });
+        return alerts.map(AlertResponse::fromEntity);
     }
 
     @Override
@@ -142,21 +130,7 @@ public class AlertServiceImpl implements AlertService {
                                             Boolean handled, Alert.AlertStatus status,
                                             Pageable pageable) {
         Page<Alert> alerts = alertRepository.searchAlerts(keyword, alertLevel, alertType, handled, status, pageable);
-        return alerts.map(alert -> {
-            AlertResponse response = AlertResponse.fromEntity(alert);
-            // 从SecurityAlert表补充metricValue和threshold
-            try {
-                com.security.ailogsystem.entity.SecurityAlert secAlert =
-                    securityAlertRepository.findById(alert.getId()).orElse(null);
-                if (secAlert != null) {
-                    response.setMetricValue(secAlert.getMetricValue());
-                    response.setThreshold(secAlert.getThreshold());
-                }
-            } catch (Exception e) {
-                log.debug("补充告警指标信息失败: {}", e.getMessage());
-            }
-            return response;
-        });
+        return alerts.map(AlertResponse::fromEntity);
     }
 
     @Override

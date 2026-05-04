@@ -19,6 +19,7 @@ import {
 } from '@ant-design/icons';
 import ruleManagementApi, { Rule } from '@/services/ruleManagementApi';
 import { getSeverity, getThreatCategory, getThreatType, translate, PATTERN_TYPE_MAP } from '@/utils/enumLabels';
+import { handleError } from '@/utils/errorHandler';
 import './index.less';
 
 const { Title, Text } = Typography;
@@ -49,9 +50,8 @@ const RulesPage: React.FC = () => {
         pageSize: response.pageSize,
         total: response.totalElements,
       });
-    } catch (error) {
-      console.error('加载规则列表失败:', error);
-      message.error('加载规则列表失败');
+    } catch (error: any) {
+      handleError(error, '加载规则列表');
     } finally {
       setLoading(false);
     }
@@ -63,9 +63,8 @@ const RulesPage: React.FC = () => {
       await ruleManagementApi.toggleRule(rule.id, enabled);
       message.success(enabled ? '规则已启用' : '规则已禁用');
       loadRules(pagination.current, pagination.pageSize);
-    } catch (error) {
-      console.error('更新规则状态失败:', error);
-      message.error('更新规则状态失败');
+    } catch (error: any) {
+      handleError(error, '更新规则状态');
     }
   };
 

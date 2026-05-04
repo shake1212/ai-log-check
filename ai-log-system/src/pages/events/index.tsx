@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   Card,
   Table,
@@ -48,8 +48,6 @@ import {
   ArrowUpOutlined,
   ArrowDownOutlined,
   QuestionCircleOutlined,
-  FullscreenOutlined,
-  FullscreenExitOutlined,
   UserOutlined,
   CloudServerOutlined,
   BellOutlined,
@@ -60,6 +58,8 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { getSeverity, getStatus, translate, EVENT_TYPE_MAP } from '../../utils/enumLabels';
+import request from '@/utils/request';
+import { handleError, logError } from '@/utils/errorHandler';
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
@@ -127,10 +127,6 @@ interface EventStatistics {
   };
   anomaly?: {
     totalAnomalies: number;
-    pendingAlerts: number;
-    resolvedAlerts: number;
-    falsePositiveAlerts: number;
-    averageConfidence: number;
   };
 }
 
@@ -158,11 +154,7 @@ const LEVEL_COLORS = {
   CRITICAL: '#ff4d4f',
   HIGH: '#fa8c16',
   MEDIUM: '#faad14',
-  LOW: '#52c41a',
-  INFO: '#1890ff',
-  WARN: '#faad14',
-  ERROR: '#ff4d4f',
-  DEBUG: '#666666'
+  LOW: '#52c41a'
 };
 
 const LEVEL_GRADIENTS = {
@@ -170,9 +162,7 @@ const LEVEL_GRADIENTS = {
   HIGH: 'linear-gradient(135deg, #fa8c16 0%, #d48806 100%)',
   MEDIUM: 'linear-gradient(135deg, #faad14 0%, #d4a106 100%)',
   LOW: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)',
-  INFO: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
   HEALTHY: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)',
-  WARNING: 'linear-gradient(135deg, #faad14 0%, #d4a106 100%)',
   CRITICAL_GRADIENT: 'linear-gradient(135deg, #ff4d4f 0%, #cf1322 100%)'
 };
 
@@ -190,7 +180,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
   });
   const [searchForm] = Form.useForm();
   const [activeTab, setActiveTab] = useState('events');
-  const [isFullscreen, setIsFullscreen] = useState(false);
+
   
   // Add mounted ref to prevent state updates after unmount
   const isMountedRef = useRef(true);
@@ -208,16 +198,6 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
   const [detailLoading, setDetailLoading] = useState(false);
   const [selectedEventDetail, setSelectedEventDetail] = useState<any>(null);
 
-  // 带超时的 Promise 包装函数
-  const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number = 8000): Promise<T> => {
-    return Promise.race([
-      promise,
-      new Promise<T>((_, reject) => 
-        setTimeout(() => reject(new Error('请求超时')), timeoutMs)
-      )
-    ]);
-  };
-
   // 获取仪表板统计信息（无需时间参数）
   const fetchDashboardStats = async () => {
     try {
@@ -226,82 +206,64 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
       
       console.log('调用仪表板统计API:', '/api/events/dashboard-stats');
       
-      const response = await withTimeout(
-        fetch('/api/events/dashboard-stats'),
-        5000
-      );
+      const data = await request.get('/api/events/dashboard-stats', {
+        timeout: 5000
+      });
       
-      console.log('仪表板统计API响应状态:', response.status);
+      console.log('仪表板统计返回数据:', data);
       
-      if (response.ok) {
-        const data = await response.json();
-        console.log('仪表板统计返回数据:', data);
+      if (!isMountedRef.current) return;
+      
+      // 转换数据结构
+      const dashboardData: DashboardStats = {
+        totalLogs: data.totalLogs || 0,
+        todayLogs: data.todayLogs || 0,
+        dailyCounts: data.dailyCounts || [],
+        severityCounts: data.severityCounts || data.levelCounts || {},
+        anomalyCount: data.anomalyCount || 0,
+        avgDailyEvents: data.avgDailyEvents || 0,
+        lastUpdate: data.lastUpdate || new Date().toISOString()
+      };
+      
+      setDashboardStats(dashboardData);
+      
+      // 同时更新兼容的 statistics 结构
+      const statistics: EventStatistics = {
+        totalLogs: dashboardData.totalLogs,
+        todayLogs: dashboardData.todayLogs,
+        dailyCounts: dashboardData.dailyCounts,
+        anomalyCount: dashboardData.anomalyCount,
+        severityCounts: dashboardData.severityCounts,
+        lastUpdate: dashboardData.lastUpdate,
+        avgDailyEvents: dashboardData.avgDailyEvents,
         
-        if (!isMountedRef.current) return;
+        // 兼容字段
+        totalEvents: dashboardData.totalLogs,
+        anomalyEvents: dashboardData.anomalyCount,
+        normalEvents: dashboardData.totalLogs - dashboardData.anomalyCount,
+        anomalyRate: dashboardData.totalLogs > 0 ? dashboardData.anomalyCount / dashboardData.totalLogs : 0,
+        sourceStatistics: {},
+        levelStatistics: dashboardData.severityCounts,
         
-        // 转换数据结构
-        const dashboardData: DashboardStats = {
-          totalLogs: data.totalLogs || 0,
-          todayLogs: data.todayLogs || 0,
-          dailyCounts: data.dailyCounts || [],
-          severityCounts: data.severityCounts || data.levelCounts || {},
-          anomalyCount: data.anomalyCount || 0,
-          avgDailyEvents: data.avgDailyEvents || 0,
-          lastUpdate: data.lastUpdate || new Date().toISOString()
-        };
-        
-        setDashboardStats(dashboardData);
-        
-        // 同时更新兼容的 statistics 结构
-        const statistics: EventStatistics = {
-          totalLogs: dashboardData.totalLogs,
-          todayLogs: dashboardData.todayLogs,
-          dailyCounts: dashboardData.dailyCounts,
-          anomalyCount: dashboardData.anomalyCount,
-          severityCounts: dashboardData.severityCounts,
-          lastUpdate: dashboardData.lastUpdate,
-          avgDailyEvents: dashboardData.avgDailyEvents,
-          
-          // 兼容字段
+        basic: {
           totalEvents: dashboardData.totalLogs,
+          totalAlerts: dashboardData.anomalyCount,
           anomalyEvents: dashboardData.anomalyCount,
           normalEvents: dashboardData.totalLogs - dashboardData.anomalyCount,
-          anomalyRate: dashboardData.totalLogs > 0 ? dashboardData.anomalyCount / dashboardData.totalLogs : 0,
-          sourceStatistics: {},
-          levelStatistics: dashboardData.severityCounts,
-          
-          basic: {
-            totalEvents: dashboardData.totalLogs,
-            totalAlerts: dashboardData.anomalyCount,
-            anomalyEvents: dashboardData.anomalyCount,
-            normalEvents: dashboardData.totalLogs - dashboardData.anomalyCount,
-            anomalyRate: dashboardData.totalLogs > 0 ? dashboardData.anomalyCount / dashboardData.totalLogs : 0
-          },
-          
-          anomaly: {
-            totalAnomalies: dashboardData.anomalyCount,
-            pendingAlerts: Math.round(dashboardData.anomalyCount * 0.3),
-            resolvedAlerts: Math.round(dashboardData.anomalyCount * 0.7),
-            falsePositiveAlerts: Math.round(dashboardData.anomalyCount * 0.1),
-            averageConfidence: dashboardData.anomalyCount > 0 ? 82.5 : 0
-          }
-        };
+          anomalyRate: dashboardData.totalLogs > 0 ? dashboardData.anomalyCount / dashboardData.totalLogs : 0
+        },
         
-        // 这里可以设置到 statistics 状态，如果需要的话
-        // setStatistics(statistics);
-        
-      } else {
-        const errorText = await response.text();
-        console.error('仪表板统计API响应失败:', response.status, errorText);
-        if (isMountedRef.current) {
-          message.error(`获取仪表板统计失败: ${response.status}`);
+        anomaly: {
+          totalAnomalies: dashboardData.anomalyCount,
         }
-      }
+      };
       
-    } catch (error) {
-      console.error('获取仪表板统计错误:', error);
+      // 这里可以设置到 statistics 状态，如果需要的话
+      // setStatistics(statistics);
+      
+    } catch (error: any) {
       if (isMountedRef.current) {
-        message.error('获取仪表板统计失败，请检查网络连接');
+        handleError(error, '获取仪表板统计');
       }
     } finally {
       if (isMountedRef.current) {
@@ -377,21 +339,15 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
 
       console.log('调用时间范围统计API:', `/api/events/statistics?${params}`);
       
-      const response = await withTimeout(
-        fetch(`/api/events/statistics?${params}`),
-        5000
-      );
+      const data = await request.get(`/api/events/statistics?${params}`, {
+        timeout: 5000
+      });
       
-      console.log('时间范围统计API响应状态:', response.status);
+      console.log('时间范围统计返回数据:', data);
+      // 这里可以根据需要处理时间范围统计
       
-      if (response.ok) {
-        const data = await response.json();
-        console.log('时间范围统计返回数据:', data);
-        // 这里可以根据需要处理时间范围统计
-      }
-      
-    } catch (error) {
-      console.error('获取时间范围统计错误:', error);
+    } catch (error: any) {
+      logError(error, '获取时间范围统计');
     }
   };
 
@@ -399,7 +355,8 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
   const fetchEvents = async (
     page = pagination.current,
     pageSize = pagination.pageSize,
-    overrideQuery?: Partial<QueryParams>
+    overrideQuery?: Partial<QueryParams>,
+    skipClientFilter = false
   ) => {
     try {
       if (!isMountedRef.current) return;
@@ -430,52 +387,34 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
         }
       });
 
-      const response = await withTimeout(
-        fetch('/api/events/search', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(queryDTO)
-        }),
-        10000
-      );
+      const data = await request.post('/api/events/search', queryDTO, {
+        timeout: 10000
+      });
 
       if (!isMountedRef.current) return;
 
-      if (response.ok) {
-        const data = await response.json();
-        const serverEvents = normalizeEventList(data);
-        const displayEvents = hasActiveFilter(effectiveQuery)
-          ? serverEvents.filter((event) => eventMatchesQuery(event, effectiveQuery))
-          : serverEvents;
-        setEvents(displayEvents);
-        setPagination(prev => ({
-          ...prev,
-          current: page,
-          pageSize,
-          total:
-            hasActiveFilter(effectiveQuery) && displayEvents.length !== serverEvents.length
-              ? displayEvents.length
-              : data.totalElements || data.total || displayEvents.length
-        }));
-        if (displayEvents.length === 0 && hasActiveFilter(effectiveQuery)) {
-          message.info('未找到匹配数据');
-        }
-      } else {
-        console.error('事件搜索API响应失败:', response.status, response.statusText);
-        if (isMountedRef.current) {
-          setEvents([]);
-          setPagination(prev => ({ ...prev, current: page, pageSize, total: 0 }));
-          message.error('获取事件列表失败');
-        }
+      const serverEvents = normalizeEventList(data);
+      const displayEvents = (!skipClientFilter && hasActiveFilter(effectiveQuery))
+        ? serverEvents.filter((event) => eventMatchesQuery(event, effectiveQuery))
+        : serverEvents;
+      setEvents(displayEvents);
+      setPagination(prev => ({
+        ...prev,
+        current: page,
+        pageSize,
+        total:
+          (!skipClientFilter && hasActiveFilter(effectiveQuery)) && displayEvents.length !== serverEvents.length
+            ? displayEvents.length
+            : data.totalElements || data.total || displayEvents.length
+      }));
+      if (!skipClientFilter && displayEvents.length === 0 && hasActiveFilter(effectiveQuery)) {
+        message.info('未找到匹配数据');
       }
-    } catch (error) {
-      console.error('获取事件列表错误:', error);
+    } catch (error: any) {
       if (isMountedRef.current) {
         setEvents([]);
         setPagination(prev => ({ ...prev, current: page, pageSize, total: 0 }));
-        message.error('获取事件列表失败');
+        handleError(error, '获取事件列表');
       }
     } finally {
       if (isMountedRef.current) {
@@ -497,56 +436,39 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
 
       console.log('调用趋势API:', `/api/events/statistics/timeseries?${params}`);
       
-      const response = await withTimeout(
-        fetch(`/api/events/statistics/timeseries?${params}`),
-        8000
-      );
+      const data = await request.get(`/api/events/statistics/timeseries?${params}`, {
+        timeout: 8000
+      });
       
-      console.log('趋势API响应状态:', response.status);
+      console.log('趋势API返回原始数据:', data);
       
       if (!isMountedRef.current) return;
       
-      if (response.ok) {
-        const data = await response.json();
-        console.log('趋势API返回原始数据:', data);
-        
-        if (Array.isArray(data)) {
-          // 转换数据格式
-          const transformedTrends = data.map((item: any) => {
-            // 处理不同的数据结构
-            const timestamp = item.timestamp || item.time || item.date || new Date().toISOString();
-            const count = item.count || item.eventCount || item.total || 0;
-            const anomalyCount = item.anomalyCount || 0;
-            const anomalyRate = item.anomalyRate || (count > 0 ? anomalyCount / count : 0);
-            
-            return {
-              timestamp: timestamp,
-              eventCount: count,
-              anomalyCount: anomalyCount,
-              anomalyRate: anomalyRate
-            };
-          });
+      if (Array.isArray(data)) {
+        // 转换数据格式
+        const transformedTrends = data.map((item: any) => {
+          const timestamp = item.timestamp || item.time || item.date || new Date().toISOString();
+          const eventCount = item.eventCount || item.count || item.total || 0;
+          const anomalyCount = item.anomalyCount || 0;
+          const anomalyRate = item.anomalyRate != null ? item.anomalyRate : (eventCount > 0 ? anomalyCount / eventCount : 0);
           
-          setTrends(transformedTrends);
-        } else {
-          console.warn('趋势API返回的不是数组:', data);
-          setTrends([]);
-        }
+          return {
+            timestamp: timestamp,
+            eventCount: eventCount,
+            anomalyCount: anomalyCount,
+            anomalyRate: anomalyRate
+          };
+        });
+        
+        setTrends(transformedTrends);
       } else {
-        const errorText = await response.text();
-        console.error('趋势数据API响应失败:', response.status, errorText);
-        // 不再使用模拟数据，设置空数组
+        console.warn('趋势API返回的不是数组:', data);
         setTrends([]);
-        if (isMountedRef.current) {
-          message.error(`获取趋势数据失败: ${response.status}`);
-        }
       }
-    } catch (error) {
-      console.error('获取趋势数据错误:', error);
-      // 不再使用模拟数据，设置空数组
+    } catch (error: any) {
       if (isMountedRef.current) {
         setTrends([]);
-        message.error('获取趋势数据失败，请检查网络连接');
+        handleError(error, '获取趋势数据');
       }
     }
   };
@@ -556,38 +478,29 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
     try {
       if (!isMountedRef.current) return;
       
-      const response = await fetch('/api/events/recent?limit=50');
+      const data = await request.get('/api/events/recent?limit=50');
       
       if (!isMountedRef.current) return;
       
-      if (response.ok) {
-        const data = await response.json();
-        setEvents(data || []);
-        setPagination(prev => ({
-          ...prev,
-          total: data.length || 0
-        }));
-      }
-    } catch (error) {
-      console.error('获取最近事件错误:', error);
+      setEvents(data || []);
+      setPagination(prev => ({
+        ...prev,
+        total: data.length || 0
+      }));
+    } catch (error: any) {
+      logError(error, '获取最近事件');
     }
   };
 
   // 手动触发日志收集
   const triggerLogCollection = async () => {
     try {
-      const response = await fetch('/api/events/collect', {
-        method: 'POST'
-      });
+      await request.post('/api/events/collect');
       if (!isMountedRef.current) return;
-      if (response.ok) {
-        message.success('日志收集任务已启动');
-      } else {
-        message.error('触发日志收集失败');
-      }
-    } catch (error) {
+      message.success('日志收集任务已启动');
+    } catch (error: any) {
       if (isMountedRef.current) {
-        message.error('触发日志收集失败');
+        handleError(error, '触发日志收集');
       }
     }
   };
@@ -595,18 +508,12 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
   // 清理旧数据
   const cleanupOldEvents = async () => {
     try {
-      const response = await fetch('/api/events/cleanup?daysToKeep=30', {
-        method: 'POST'
-      });
+      await request.post('/api/events/cleanup?daysToKeep=30');
       if (!isMountedRef.current) return;
-      if (response.ok) {
-        message.success('已清理30天前的旧数据');
-      } else {
-        message.error('清理旧数据失败');
-      }
-    } catch (error) {
+      message.success('已清理30天前的旧数据');
+    } catch (error: any) {
       if (isMountedRef.current) {
-        message.error('清理旧数据失败');
+        handleError(error, '清理旧数据');
       }
     }
   };
@@ -614,19 +521,13 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
   // 更新事件状态
   const updateEventStatus = async (id: number, status: string) => {
     try {
-      const response = await fetch(`/api/events/${id}/status?status=${status}`, {
-        method: 'PUT'
-      });
+      await request.put(`/api/events/${id}/status?status=${status}`);
       if (!isMountedRef.current) return;
-      if (response.ok) {
-        message.success('事件状态更新成功');
-        fetchEvents();
-      } else {
-        message.error('更新事件状态失败');
-      }
-    } catch (error) {
+      message.success('事件状态更新成功');
+      fetchEvents();
+    } catch (error: any) {
       if (isMountedRef.current) {
-        message.error('更新事件状态失败');
+        handleError(error, '更新事件状态');
       }
     }
   };
@@ -909,6 +810,45 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
       if (!isMountedRef.current) return;
       setLoading(true);
       try {
+        // 若有 initialEventId，先获取事件详情，直接定位到该事件
+        if (initialEventId) {
+          try {
+            const eventData = await request.get(`/api/events/${initialEventId}`);
+            if (isMountedRef.current && eventData) {
+              setEvents([eventData]);
+              setPagination(prev => ({ ...prev, current: 1, pageSize: 10, total: 1 }));
+              setLoading(false);
+
+              if (eventData.timestamp) {
+                const eventTime = dayjs(eventData.timestamp);
+                const newQuery: Partial<QueryParams> = {
+                  startTime: eventTime.subtract(1, 'hour'),
+                  endTime: eventTime.add(1, 'hour'),
+                };
+                setQueryParams(prev => ({ ...prev, ...newQuery }));
+                searchForm.setFieldsValue({ timeRange: [newQuery.startTime, newQuery.endTime] });
+              }
+
+              setTimeout(() => {
+                const highlightedRow = document.querySelector('.highlighted-event-row');
+                if (highlightedRow) {
+                  highlightedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }, 300);
+
+              setSelectedEventDetail(eventData);
+              setDetailVisible(true);
+
+              // 并行加载统计数据
+              Promise.allSettled([fetchDashboardStats(), fetchTrends()]).catch(() => {});
+              return;
+            }
+          } catch (e: any) {
+            logError(e, '获取关联事件详情');
+          }
+        }
+
+        // 无 initialEventId 时的正常初始化流程
         searchForm.setFieldsValue({
           timeRange:
             queryParams.startTime && queryParams.endTime
@@ -920,50 +860,28 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
           isAnomaly: queryParams.isAnomaly
         });
 
-        await fetchEvents();
-        if (!isMountedRef.current) return;
-        setLoading(false);
+        // 并行加载事件列表、仪表板统计和趋势数据
+        const [, statsResult, trendsResult] = await Promise.allSettled([
+          fetchEvents(),
+          fetchDashboardStats(),
+          fetchTrends(),
+        ]);
 
-        // 若有 initialEventId，加载完成后自动打开详情
-        if (initialEventId) {
-          setTimeout(async () => {
-            try {
-              // 滚动到高亮行
-              const highlightedRow = document.querySelector('.highlighted-event-row');
-              if (highlightedRow) {
-                highlightedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-              // 自动打开详情
-              const resp = await fetch(`/api/events/${initialEventId}`);
-              if (resp.ok && isMountedRef.current) {
-                const data = await resp.json();
-                setSelectedEventDetail(data);
-                setDetailVisible(true);
-              }
-            } catch (e) {
-              console.error('自动打开事件详情失败:', e);
-            }
-          }, 500);
+        if (statsResult.status === 'rejected') {
+          logError(statsResult.reason, '加载统计数据');
+        }
+        if (trendsResult.status === 'rejected') {
+          logError(trendsResult.reason, '加载趋势数据');
         }
 
-        // 同时获取仪表板统计和趋势数据
-        statsTimer = setTimeout(async () => {
-          if (!isMountedRef.current) return;
-          try {
-            await Promise.allSettled([
-              fetchDashboardStats(),
-              fetchTrends()
-            ]);
-          } catch (error) {
-            console.error('加载统计或趋势数据失败:', error);
-          }
-        }, 300);
-      } catch (error) {
-        console.error('初始化数据错误:', error);
+        if (!isMountedRef.current) return;
+        setLoading(false);
+      } catch (error: any) {
+        logError(error, '初始化数据');
         try {
           await fetchRecentEvents();
-        } catch (e) {
-          console.error('获取最近事件也失败:', e);
+        } catch (e: any) {
+          logError(e, '获取最近事件也失败');
         } finally {
           if (isMountedRef.current) setLoading(false);
         }
@@ -982,21 +900,13 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
   const showEventDetail = async (record: EventData) => {
     try {
       setDetailLoading(true);
-      const response = await fetch(`/api/events/${record.id}`);
+      const eventData = await request.get(`/api/events/${record.id}`);
       if (!isMountedRef.current) return;
-      if (response.ok) {
-        const eventData = await response.json();
-        setSelectedEventDetail(eventData);
-        setDetailVisible(true);
-      } else {
-        if (isMountedRef.current) {
-          message.error('获取事件详情失败');
-        }
-      }
-    } catch (error) {
-      console.error('获取事件详情错误:', error);
+      setSelectedEventDetail(eventData);
+      setDetailVisible(true);
+    } catch (error: any) {
       if (isMountedRef.current) {
-        message.error('获取事件详情失败');
+        handleError(error, '获取事件详情');
       }
     } finally {
       if (isMountedRef.current) {
@@ -1175,7 +1085,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
         boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
         border: '1px solid rgba(0,0,0,0.06)'
       }}
-      bodyStyle={{ padding: '20px' }}
+      styles={{ body: { padding: '20px' } }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
         <div>
@@ -1215,56 +1125,43 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
             />
           </Tabs>
         </div>
-        <div>
-          <Space size="large" wrap>
-            <Button
-              icon={<ReloadOutlined spin={loading} />}
-              onClick={() => {
-                fetchEvents(pagination.current, pagination.pageSize);
-                fetchDashboardStats();
-              }}
-              shape="round"
-              size="large"
-              style={{ height: '44px', padding: '0 20px' }}
-            >
-              刷新数据
-            </Button>
-            
-            <Button
-              icon={<FullscreenOutlined />}
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              shape="round"
-              size="large"
-              style={{ height: '44px', padding: '0 20px' }}
-            >
-              全屏
-            </Button>
-          </Space>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <Text type="secondary" style={{ fontSize: '11px' }}>总事件</Text>
+              <div><Text strong style={{ fontSize: '18px', color: '#096dd9' }}>{getTotalEvents()}</Text></div>
+            </div>
+            <div style={{ width: 1, background: '#f0f0f0', alignSelf: 'stretch' }} />
+            <div style={{ textAlign: 'center' }}>
+              <Text type="secondary" style={{ fontSize: '11px' }}>异常</Text>
+              <div><Text strong style={{ fontSize: '18px', color: '#d46b08' }}>{getAnomalyEvents()}</Text></div>
+            </div>
+            <div style={{ width: 1, background: '#f0f0f0', alignSelf: 'stretch' }} />
+            <div style={{ textAlign: 'center' }}>
+              <Text type="secondary" style={{ fontSize: '11px' }}>正常</Text>
+              <div><Text strong style={{ fontSize: '18px', color: '#389e0d' }}>{getNormalEvents()}</Text></div>
+            </div>
+            <div style={{ width: 1, background: '#f0f0f0', alignSelf: 'stretch' }} />
+            <div style={{ textAlign: 'center' }}>
+              <Text type="secondary" style={{ fontSize: '11px' }}>异常率</Text>
+              <div><Text strong style={{ fontSize: '18px', color: getAnomalyRate() > 10 ? '#ff4d4f' : '#52c41a' }}>{getAnomalyRate().toFixed(1)}%</Text></div>
+            </div>
+          </div>
+          <Button
+            icon={<ReloadOutlined spin={loading} />}
+            onClick={() => {
+              fetchEvents(pagination.current, pagination.pageSize);
+              fetchDashboardStats();
+            }}
+            shape="round"
+            size="large"
+            style={{ height: '44px', padding: '0 20px' }}
+          >
+            刷新数据
+          </Button>
         </div>
       </div>
     </Card>
-  );
-
-  // 渲染核心指标卡片
-  const renderCoreMetrics = () => (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '10px' }}>
-      <Card size="small" bodyStyle={{ padding: '10px 12px' }}>
-        <Text type="secondary" style={{ fontSize: '12px' }}>总事件数</Text>
-        <div><Text strong style={{ fontSize: '22px', color: '#096dd9' }}>{getTotalEvents()}</Text></div>
-      </Card>
-      <Card size="small" bodyStyle={{ padding: '10px 12px' }}>
-        <Text type="secondary" style={{ fontSize: '12px' }}>异常事件</Text>
-        <div><Text strong style={{ fontSize: '22px', color: '#d46b08' }}>{getAnomalyEvents()}</Text></div>
-      </Card>
-      <Card size="small" bodyStyle={{ padding: '10px 12px' }}>
-        <Text type="secondary" style={{ fontSize: '12px' }}>正常事件</Text>
-        <div><Text strong style={{ fontSize: '22px', color: '#389e0d' }}>{getNormalEvents()}</Text></div>
-      </Card>
-      <Card size="small" bodyStyle={{ padding: '10px 12px' }}>
-        <Text type="secondary" style={{ fontSize: '12px' }}>严重程度分布</Text>
-        <div><Text strong style={{ fontSize: '22px', color: '#096dd9' }}>{dashboardStats?.severityCounts ? Object.keys(dashboardStats.severityCounts).length : 0}</Text></div>
-      </Card>
-    </div>
   );
 
   // 渲染统计分析页面
@@ -1285,75 +1182,88 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
         </div>
       ) : (
         <>
-          {/* 核心指标 */}
-          <Row gutter={16} style={{ marginBottom: '24px' }}>
-            <Col span={6}>
-              <Statistic title="总事件数" value={dashboardStats.totalLogs} valueStyle={{ color: '#1890ff' }} />
-            </Col>
-            <Col span={6}>
-              <Statistic title="今日事件" value={dashboardStats.todayLogs} valueStyle={{ color: '#52c41a' }} />
-            </Col>
-            <Col span={6}>
-              <Statistic title="异常事件" value={dashboardStats.anomalyCount} valueStyle={{ color: '#ff4d4f' }} />
-            </Col>
-            <Col span={6}>
-              <Statistic
-                title="异常率"
-                value={dashboardStats.totalLogs > 0 ? ((dashboardStats.anomalyCount / dashboardStats.totalLogs) * 100).toFixed(1) : 0}
-                suffix="%"
-                valueStyle={{ color: dashboardStats.anomalyCount / dashboardStats.totalLogs > 0.1 ? '#ff4d4f' : '#52c41a' }}
-              />
-            </Col>
-          </Row>
+          {/* 今日事件 + 严重程度分布 */}
+          <div style={{ display: 'flex', gap: 16, marginBottom: 24, alignItems: 'stretch' }}>
+            <div style={{
+              flex: '0 0 140px',
+              background: 'linear-gradient(135deg, #f6ffed 0%, #e6f7e3 100%)',
+              borderRadius: 12,
+              padding: '16px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              border: '1px solid #b7eb8f',
+            }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>今日事件</Text>
+              <Text strong style={{ fontSize: 32, color: '#389e0d', lineHeight: 1.2 }}>{dashboardStats.todayLogs}</Text>
+              <Text type="secondary" style={{ fontSize: 11, marginTop: 4 }}>日均 {dashboardStats.avgDailyEvents?.toFixed(0) || '-'}</Text>
+            </div>
 
-          {/* 严重程度分布 */}
-          <Card
-            type="inner"
-            title="严重程度分布"
-            style={{ borderRadius: '8px' }}
-            loading={statisticsLoading}
-          >
             {dashboardStats.severityCounts && Object.keys(dashboardStats.severityCounts).length > 0 ? (
-              <Row gutter={[16, 12]}>
-                {Object.entries(dashboardStats.severityCounts).map(([severity, count]) => {
-                  const severityColors: Record<string, { color: string; label: string }> = {
-                    'CRITICAL': { color: '#722ed1', label: '严重' },
-                    'HIGH': { color: '#ff4d4f', label: '高危' },
-                    'MEDIUM': { color: '#fa8c16', label: '中危' },
-                    'LOW': { color: '#52c41a', label: '低危' },
-                    'INFO': { color: '#1890ff', label: '信息' },
-                    'WARN': { color: '#faad14', label: '警告' },
-                    'ERROR': { color: '#ff4d4f', label: '错误' },
-                    'DEBUG': { color: '#666', label: '调试' },
-                  };
-                  const info = severityColors[severity] || { color: '#1890ff', label: severity };
-                  const pct = dashboardStats.totalLogs > 0 ? ((count / dashboardStats.totalLogs) * 100).toFixed(1) : '0.0';
-                  return (
-                    <Col span={6} key={severity}>
-                      <div style={{ padding: '8px 12px', background: '#fafafa', borderRadius: '8px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Tag color={info.color}>{info.label}</Tag>
-                          <Text strong style={{ fontSize: '16px', color: info.color }}>{count.toLocaleString()}</Text>
+              <div style={{
+                flex: 1,
+                background: '#fafafa',
+                borderRadius: 12,
+                padding: '14px 20px',
+                border: '1px solid #f0f0f0',
+              }}>
+                <Text strong style={{ fontSize: 13, marginBottom: 10, display: 'block' }}>严重程度分布</Text>
+                <div style={{ display: 'flex', gap: 0, alignItems: 'flex-end', height: 80 }}>
+                  {Object.entries(dashboardStats.severityCounts)
+                    .sort(([a], [b]) => {
+                      const order: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+                      return (order[a] ?? 9) - (order[b] ?? 9);
+                    })
+                    .map(([severity, count]) => {
+                      const severityConfig: Record<string, { color: string; label: string; bg: string }> = {
+                        CRITICAL: { color: '#722ed1', label: '严重', bg: 'rgba(114,46,209,0.1)' },
+                        HIGH: { color: '#ff4d4f', label: '高危', bg: 'rgba(255,77,79,0.1)' },
+                        MEDIUM: { color: '#fa8c16', label: '中危', bg: 'rgba(250,140,22,0.1)' },
+                        LOW: { color: '#52c41a', label: '低危', bg: 'rgba(82,196,26,0.1)' },
+                      };
+                      const info = severityConfig[severity] || { color: '#1890ff', label: severity, bg: 'rgba(24,144,255,0.1)' };
+                      const maxCount = Math.max(...Object.values(dashboardStats.severityCounts).map(Number), 1);
+                      const heightPct = (Number(count) / maxCount) * 100;
+                      const pct = dashboardStats.totalLogs > 0 ? ((Number(count) / dashboardStats.totalLogs) * 100).toFixed(1) : '0.0';
+                      return (
+                        <div key={severity} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                          <Text strong style={{ fontSize: 13, color: info.color }}>{Number(count).toLocaleString()}</Text>
+                          <div style={{
+                            width: '60%',
+                            height: `${heightPct}%`,
+                            minHeight: 4,
+                            background: info.color,
+                            borderRadius: '4px 4px 0 0',
+                            transition: 'height 0.3s',
+                          }} />
+                          <Tag color={info.color} style={{ margin: 0, fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>{info.label}</Tag>
+                          <Text type="secondary" style={{ fontSize: 10 }}>{pct}%</Text>
                         </div>
-                        <Progress percent={parseFloat(pct)} strokeColor={info.color} size="small" showInfo={false} style={{ marginTop: 4 }} />
-                        <Text type="secondary" style={{ fontSize: '12px' }}>占比 {pct}%</Text>
-                      </div>
-                    </Col>
-                  );
-                })}
-              </Row>
+                      );
+                    })}
+                </div>
+              </div>
             ) : (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: '#999' }}>
-                <BarChartOutlined style={{ fontSize: '48px', color: '#d9d9d9' }} />
+              <div style={{
+                flex: 1,
+                background: '#fafafa',
+                borderRadius: 12,
+                padding: '40px 0',
+                border: '1px solid #f0f0f0',
+                textAlign: 'center',
+                color: '#999',
+              }}>
+                <BarChartOutlined style={{ fontSize: 48, color: '#d9d9d9' }} />
                 <div style={{ marginTop: 8 }}>暂无严重程度统计数据</div>
                 <Button type="primary" size="small" onClick={() => fetchDashboardStats()} loading={statisticsLoading} style={{ marginTop: 12 }}>
                   重新加载
                 </Button>
               </div>
             )}
-          </Card>
+          </div>
 
-          <div style={{ marginTop: 16, textAlign: 'right' }}>
+          <div style={{ textAlign: 'right' }}>
             <Text type="secondary" style={{ fontSize: '12px' }}>
               最后更新: {dayjs(dashboardStats.lastUpdate).format('YYYY-MM-DD HH:mm:ss')}
             </Text>
@@ -1384,7 +1294,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
     >
       {trends && trends.length > 0 ? (
         <Table
-          dataSource={trends.map((t, i) => ({ ...t, key: i }))}
+          dataSource={[...trends].reverse().map((t, i) => ({ ...t, key: i }))}
           size="small"
           pagination={false}
           scroll={{ y: 400 }}
@@ -1495,8 +1405,6 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
         />
       )}
 
-      {renderCoreMetrics()}
-
       {/* 主内容区域 */}
       {activeTab === 'events' && (
         <Card
@@ -1531,7 +1439,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
             marginBottom: '16px',
             boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
           }}
-          bodyStyle={{ padding: '14px' }}
+          styles={{ body: { padding: '14px' } }}
         >
           {/* 统计数字区 */}
           <div style={{ 
@@ -1574,7 +1482,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
               
               {/* 第二行：下拉框 */}
               <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                <Form.Item name="timeRange" style={{ marginBottom: 0, flex: '1 1 220px', minWidth: '200px' }}>
+                <Form.Item name="timeRange" style={{ marginBottom: 0, flex: '0 0 auto', minWidth: '320px' }}>
                   <RangePicker
                     allowClear
                     showTime
@@ -1586,7 +1494,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
                     }}
                   />
                 </Form.Item>
-                <Form.Item name="eventType" style={{ marginBottom: 0, flex: '1 1 160px', minWidth: '130px' }}>
+                <Form.Item name="eventType" style={{ marginBottom: 0, flex: '1 1 160px', minWidth: '160px' }}>
                   <Select
                     placeholder="事件类型"
                     style={{ width: '100%', borderRadius: '8px' }}
@@ -1616,7 +1524,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
                     <Option value="BRUTE_FORCE_ATTACK">暴力破解</Option>
                   </Select>
                 </Form.Item>
-                <Form.Item name="severity" style={{ marginBottom: 0, flex: '1 1 130px', minWidth: '100px' }}>
+                <Form.Item name="severity" style={{ marginBottom: 0, flex: '1 1 130px', minWidth: '130px' }}>
                   <Select
                     placeholder="严重程度"
                     style={{ width: '100%', borderRadius: '8px' }}

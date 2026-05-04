@@ -25,7 +25,8 @@ public class EventAlertBridgeService {
     public AlertResponse convertSecurityEventToAlert(Map<String, Object> securityEvent) {
         try {
             String eventType = (String) securityEvent.get("eventType");
-            String severity = (String) securityEvent.getOrDefault("severity", "INFO");
+            String severity = com.security.ailogsystem.util.SeverityConverter.normalize(
+                    (String) securityEvent.getOrDefault("severity", "LOW"));
 
             // 映射严重级别到告警级别
             String alertLevel = mapSeverityToAlertLevel(severity);
@@ -39,6 +40,7 @@ public class EventAlertBridgeService {
                         .alertLevel(alertLevel)
                         .description(generateAlertDescription(securityEvent))
                         .aiConfidence(calculateConfidence(securityEvent))
+                        .unifiedEventId(extractUnifiedEventId(securityEvent))
                         .build();
 
                 log.info("自动创建告警: 类型={}, 级别={}", eventType, alertLevel);
@@ -119,10 +121,23 @@ public class EventAlertBridgeService {
         }
     }
 
+    private Long extractUnifiedEventId(Map<String, Object> event) {
+        Object id = event.get("unifiedEventId");
+        if (id == null) id = event.get("unified_event_id");
+        if (id == null) id = event.get("databaseId");
+        if (id == null) id = event.get("database_id");
+        if (id == null) id = event.get("id");
+        if (id instanceof Number) return ((Number) id).longValue();
+        if (id instanceof String) {
+            try { return Long.parseLong((String) id); } catch (NumberFormatException e) { return null; }
+        }
+        return null;
+    }
+
     private java.math.BigDecimal calculateConfidence(Map<String, Object> event) {
-        // 根据事件数据计算置信度
         Double anomalyScore = (Double) event.getOrDefault("anomalyScore", 0.0);
-        String severity = (String) event.getOrDefault("severity", "INFO");
+        String severity = com.security.ailogsystem.util.SeverityConverter.normalize(
+                (String) event.getOrDefault("severity", "LOW"));
 
         double baseConfidence = switch (severity.toUpperCase()) {
             case "CRITICAL" -> 0.95;

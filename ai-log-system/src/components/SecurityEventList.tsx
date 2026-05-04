@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { List, Empty, Spin, Select, Space, Typography, Button, message } from 'antd';
 import { ReloadOutlined, FilterOutlined } from '@ant-design/icons';
 import SecurityEventCard from './cards/SecurityEventCard';
+import request from '@/utils/request';
 import './SecurityEventList.less';
 
 const { Title, Text } = Typography;
@@ -50,28 +51,22 @@ const SecurityEventList: React.FC<SecurityEventListProps> = ({
     setLoading(true);
     try {
       // 构建查询参数
-      const params = new URLSearchParams({
+      const params: any = {
         page: currentPage.toString(),
         size: pageSize.toString(),
-      });
+      };
 
       if (threatLevelFilter !== 'ALL') {
-        params.append('threatLevel', threatLevelFilter);
+        params.threatLevel = threatLevelFilter;
       }
 
       if (ruleMatchedFilter === 'MATCHED') {
-        params.append('ruleMatched', 'true');
+        params.ruleMatched = 'true';
       } else if (ruleMatchedFilter === 'NOT_MATCHED') {
-        params.append('ruleMatched', 'false');
+        params.ruleMatched = 'false';
       }
 
-      const response = await fetch(`${apiUrl}?${params.toString()}`);
-      
-      if (!response.ok) {
-        throw new Error('加载事件失败');
-      }
-
-      const data = await response.json();
+      const data = await request.get(apiUrl, { params });
       
       setEvents(data.content || data.data || []);
       setTotal(data.totalElements || data.total || 0);

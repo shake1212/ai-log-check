@@ -114,10 +114,10 @@ const OverviewPage: React.FC<OverviewPageProps> = ({
       </div>
 
       {/* 图表行 */}
-      <ChartsRow events={events} isPaused={isPaused} threatData={threatData} />
+      <ChartsRow events={events} isPaused={isPaused} threatData={threatData} loading={eventLoading} />
 
       {/* 安全事件概览摘要 */}
-      <EventSummary stats={eventStats} />
+      <EventSummary stats={eventStats} events={events} loading={eventLoading} onRetry={loadInitialData} />
     </div>
   );
 };

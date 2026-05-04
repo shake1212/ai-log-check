@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useModel, history } from 'umi';
 import { message } from 'antd';
 import { authApi } from '@/services/api';
+import { isTokenExpired as checkTokenExpired } from '@/app';
 import type { LoginForm, User } from '@/types';
 
 export const useAuth = () => {
@@ -103,19 +104,9 @@ export const useAuth = () => {
     return initialState?.token || localStorage.getItem('token') || undefined;
   }, [initialState]);
 
-  // 检查token是否过期
   const isTokenExpired = useCallback((): boolean => {
     const token = getToken();
-    if (!token) return true;
-    
-    try {
-      // 简单的JWT解析（实际项目中应该使用专门的库）
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const now = Math.floor(Date.now() / 1000);
-      return payload.exp < now;
-    } catch {
-      return true;
-    }
+    return checkTokenExpired(token || '');
   }, [getToken]);
 
   return {

@@ -13,17 +13,25 @@ export default defineConfig({
       component: '@/layouts/index',
       wrappers: ['@/wrappers/auth'],
       routes: [
-        { path: '/', redirect: '/dashboard', exact: true },
+        { path: '/', redirect: '/dashboard' },
         { path: '/dashboard', component: '@/components/EnhancedDashboard/', name: 'dashboard', icon: 'DashboardOutlined' },
         { path: '/alerts', component: '@/pages/alerts/alerts', name: 'alerts', icon: 'AlertOutlined' },
         { path: '/events', component: '@/pages/events/index', name: 'events', icon: 'AuditOutlined' },
         { path: '/wmi', component: '@/pages/wmi/index', name: 'system-monitor', icon: 'MonitorOutlined' },
         { path: '/log-collector', component: '@/pages/log-collector', name: 'log-collector', icon: 'LineChartOutlined' },
         { path: '/rules', component: '@/pages/rules/index', name: 'rules', icon: 'SafetyOutlined' },
-        { path: '/system', component: '@/pages/system/index', name: 'system', icon: 'TeamOutlined', access: 'admin' },
-        { path: '*', component: '@/pages/404', layout: false },
+        { 
+          path: '/system', 
+          component: '@/pages/system/index', 
+          name: 'system', 
+          icon: 'TeamOutlined', 
+          wrappers: ['@/wrappers/permission'],
+          access: 'admin' 
+        },
       ],
     },
+    { path: '/403', component: '@/pages/403', layout: false },
+    { path: '*', component: '@/pages/404', layout: false },
   ],
   npmClient: 'pnpm',
   proxy: {

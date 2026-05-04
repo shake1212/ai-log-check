@@ -20,6 +20,7 @@ import dayjs from 'dayjs';
 import { logCollectorService, LogCollectorConfig, LogCollectorStatus } from '../../services/LogCollectorService';
 import { api, type ScriptDescriptor, type ScriptExecutionRecord } from '@/services/api';
 import { getDataSourceLabel } from '../../utils/enumLabels';
+import { handleError, logError } from '@/utils/errorHandler';
 
 const { Option, OptGroup } = Select;
 
@@ -49,8 +50,8 @@ const LogCollectorPage: React.FC = () => {
     try {
       const data = await logCollectorService.getConfigs();
       if (isMountedRef.current) setConfigs(data);
-    } catch (error) {
-      console.error('Failed to load configs:', error);
+    } catch (error: any) {
+      logError(error, '加载采集器配置');
     }
   }, []);
 
@@ -58,8 +59,8 @@ const LogCollectorPage: React.FC = () => {
     try {
       const data = await logCollectorService.getStatus();
       if (isMountedRef.current) setStatus(data);
-    } catch (error) {
-      console.error('Failed to load status:', error);
+    } catch (error: any) {
+      logError(error, '加载采集器状态');
     }
   }, []);
 
@@ -67,8 +68,8 @@ const LogCollectorPage: React.FC = () => {
     try {
       const alerts = await logCollectorService.getAlerts();
       if (isMountedRef.current) setActiveAlertCount(alerts.filter(a => !a.resolved).length);
-    } catch (error) {
-      console.error('Failed to load alerts:', error);
+    } catch (error: any) {
+      logError(error, '加载活动告警');
     }
   }, []);
 
@@ -76,8 +77,8 @@ const LogCollectorPage: React.FC = () => {
     try {
       const response = await api.script.getAvailableScripts();
       setScrtList(response?.data || response || []);
-    } catch (error) {
-      console.error('Failed to load scripts:', error);
+    } catch (error: any) {
+      logError(error, '加载脚本列表');
     }
   }, []);
 
@@ -86,8 +87,8 @@ const LogCollectorPage: React.FC = () => {
       const response = await api.script.getHistory();
       const data = response?.data || response || [];
       setScrtHistory(data.sort((a, b) => new Date(b.startedAt || 0).getTime() - new Date(a.startedAt || 0).getTime()));
-    } catch (error) {
-      console.error('Failed to load history:', error);
+    } catch (error: any) {
+      logError(error, '加载脚本历史');
     }
   }, []);
 
@@ -98,8 +99,8 @@ const LogCollectorPage: React.FC = () => {
         message.success('采集器启动成功');
         loadStatus();
       }
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '启动失败');
+    } catch (error: any) {
+      handleError(error, '启动采集器');
     }
   };
 
@@ -109,8 +110,8 @@ const LogCollectorPage: React.FC = () => {
         message.success('采集器停止成功');
         loadStatus();
       }
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '停止失败');
+    } catch (error: any) {
+      handleError(error, '停止采集器');
     }
   };
 
@@ -118,8 +119,8 @@ const LogCollectorPage: React.FC = () => {
     try {
       const result = await logCollectorService.testConnection();
       message[result.connected ? 'success' : 'error'](result.connected ? '连接成功' : `连接失败: ${result.message}`);
-    } catch (error) {
-      message.error('连接测试失败');
+    } catch (error: any) {
+      handleError(error, '连接测试');
     }
   };
 
@@ -135,8 +136,8 @@ const LogCollectorPage: React.FC = () => {
         setConfigModalVisible(false);
         loadConfigs();
       }
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '配置更新失败');
+    } catch (error: any) {
+      handleError(error, '配置更新');
     }
   };
 

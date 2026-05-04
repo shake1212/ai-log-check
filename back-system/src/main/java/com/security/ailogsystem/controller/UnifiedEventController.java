@@ -378,7 +378,11 @@ public class UnifiedEventController {
             List<Map<String, Object>> result = rows.stream().map(row -> {
                 Map<String, Object> item = new HashMap<>();
                 item.put("time", row[0]);
-                item.put("count", row[1]);
+                long eventCount = row[1] != null ? ((Number) row[1]).longValue() : 0L;
+                long anomalyCount = row[2] != null ? ((Number) row[2]).longValue() : 0L;
+                item.put("eventCount", eventCount);
+                item.put("anomalyCount", anomalyCount);
+                item.put("anomalyRate", eventCount > 0 ? (double) anomalyCount / eventCount : 0.0);
                 item.put("granularity", granularity);
                 return item;
             }).collect(Collectors.toList());

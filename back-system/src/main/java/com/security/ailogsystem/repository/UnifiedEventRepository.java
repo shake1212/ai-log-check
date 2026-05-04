@@ -101,8 +101,10 @@ public interface UnifiedEventRepository extends JpaRepository<UnifiedSecurityEve
     @Query("SELECT COUNT(e) FROM UnifiedSecurityEvent e WHERE e.isAnomaly = true AND e.timestamp BETWEEN :start AND :end")
     long countAnomalyEvents(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
-    // 时间序列统计
-    @Query(value = "SELECT DATE_FORMAT(timestamp, '%Y-%m-%d %H:00:00') as hour, COUNT(*) as count " +
+    // 时间序列统计：按小时返回总事件数和异常事件数
+    @Query(value = "SELECT DATE_FORMAT(timestamp, '%Y-%m-%d %H:00:00') as hour, " +
+            "COUNT(*) as totalCount, " +
+            "SUM(CASE WHEN is_anomaly = 1 THEN 1 ELSE 0 END) as anomalyCount " +
             "FROM unified_security_events WHERE timestamp BETWEEN :start AND :end " +
             "GROUP BY DATE_FORMAT(timestamp, '%Y-%m-%d %H:00:00') ORDER BY hour",
             nativeQuery = true)
@@ -111,12 +113,18 @@ public interface UnifiedEventRepository extends JpaRepository<UnifiedSecurityEve
     // 获取最近事件
     List<UnifiedSecurityEvent> findTop100ByOrderByTimestampDesc();
 
+    // 按事件类型查找最近的事件ID（用于关联告警）
+    @Query(value = "SELECT e.id FROM unified_security_events e WHERE e.event_type = :eventType AND e.timestamp >= :since ORDER BY e.timestamp DESC LIMIT 1", nativeQuery = true)
+    List<Long> findRecentIdByEventType(@Param("eventType") String eventType, @Param("since") LocalDateTime since);
+
     // 删除旧数据
     void deleteByTimestampBefore(LocalDateTime date);
 
-    @Query(value = "SELECT FUNCTION('DATE_FORMAT', timestamp, '%Y-%m-%d %H:00:00') as hour, COUNT(*) as count " +
-            "FROM UnifiedSecurityEvent WHERE timestamp BETWEEN :start AND :end " +
-            "GROUP BY FUNCTION('DATE_FORMAT', timestamp, '%Y-%m-%d %H:00:00') ORDER BY hour")
+    @Query(value = "SELECT FUNCTION('DATE_FORMAT', timestamp, '%Y-%m-%d %H:00:00') as hour, " +
+            "COUNT(*) as totalCount, " +
+            "SUM(CASE WHEN e.isAnomaly = true THEN 1 ELSE 0 END) as anomalyCount " +
+            "FROM UnifiedSecurityEvent e WHERE e.timestamp BETWEEN :start AND :end " +
+            "GROUP BY FUNCTION('DATE_FORMAT', e.timestamp, '%Y-%m-%d %H:00:00') ORDER BY hour")
     List<Object[]> getHourlyStatisticsCompatible(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
     // 1. 添加：统计某个时间点之后的事件数量（今日事件数）

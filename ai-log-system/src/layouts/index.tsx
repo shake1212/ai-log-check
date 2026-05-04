@@ -42,6 +42,20 @@ export default function DefaultLayout() {
   const [currentPath, setCurrentPath] = useState('/dashboard');
   const [activeTab, setActiveTab] = useState('/dashboard');
   const [tabQuery, setTabQuery] = useState<Record<string, string>>({});
+  const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
+
+  // 加载当前用户信息
+  useEffect(() => {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        setCurrentUser(user);
+      } catch (e) {
+        console.error('解析用户信息失败:', e);
+      }
+    }
+  }, []);
 
   // 监听URL hash变化
   useEffect(() => {
@@ -151,7 +165,6 @@ export default function DefaultLayout() {
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    // setInitialState({});
     window.location.href = '/login';
   };
 
@@ -166,8 +179,7 @@ export default function DefaultLayout() {
   // 根据权限过滤菜单
   const filteredMenuItems = menuItems.filter(item => {
     if (item.access === 'admin') {
-      // return initialState?.user?.role === 'ADMIN';
-      return true; // 开发环境暂时允许所有菜单
+      return currentUser?.role === 'ADMIN' || currentUser?.role === 'admin';
     }
     return true;
   });
@@ -321,7 +333,7 @@ export default function DefaultLayout() {
                       fontWeight: 500,
                       whiteSpace: 'nowrap'
                     }}>
-                      管理员
+                      {currentUser?.username || '未登录'}
                     </span>
                   )}
                 </div>

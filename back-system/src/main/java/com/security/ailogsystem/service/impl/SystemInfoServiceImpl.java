@@ -22,8 +22,8 @@ public class SystemInfoServiceImpl implements SystemInfoService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Map<String, Object> realTimeCache = new ConcurrentHashMap<>();
-    private long lastCollectionTime = 0;
-    private static final long CACHE_EXPIRY_MS = 1000; // 1秒缓存
+    private final Map<String, Long> cacheTimestamps = new ConcurrentHashMap<>();
+    private static final long CACHE_EXPIRY_MS = 10000; // 10秒缓存
 
     @Autowired
     private ScriptProperties scriptProperties;
@@ -68,6 +68,18 @@ public class SystemInfoServiceImpl implements SystemInfoService {
 
     @Override
     public Map<String, Object> collectSpecificInfo(String infoType) {
+        // 检查缓存
+        Long cachedTime = cacheTimestamps.get(infoType);
+        if (cachedTime != null && System.currentTimeMillis() - cachedTime < CACHE_EXPIRY_MS) {
+            Object cached = realTimeCache.get(infoType);
+            if (cached != null) {
+                log.debug("使用缓存数据: {}", infoType);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> result = (Map<String, Object>) cached;
+                return result;
+            }
+        }
+
         log.info("收集特定类型信息: {}", infoType);
         String scriptPath = getPythonScriptPath();
 
@@ -144,6 +156,9 @@ public class SystemInfoServiceImpl implements SystemInfoService {
                         new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
                 );
                 result.put("collection_timestamp", System.currentTimeMillis());
+                // 写入缓存
+                realTimeCache.put(infoType, result);
+                cacheTimestamps.put(infoType, System.currentTimeMillis());
                 return result;
             } else {
                 log.error("Python脚本执行失败，类型: {}, 退出码: {}, stderr: {}", infoType, exitCode, stderrBuilder.toString().trim());
@@ -276,7 +291,8 @@ public class SystemInfoServiceImpl implements SystemInfoService {
     @Override
     public Map<String, Object> collectPerformanceDataQuick() {
         // 使用缓存避免频繁调用
-        if (System.currentTimeMillis() - lastCollectionTime < CACHE_EXPIRY_MS) {
+        Long perfTime = cacheTimestamps.get("performance");
+        if (perfTime != null && System.currentTimeMillis() - perfTime < CACHE_EXPIRY_MS) {
             Object cached = realTimeCache.get("performance");
             if (cached instanceof Map<?, ?> cachedMap) {
                 log.debug("使用缓存的性能数据");
@@ -291,7 +307,7 @@ public class SystemInfoServiceImpl implements SystemInfoService {
         try {
             Map<String, Object> result = collectSpecificInfo("performance");
             realTimeCache.put("performance", result);
-            lastCollectionTime = System.currentTimeMillis();
+            cacheTimestamps.put("performance", System.currentTimeMillis());
             return result;
         } catch (Exception e) {
             log.warn("快速性能数据采集失败: {}", e.getMessage());

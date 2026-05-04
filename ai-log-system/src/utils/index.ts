@@ -1,5 +1,8 @@
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
 import type { User, Permission } from '@/types';
+
+dayjs.extend(relativeTime);
 
 // 日期时间工具
 export const dateUtils = {
@@ -186,7 +189,7 @@ export const objectUtils = {
   },
 
   // 合并对象
-  merge: <T>(target: T, ...sources: Partial<T>[]): T => {
+  merge: <T extends object>(target: T, ...sources: Partial<T>[]): T => {
     return Object.assign(target, ...sources);
   },
 
