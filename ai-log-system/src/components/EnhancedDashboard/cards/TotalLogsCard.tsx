@@ -98,15 +98,11 @@ const TotalLogsCard: React.FC<TotalLogsCardProps> = ({
       console.error('加载日志数据失败:', error);
       setError(`加载失败: ${error instanceof Error ? error.message : '未知错误'}`);
       
-      // 如果API失败，使用默认数据（从你的日志中获取）
-      setStats({
-        totalLogs: 91471,
-        todayLogs: 287,
-        throughput: 1276,
-        storageUsed: 0.089, // 0.09186 GB 转换为 TB
-        storageTotal: 0.226, // 0.23226 GB 转换为 TB
+      // API失败时保留上次数据，不使用硬编码假数据
+      setStats(prev => ({
+        ...prev,
         lastUpdate: new Date().toISOString()
-      });
+      }));
       setLastUpdated(new Date().toLocaleTimeString());
     } finally {
       setLoading(false);

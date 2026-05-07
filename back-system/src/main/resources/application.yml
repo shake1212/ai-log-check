@@ -79,7 +79,7 @@ spring:
 
 # JWT配置
 jwt:
-  secret: ${JWT_SECRET:change-this-secret-in-production-min-32-chars}
+  secret: ${JWT_SECRET:change-this-secret-in-production-at-least-32-chars-long}
   expiration: ${JWT_EXPIRATION:86400000}
 
 # 日志配置
@@ -149,7 +149,7 @@ management:
 log:
   collection:
     enabled: true
-    interval: 30000
+    interval: 300000
     batch-size: 100
     retention-days: 30
   security:
@@ -185,15 +185,15 @@ scripts:
 
 alert:
   auto:
-    enabled: true
+    enabled: false
     performance-check:
-      enabled: true
+      enabled: false
       interval-minutes: 5
     process-check:
-      enabled: true
+      enabled: false
       interval-minutes: 10
     network-check:
-      enabled: true
+      enabled: false
       interval-minutes: 15
     thresholds:
       cpu-critical: 90.0

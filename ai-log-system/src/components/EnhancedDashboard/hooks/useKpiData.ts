@@ -1,35 +1,30 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { eventApi, analysisApi, logApi } from '@/services/api';
+import { useWebSocketContext } from '@/contexts/WebSocketContext';
 
-// 统一的 KPI 数据接口，合并4个Card所需的所有数据
 export interface KpiData {
-  // SystemHealthCard
   systemHealth: number;
   uptime: number;
   latency: number;
-  // TotalLogsCard
   totalLogs: number;
   todayLogs: number;
   throughput: number;
   storageUsed: number;
   storageTotal: number;
-  // SecurityEventsCard
   anomalyCount: number;
   criticalCount: number;
   highCount: number;
   mediumCount: number;
   lowCount: number;
   unhandledAlerts: number;
-  // ActiveUsersCard
   activeUsers: number;
   currentConnections: number;
   activeSessions: number;
-  // 通用
   lastUpdate: string;
 }
 
 const DEFAULT_KPI_DATA: KpiData = {
-  systemHealth: 0,  // 改为0，等待真实数据
+  systemHealth: 0,
   uptime: 0,
   latency: 0,
   totalLogs: 0,
@@ -49,22 +44,36 @@ const DEFAULT_KPI_DATA: KpiData = {
   lastUpdate: '',
 };
 
-/**
- * 统一的 KPI 数据获取 Hook
- * 合并4个Card的独立轮询为1个统一请求，减少3/4的API调用量
- */
-export const useKpiData = (isPaused: boolean, refreshInterval: number = 30000) => {
+const mergeStatsIntoKpi = (kpi: KpiData, stats: any): KpiData => {
+  const severityCounts = stats?.severityCounts || stats?.levelCounts || {};
+  return {
+    ...kpi,
+    totalLogs: stats?.totalLogs || kpi.totalLogs,
+    todayLogs: stats?.todayLogs || kpi.todayLogs,
+    anomalyCount: stats?.anomalyCount ?? kpi.anomalyCount,
+    unhandledAlerts: stats?.unhandledAlerts ?? kpi.unhandledAlerts,
+    criticalCount: severityCounts.CRITICAL || kpi.criticalCount,
+    highCount: severityCounts.HIGH || kpi.highCount,
+    mediumCount: severityCounts.MEDIUM || kpi.mediumCount,
+    lowCount: severityCounts.LOW || kpi.lowCount,
+    activeUsers: stats?.activeUsers || kpi.activeUsers,
+    currentConnections: stats?.currentConnections || kpi.currentConnections,
+    lastUpdate: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+  };
+};
+
+export const useKpiData = (isPaused: boolean) => {
   const [data, setData] = useState<KpiData>(DEFAULT_KPI_DATA);
   const [loading, setLoading] = useState(true);
   const isMountedRef = useRef(true);
+  const { statistics, subscribe, status: wsStatus } = useWebSocketContext();
 
-  const fetchAllKpiData = useCallback(async () => {
+  // 首次加载：一次性 REST 获取全部 KPI 数据
+  const fetchInitialData = useCallback(async () => {
     if (!isMountedRef.current || isPaused) return;
 
     setLoading(true);
     try {
-      // 合并所有API请求为并行调用，只发一次批量请求
-      // 注意：不再调用 getUnhandledAlerts()，unhandledAlerts 直接从 getStatistics() 的 stats.unhandledAlerts 获取
       const [statsRes, metricsRes, dashboardRes, realTimeRes] = await Promise.allSettled([
         logApi.getStatistics(),
         analysisApi.getSystemMetrics(),
@@ -74,88 +83,63 @@ export const useKpiData = (isPaused: boolean, refreshInterval: number = 30000) =
 
       if (!isMountedRef.current) return;
 
-      // 解析各响应
       const stats = statsRes.status === 'fulfilled' ? (statsRes.value?.data || statsRes.value) : null;
       const metrics = metricsRes.status === 'fulfilled' ? (metricsRes.value?.data || metricsRes.value) : null;
       const dashboardStats = dashboardRes.status === 'fulfilled' ? (dashboardRes.value?.data || dashboardRes.value || {}) : {};
       const realTime = realTimeRes.status === 'fulfilled' ? (realTimeRes.value?.data || realTimeRes.value) : null;
 
-      // 提取数据
       const severityCounts = dashboardStats?.severityCounts || dashboardStats?.levelCounts || {};
-      const criticalCount = severityCounts.CRITICAL || 0;
-      const highCount = severityCounts.HIGH || 0;
-      const mediumCount = severityCounts.MEDIUM || 0;
-      const lowCount = severityCounts.LOW || 0;
-
-      const totalLogs = dashboardStats?.totalLogs || stats?.totalLogs || 0;
-      const todayLogs = dashboardStats?.todayLogs || stats?.todayLogs || 0;
-      const anomalyCount = dashboardStats?.anomalyCount ?? stats?.securityEvents ?? stats?.anomalyCount ?? (criticalCount + highCount + mediumCount);
-
-      const systemHealth = metrics?.systemHealth || realTime?.systemHealth || 0;
-      const uptime = metrics?.uptime || 0;
-      const latency = metrics?.latency || realTime?.responseTime || 0;
-      const throughput = metrics?.throughput?.normal || 0;
-      const storageUsedGB = metrics?.storageUsed || 0;
-      const storageTotalGB = metrics?.storageTotal || 0;
-
-      const securityEvents = stats?.securityEvents || anomalyCount;
-      
-      // 活跃用户数计算：优先使用API数据，否则根据异常事件数推算
-      // 合理的推算：每个活跃用户平均产生10-20个异常事件
-      const derivedActiveUsers = stats?.activeUsers || 
-                                 metrics?.currentConnections || 
-                                 Math.max(1, Math.round(securityEvents / 15));
-      
-      const currentConnections = metrics?.currentConnections || Math.round(derivedActiveUsers * 1.2);
-      const activeSessions = metrics?.activeSessions || Math.round(derivedActiveUsers * 2);
-
-      const unhandledAlerts = stats?.unhandledAlerts ?? 0;
 
       setData({
-        systemHealth: Math.min(100, Math.max(0, systemHealth)),
-        uptime,
-        latency,
-        totalLogs,
-        todayLogs,
-        throughput,
-        storageUsed: storageUsedGB / 1024,
-        storageTotal: storageTotalGB / 1024,
-        anomalyCount,
-        criticalCount,
-        highCount,
-        mediumCount,
-        lowCount,
-        unhandledAlerts,
-        activeUsers: derivedActiveUsers,
-        currentConnections,
-        activeSessions,
+        systemHealth: Math.min(100, Math.max(0, metrics?.systemHealth || realTime?.systemHealth || 0)),
+        uptime: metrics?.uptime || 0,
+        latency: metrics?.latency || realTime?.responseTime || 0,
+        totalLogs: dashboardStats?.totalLogs || stats?.totalLogs || 0,
+        todayLogs: dashboardStats?.todayLogs || stats?.todayLogs || 0,
+        throughput: metrics?.throughput?.normal || 0,
+        storageUsed: (metrics?.storageUsed || 0) / 1024,
+        storageTotal: (metrics?.storageTotal || 0) / 1024,
+        anomalyCount: dashboardStats?.anomalyCount ?? stats?.securityEvents ?? stats?.anomalyCount ?? 0,
+        criticalCount: severityCounts.CRITICAL || 0,
+        highCount: severityCounts.HIGH || 0,
+        mediumCount: severityCounts.MEDIUM || 0,
+        lowCount: severityCounts.LOW || 0,
+        unhandledAlerts: stats?.unhandledAlerts ?? 0,
+        activeUsers: stats?.activeUsers || metrics?.activeUsers || 0,
+        currentConnections: metrics?.currentConnections || 0,
+        activeSessions: metrics?.activeSessions || 0,
         lastUpdate: new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
       });
-    } catch (error) {
-      // 静默失败，保留上次数据
+    } catch {
+      // 保留默认数据
     } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
-      }
+      if (isMountedRef.current) setLoading(false);
     }
   }, [isPaused]);
 
+  // 首次加载只调一次
   useEffect(() => {
     isMountedRef.current = true;
-    fetchAllKpiData();
+    fetchInitialData();
+    return () => { isMountedRef.current = false; };
+  }, [fetchInitialData]);
 
-    if (!isPaused) {
-      const interval = setInterval(fetchAllKpiData, refreshInterval);
-      return () => {
-        isMountedRef.current = false;
-        clearInterval(interval);
-      };
-    }
+  // WebSocket STATS 推送直接合并到 KPI，无需 REST 刷新
+  useEffect(() => {
+    if (!statistics || isPaused) return;
+    setData(prev => mergeStatsIntoKpi(prev, statistics));
+  }, [statistics, isPaused]);
 
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, [fetchAllKpiData, refreshInterval, isPaused]);
+  // 定时轻量刷新（5分钟一次，仅作为 WS 断线时的兜底）
+  useEffect(() => {
+    if (isPaused) return;
+    const interval = setInterval(() => {
+      if (wsStatus !== 'OPEN' && isMountedRef.current) {
+        fetchInitialData();
+      }
+    }, 300000);
+    return () => clearInterval(interval);
+  }, [isPaused, wsStatus, fetchInitialData]);
 
-  return { data, loading, refresh: fetchAllKpiData };
+  return { data, loading, refresh: fetchInitialData };
 };

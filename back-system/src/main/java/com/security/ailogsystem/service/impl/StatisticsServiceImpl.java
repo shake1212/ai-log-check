@@ -62,7 +62,7 @@ public class StatisticsServiceImpl implements StatisticsService {
 
         // 警报统计
         Long totalAlerts = alertRepository.count();
-        Long unhandledAlerts = (long) alertRepository.findByHandledFalseOrderByCreatedTimeDesc().size();
+        Long unhandledAlerts = alertRepository.countByHandledFalse();
 
         return new StatisticsDTO(
                 threatLevels,
@@ -84,10 +84,16 @@ public class StatisticsServiceImpl implements StatisticsService {
 
     private Map<String, Long> getThreatLevels(LocalDateTime since) {
         Map<String, Long> threatLevels = new HashMap<>();
-        threatLevels.put("LOW", Optional.ofNullable(logRepository.countByThreatLevelAndEventTimeAfter("LOW", since)).orElse(0L));
-        threatLevels.put("MEDIUM", Optional.ofNullable(logRepository.countByThreatLevelAndEventTimeAfter("MEDIUM", since)).orElse(0L));
-        threatLevels.put("HIGH", Optional.ofNullable(logRepository.countByThreatLevelAndEventTimeAfter("HIGH", since)).orElse(0L));
-        threatLevels.put("CRITICAL", Optional.ofNullable(logRepository.countByThreatLevelAndEventTimeAfter("CRITICAL", since)).orElse(0L));
+        threatLevels.put("LOW", 0L);
+        threatLevels.put("MEDIUM", 0L);
+        threatLevels.put("HIGH", 0L);
+        threatLevels.put("CRITICAL", 0L);
+        List<Object[]> groups = logRepository.countByThreatLevelGroup(since);
+        for (Object[] row : groups) {
+            String level = (String) row[0];
+            Long count = ((Number) row[1]).longValue();
+            threatLevels.put(level, count);
+        }
         return threatLevels;
     }
 

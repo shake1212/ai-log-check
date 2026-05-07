@@ -15,7 +15,14 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "alerts")
+@Table(name = "alerts", indexes = {
+    @Index(name = "idx_alerts_handled_created", columnList = "handled, created_time"),
+    @Index(name = "idx_alerts_created_time", columnList = "created_time"),
+    @Index(name = "idx_alerts_alert_level", columnList = "alert_level"),
+    @Index(name = "idx_alerts_alert_type", columnList = "alert_type"),
+    @Index(name = "idx_alerts_status", columnList = "status"),
+    @Index(name = "idx_alerts_source", columnList = "source")
+})
 public class Alert {
 
     @Id
@@ -51,10 +58,6 @@ public class Alert {
 
     @Column(name = "confidence", precision = 5, scale = 4)
     private BigDecimal aiConfidence;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "log_entry_id")
-    private LogEntry logEntry;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "unified_event_id", insertable = false, updatable = false)

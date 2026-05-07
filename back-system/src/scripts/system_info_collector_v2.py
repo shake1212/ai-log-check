@@ -231,54 +231,70 @@ def collect_disk_info():
         logger.error(f"磁盘信息收集失败: {e}")
         return {"error": str(e)}
 
-def collect_process_info(top_n=20, min_cpu=5.0):
-    """收集进程信息 - 只收集高资源占用的进程"""
+def collect_process_info(top_n=50, min_cpu=0.1):
+    """收集进程信息（双采样机制获取准确CPU使用率）"""
     try:
+        SAMPLE_INTERVAL = 0.5
+        cpu_count = psutil.cpu_count(logical=True) or 1  # 逻辑核心数，用于归一化
+
+        for proc in psutil.process_iter(['pid']):
+            try:
+                proc.cpu_percent(interval=None)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+
+        time.sleep(SAMPLE_INTERVAL)
+
         all_procs = []
         process_count = 0
         running_count = 0
-        
-        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'status']):
+        sleeping_count = 0
+
+        for proc in psutil.process_iter(['pid', 'name', 'memory_percent', 'status', 'username']):
             try:
                 info = proc.info
                 process_count += 1
-                
-                if info['status'] == psutil.STATUS_RUNNING:
+
+                status = info.get('status', '')
+                if status == psutil.STATUS_RUNNING:
                     running_count += 1
-                
-                cpu = info.get('cpu_percent', 0) or 0
-                mem = info.get('memory_percent', 0) or 0
-                
-                # 只记录高资源占用的进程
-                if cpu >= min_cpu or mem >= 5.0:
-                    all_procs.append({
-                        "pid": info['pid'],
-                        "name": info['name'],
-                        "cpu": cpu,
-                        "memory": mem,
-                        "status": info['status']
-                    })
-                    
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                else:
+                    sleeping_count += 1
+
+                # 除以核心数，归一化到 0-100%
+                cpu_raw = proc.cpu_percent(interval=None)
+                cpu = round(min(cpu_raw / cpu_count, 100.0), 2)
+                mem = info.get('memory_percent') or 0.0
+
+                all_procs.append({
+                    "pid": info['pid'],
+                    "name": info.get('name') or "unknown",
+                    "cpu": round(cpu, 2),
+                    "memory": round(mem, 2),
+                    "status": (status or '').lower(),
+                    "user": info.get('username') or ""
+                })
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
-        
-        # 按CPU排序,取前N个
+
         all_procs.sort(key=lambda x: x['cpu'], reverse=True)
         top_processes = all_procs[:top_n]
-        
+
         data = {
             "total": process_count,
             "running": running_count,
-            "high_usage_count": len(all_procs),
+            "sleeping": sleeping_count,
+            "high_usage_count": len([p for p in all_procs if p['cpu'] >= min_cpu or p['memory'] >= 1.0]),
             "processes": top_processes,
             "timestamp": time.time(),
             "host": HOST_NAME,
             "collected_at": datetime.now().isoformat()
         }
-        
-        logger.debug(f"进程信息: 总数={process_count}, 高占用={len(all_procs)}")
+
+        logger.debug(f"进程信息: 总数={process_count}, 运行={running_count}, 休眠={sleeping_count}, 高占用={data['high_usage_count']}")
         return data
-        
+
     except Exception as e:
         logger.error(f"进程信息收集失败: {e}")
         return {"error": str(e)}

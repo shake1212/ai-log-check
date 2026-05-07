@@ -13,6 +13,7 @@ import {
   CodeOutlined
 } from '@ant-design/icons';
 import { DashboardProps } from './types/dashboard';
+import { getToken } from '@/utils/authStorage';
 
 const { TabPane } = Tabs;
 
@@ -44,14 +45,14 @@ const ControlBar: React.FC<ControlBarProps> = ({
   const handleExport = (key: string) => {
     const [dataType, format] = key.split('_');
     const ext = format === 'excel' ? 'xlsx' : format;
-    const token = localStorage.getItem('token');
+    const token = getToken();
     const label = TYPE_LABEL[dataType] ?? dataType;
     const ts = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '');
     const filename = `${label}_${ts}.${ext}`;
     const backendBase = process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : '';
 
     const xhr = new XMLHttpRequest();
-    xhr.open('GET', `${backendBase}/api/api/export/${dataType}?format=${format}`, true);
+    xhr.open('GET', `/api/export/${dataType}?format=${format}`, true);
     xhr.responseType = 'blob';
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 

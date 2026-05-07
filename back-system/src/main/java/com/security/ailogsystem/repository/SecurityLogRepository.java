@@ -90,6 +90,10 @@ public interface SecurityLogRepository extends JpaRepository<SecurityLog, Long>,
     @Query("SELECT l.threatLevel, COUNT(l) FROM SecurityLog l WHERE l.eventTime >= :since GROUP BY l.threatLevel")
     List<Object[]> countByThreatLevelGroup(@Param("since") LocalDateTime since);
 
+    // 按威胁等级分组统计（全量，替代4次countByThreatLevel）
+    @Query("SELECT l.threatLevel, COUNT(l) FROM SecurityLog l GROUP BY l.threatLevel")
+    List<Object[]> countByThreatLevelGroupAll();
+
     // 按威胁等级和时间范围统计
     @Query("SELECT COUNT(l) FROM SecurityLog l WHERE l.threatLevel = :threatLevel AND l.eventTime BETWEEN :start AND :end")
     Long countByThreatLevelAndEventTimeBetween(@Param("threatLevel") String threatLevel,
@@ -121,7 +125,7 @@ public interface SecurityLogRepository extends JpaRepository<SecurityLog, Long>,
     List<Object[]> getThreatLevelDistribution();
 
     // 6. 获取最近N条日志
-    @Query(value = "SELECT * FROM windows_security_logs ORDER BY event_time DESC LIMIT :limit", nativeQuery = true)
+    @Query(value = "SELECT id, event_id, event_time, computer_name, source_name, user_name, ip_address, threat_level, created_time FROM windows_security_logs ORDER BY event_time DESC LIMIT :limit", nativeQuery = true)
     List<SecurityLog> findRecentLogs(@Param("limit") int limit);
 
     // 7. 按时间范围和威胁等级统计

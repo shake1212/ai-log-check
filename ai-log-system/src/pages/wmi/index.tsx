@@ -11,9 +11,14 @@ import {
   Alert,
   Descriptions,
   Progress,
-  List,
-  Empty
+  Table,
+  Input,
+  Segmented,
+  Empty,
+  Tooltip,
+  Space
 } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import {
   BarChartOutlined,
   CloudServerOutlined,
@@ -378,43 +383,153 @@ const SystemInfoManagement: React.FC = () => {
     </Card>
   );
 
-  // 进程信息
+  const [processSearch, setProcessSearch] = useState('');
+
+  const processColumns: ColumnsType<RealTimeProcessInfo['processes'][0]> = [
+    {
+      title: '进程名',
+      dataIndex: 'name',
+      key: 'name',
+      ellipsis: true,
+      width: 160,
+      sorter: (a, b) => a.name.localeCompare(b.name),
+    },
+    {
+      title: 'PID',
+      dataIndex: 'pid',
+      key: 'pid',
+      width: 70,
+      sorter: (a, b) => a.pid - b.pid,
+    },
+    {
+      title: 'CPU',
+      dataIndex: 'cpu',
+      key: 'cpu',
+      width: 120,
+      sorter: (a, b) => a.cpu - b.cpu,
+      defaultSortOrder: 'descend',
+      render: (val: number) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Progress
+            percent={Math.min(val, 100)}
+            size="small"
+            strokeColor={getUsageColor(val)}
+            showInfo={false}
+            style={{ width: 60, margin: 0 }}
+          />
+          <span style={{ fontSize: 12, color: getUsageColor(val), fontWeight: 500 }}>{val.toFixed(1)}%</span>
+        </div>
+      ),
+    },
+    {
+      title: '内存',
+      dataIndex: 'memory',
+      key: 'memory',
+      width: 120,
+      sorter: (a, b) => a.memory - b.memory,
+      render: (val: number) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Progress
+            percent={Math.min(val, 100)}
+            size="small"
+            strokeColor={getUsageColor(val)}
+            showInfo={false}
+            style={{ width: 60, margin: 0 }}
+          />
+          <span style={{ fontSize: 12, color: getUsageColor(val), fontWeight: 500 }}>{val.toFixed(1)}%</span>
+        </div>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 80,
+      filters: [
+        { text: '运行中', value: 'running' },
+        { text: '休眠', value: 'sleeping' },
+        { text: '停止', value: 'stopped' },
+        { text: '僵尸', value: 'zombie' },
+      ],
+      onFilter: (value, record) => record.status === value,
+      render: (status: string) => {
+        const cfg: Record<string, { color: string; label: string }> = {
+          running: { color: 'green', label: '运行中' },
+          sleeping: { color: 'default', label: '休眠' },
+          stopped: { color: 'orange', label: '停止' },
+          zombie: { color: 'red', label: '僵尸' },
+        };
+        const c = cfg[status] || { color: 'default', label: status };
+        return <Tag color={c.color}>{c.label}</Tag>;
+      },
+    },
+    {
+      title: '用户',
+      dataIndex: 'user',
+      key: 'user',
+      width: 90,
+      ellipsis: true,
+      render: (val: string) => val || '-',
+    },
+  ];
+
   const renderProcessInfo = () => {
-    const safeProcessList = processInfo?.processes && Array.isArray(processInfo.processes)
-      ? processInfo.processes.slice(0, 5)
+    const allProcesses = processInfo?.processes && Array.isArray(processInfo.processes)
+      ? processInfo.processes
       : [];
+    const filtered = processSearch
+      ? allProcesses.filter(p =>
+          p.name.toLowerCase().includes(processSearch.toLowerCase()) ||
+          String(p.pid).includes(processSearch) ||
+          (p.user && p.user.toLowerCase().includes(processSearch.toLowerCase()))
+        )
+      : allProcesses;
 
     return (
-      <Card title="进程信息" size="small" style={{ height: '100%', minHeight: 320 }}>
+      <Card
+        title={
+          <Space>
+            <span>进程信息</span>
+            {processInfo && (
+              <Tag color="blue">{processInfo.total}</Tag>
+            )}
+          </Space>
+        }
+        size="small"
+        style={{ height: '100%' }}
+        extra={
+          processInfo && (
+            <Space size="middle">
+              <Statistic title="运行" value={processInfo.running} valueStyle={{ fontSize: 14, color: '#52c41a' }} />
+              <Statistic title="休眠" value={processInfo.sleeping} valueStyle={{ fontSize: 14 }} />
+            </Space>
+          )
+        }
+      >
         {processInfo ? (
           <>
-            <Descriptions column={3} size="small">
-              <Descriptions.Item label="总进程数">{processInfo.total}</Descriptions.Item>
-              <Descriptions.Item label="运行中">{processInfo.running}</Descriptions.Item>
-              <Descriptions.Item label="休眠中">{processInfo.sleeping}</Descriptions.Item>
-            </Descriptions>
-            {safeProcessList.length > 0 && (
-              <div style={{ marginTop: 12 }}>
-                <h4>Top进程 (按CPU使用率)</h4>
-                <List
-                  size="small"
-                  dataSource={safeProcessList}
-                  renderItem={process => (
-                    <List.Item
-                      actions={[
-                        <Tag color="blue" key="cpu">CPU: {process.cpu.toFixed(1)}%</Tag>,
-                        <Tag color="green" key="memory">内存: {process.memory.toFixed(1)}%</Tag>
-                      ]}
-                    >
-                      <List.Item.Meta
-                        title={process.name}
-                        description={`PID: ${process.pid} | 状态: ${process.status} ${process.user ? `| 用户: ${process.user}` : ''}`}
-                      />
-                    </List.Item>
-                  )}
-                />
-              </div>
-            )}
+            <Input.Search
+              placeholder="搜索进程名/PID/用户"
+              allowClear
+              size="small"
+              style={{ marginBottom: 8 }}
+              onSearch={setProcessSearch}
+              onChange={e => !e.target.value && setProcessSearch('')}
+            />
+            <Table
+              columns={processColumns}
+              dataSource={filtered}
+              rowKey="pid"
+              size="small"
+              pagination={{
+                pageSize: 10,
+                size: 'small',
+                showSizeChanger: true,
+                pageSizeOptions: ['10', '20', '50'],
+                showTotal: total => `共 ${total} 个进程`,
+              }}
+              scroll={{ y: 260 }}
+            />
           </>
         ) : (
           <Empty description="进程信息加载中..." image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -452,10 +567,10 @@ const SystemInfoManagement: React.FC = () => {
           <div style={{ flex: 1 }}>{renderCpuInfo()}</div>
           <div style={{ flex: 1 }}>{renderMemoryInfo()}</div>
           <div style={{ flex: 1 }}>{renderDiskInfo()}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '16px' }}>
           <div style={{ flex: 1 }}>{renderSystemInfo()}</div>
-          <div style={{ flex: 1 }}>{renderProcessInfo()}</div>
+        </div>
+        <div>
+          {renderProcessInfo()}
         </div>
       </Card>
     </div>

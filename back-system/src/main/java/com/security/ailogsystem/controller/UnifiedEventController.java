@@ -266,6 +266,7 @@ public class UnifiedEventController {
      * 获取仪表板统计信息（无需时间参数）
      */
     @GetMapping("/dashboard-stats")
+    @org.springframework.cache.annotation.Cacheable(value = "events:dashboard-stats")
     public ResponseEntity<Map<String, Object>> getDashboardStats() {
         log.debug("获取仪表板统计信息");
 

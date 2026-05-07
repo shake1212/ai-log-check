@@ -5,6 +5,7 @@ import com.security.ailogsystem.repository.AlertRepository;
 import com.security.ailogsystem.repository.UnifiedEventRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +17,7 @@ import java.util.Map;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "alert.auto.enabled", havingValue = "true", matchIfMissing = false)
 public class AutoAlertScheduler {
 
     private final AlertService alertService;
@@ -136,10 +138,22 @@ public class AutoAlertScheduler {
         return alertRepository.countRecentUnhandledByType(alertType, since) > 0;
     }
 
+    private static final Map<String, List<String>> EVENT_TYPE_ALIASES = Map.of(
+            "LOGIN_FAILURE", List.of("LOGIN_FAILURE", "AUTH_FAILURE"),
+            "AUTH_FAILURE", List.of("AUTH_FAILURE", "LOGIN_FAILURE"),
+            "LOGIN_SUCCESS", List.of("LOGIN_SUCCESS", "AUTH_SUCCESS"),
+            "BRUTE_FORCE", List.of("BRUTE_FORCE", "BRUTE_FORCE_ATTACK"),
+            "BRUTE_FORCE_ATTACK", List.of("BRUTE_FORCE_ATTACK", "BRUTE_FORCE")
+    );
+
     private Long findRelatedEventId(String eventType) {
         LocalDateTime since = LocalDateTime.now().minusMinutes(ALERT_DEDUP_MINUTES);
-        List<Long> ids = eventRepository.findRecentIdByEventType(eventType, since);
-        return ids.isEmpty() ? null : ids.get(0);
+        List<String> eventTypes = EVENT_TYPE_ALIASES.getOrDefault(eventType, List.of(eventType));
+        for (String type : eventTypes) {
+            List<Long> ids = eventRepository.findRecentIdByEventType(type, since);
+            if (!ids.isEmpty()) return ids.get(0);
+        }
+        return null;
     }
 
     private void createPerformanceAlertWithMetrics(String alertType, String level, String description,

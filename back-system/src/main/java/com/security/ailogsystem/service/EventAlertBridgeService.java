@@ -18,6 +18,9 @@ import java.util.Map;
 public class EventAlertBridgeService {
 
     private final AlertService alertService;
+    private final com.security.ailogsystem.repository.AlertRepository alertRepository;
+
+    private static final int DEDUP_MINUTES = 5;
 
     /**
      * 将Python收集的安全事件转换为告警
@@ -86,7 +89,11 @@ public class EventAlertBridgeService {
     }
 
     private boolean shouldCreateAlert(String alertLevel, String eventType) {
-        // 配置哪些事件类型需要自动创建告警
+        // 去重：5分钟内同类型未处理告警不重复创建
+        if (hasRecentUnhandledAlert(eventType)) {
+            log.debug("5分钟内已有未处理的 {} 告警，跳过", eventType);
+            return false;
+        }
         return switch (alertLevel) {
             case "CRITICAL", "HIGH" -> true;
             case "MEDIUM" -> isImportantEventType(eventType);
@@ -94,10 +101,15 @@ public class EventAlertBridgeService {
         };
     }
 
+    private boolean hasRecentUnhandledAlert(String alertType) {
+        LocalDateTime since = LocalDateTime.now().minusMinutes(DEDUP_MINUTES);
+        return alertRepository.countRecentUnhandledByType(alertType, since) > 0;
+    }
+
     private boolean isImportantEventType(String eventType) {
-        // 重要的安全事件类型
         return eventType.contains("SUSPICIOUS") ||
                 eventType.contains("FAILED") ||
+                eventType.contains("FAILURE") ||
                 eventType.contains("ATTACK") ||
                 eventType.contains("UNAUTHORIZED") ||
                 eventType.contains("EXPLOIT");

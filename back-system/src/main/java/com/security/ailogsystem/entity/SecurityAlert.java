@@ -8,7 +8,11 @@ import java.time.LocalDateTime;
 
 @Entity
 @Data
-@Table(name = "security_alerts")
+@Table(name = "security_alerts", indexes = {
+    @Index(name = "idx_sa_handled_created", columnList = "handled, created_time"),
+    @Index(name = "idx_sa_alert_level", columnList = "alert_level"),
+    @Index(name = "idx_sa_alert_type", columnList = "alert_type")
+})
 public class SecurityAlert {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

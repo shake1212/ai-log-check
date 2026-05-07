@@ -1,9 +1,11 @@
 package com.security.ailogsystem.controller;
 
+import com.security.ailogsystem.config.JwtUtil;
 import com.security.ailogsystem.model.User;
 import com.security.ailogsystem.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.jsonwebtoken.Claims;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,11 +26,13 @@ public class AuthController {
 
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
 
     @Autowired
-    public AuthController(UserService userService, PasswordEncoder passwordEncoder) {
+    public AuthController(UserService userService, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
         this.userService = userService;
         this.passwordEncoder = passwordEncoder;
+        this.jwtUtil = jwtUtil;
     }
 
     @PostMapping("/login")
@@ -37,46 +41,41 @@ public class AuthController {
         String username = loginRequest.get("username");
         String password = loginRequest.get("password");
         log.info("收到登录请求，用户名: {}", username);
-        
+
         try {
             Optional<User> userOpt = userService.findByUsername(username);
-            
+
             if (userOpt.isPresent()) {
                 User user = userOpt.get();
                 log.debug("查询到用户: {}, 角色: {}", user.getUsername(), user.getRole());
-                
-                // 验证密码：优先 BCrypt 哈希验证，兼容明文密码并自动升级
+
                 boolean passwordValid = false;
                 if (user.getPassword() != null && !user.getPassword().isEmpty()) {
                     String stored = user.getPassword();
                     if (stored.startsWith("$2")) {
-                        // 尝试 BCrypt 哈希验证
                         try {
                             passwordValid = userService.validatePassword(password, stored);
                         } catch (Exception e) {
-                            log.warn("BCrypt 验证异常，尝试明文比对: {}", e.getMessage());
+                            log.warn("BCrypt 验证异常: {}", e.getMessage());
                         }
                     }
-                    // BCrypt 验证失败或非 BCrypt 格式，尝试明文比对
-                    if (!passwordValid && password.equals(stored)) {
-                        passwordValid = true;
-                    }
-                    // 明文验证成功，升级为 BCrypt
-                    if (passwordValid && !stored.startsWith("$2")) {
-                        user.setPassword(passwordEncoder.encode(password));
-                        userService.updateUser(user);
-                        log.info("用户 {} 密码已自动升级为 BCrypt 哈希", username);
+                    if (!passwordValid) {
+                        log.warn("用户 {} 密码验证失败", username);
+                        Map<String, Object> response = new HashMap<>();
+                        response.put("success", false);
+                        response.put("message", "用户名或密码错误");
+                        return ResponseEntity.status(401).body(response);
                     }
                 }
-                
+
                 if (passwordValid) {
                     if (user.getIsActive() != null && user.getIsActive()) {
                         userService.updateLastLogin(username);
+                        String token = jwtUtil.generateToken(user.getUsername(), user.getRole().name());
                         Map<String, Object> response = new HashMap<>();
                         response.put("success", true);
                         response.put("message", "登录成功");
-                        // token格式: jwt-token-{username}-{timestamp}，方便validate接口解析用户
-                        response.put("token", "jwt-token-" + user.getUsername() + "-" + System.currentTimeMillis());
+                        response.put("token", token);
                         Map<String, Object> userInfo = new HashMap<>();
                         userInfo.put("id", user.getId());
                         userInfo.put("username", user.getUsername());
@@ -100,7 +99,7 @@ public class AuthController {
                     return ResponseEntity.status(401).body(response);
                 }
             } else {
-                log.warn("登录失败，用户不存在: {}", username);
+                log.warn("登录失败: {}", username);
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", false);
                 response.put("message", "用户名或密码错误");
@@ -162,97 +161,136 @@ public class AuthController {
             response.put("message", "未认证或Token无效");
             return ResponseEntity.status(401).body(response);
         }
-        // 生成新token，携带用户名
-        String newToken = "jwt-token-" + user.getUsername() + "-" + System.currentTimeMillis();
+        String newToken = jwtUtil.generateToken(user.getUsername(), user.getRole().name());
         response.put("success", true);
         response.put("message", "token刷新成功");
         response.put("token", newToken);
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * 从 Authorization header 解析用户，供内部方法复用
-     */
     private User resolveUserFromToken(String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer jwt-token-")) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             return null;
         }
-        String payload = authHeader.substring("Bearer jwt-token-".length());
-        int lastDash = payload.lastIndexOf('-');
-        if (lastDash <= 0) return null;
-        try {
-            long issuedAt = Long.parseLong(payload.substring(lastDash + 1));
-            if (System.currentTimeMillis() - issuedAt > 24 * 60 * 60 * 1000L) return null;
-            String username = payload.substring(0, lastDash);
-            return userService.findByUsername(username).orElse(null);
-        } catch (NumberFormatException e) {
-            return null;
+        String token = authHeader.substring(7);
+        // 优先标准 JWT
+        if (jwtUtil.validateToken(token)) {
+            try {
+                String username = jwtUtil.getUsername(token);
+                return userService.findByUsername(username).orElse(null);
+            } catch (Exception e) {
+                return null;
+            }
         }
+        // 兼容旧格式 jwt-token-{username}-{timestamp}
+        if (token.startsWith("jwt-token-")) {
+            String payload = token.substring(10);
+            int lastDash = payload.lastIndexOf('-');
+            if (lastDash <= 0) return null;
+            try {
+                long issuedAt = Long.parseLong(payload.substring(lastDash + 1));
+                if (System.currentTimeMillis() - issuedAt > 24 * 60 * 60 * 1000L) return null;
+                String username = payload.substring(0, lastDash);
+                return userService.findByUsername(username).orElse(null);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
     }
 
     @PostMapping("/validate")
     @Operation(summary = "验证令牌", description = "验证访问令牌是否有效")
     public ResponseEntity<Map<String, Object>> validateToken(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         Map<String, Object> response = new HashMap<>();
-        
+
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             response.put("valid", false);
             response.put("message", "缺少或无效的Authorization header");
             return ResponseEntity.status(401).body(response);
         }
-        
+
         String token = authHeader.substring(7);
-        
-        // token格式: jwt-token-{username}-{timestamp}
-        if (token != null && token.startsWith("jwt-token-")) {
+
+        // 优先标准 JWT
+        if (jwtUtil.validateToken(token)) {
             try {
-                String payload = token.substring(10); // 去掉 "jwt-token-"
-                int lastDash = payload.lastIndexOf('-');
-                if (lastDash <= 0) {
-                    response.put("valid", false);
-                    response.put("message", "无效的Token格式");
-                    return ResponseEntity.status(401).body(response);
-                }
-                
-                String username = payload.substring(0, lastDash);
-                String timestampStr = payload.substring(lastDash + 1);
-                long timestamp = Long.parseLong(timestampStr);
-                long currentTime = System.currentTimeMillis();
-                long expirationTime = 24 * 60 * 60 * 1000L; // 24小时
-                
-                if (currentTime - timestamp >= expirationTime) {
-                    response.put("valid", false);
-                    response.put("message", "Token已过期");
-                    log.warn("Token已过期，用户: {}", username);
-                    return ResponseEntity.status(401).body(response);
-                }
-                
-                // 从数据库查询真实用户信息
+                String username = jwtUtil.getUsername(token);
                 Optional<User> userOpt = userService.findByUsername(username);
                 if (!userOpt.isPresent()) {
                     response.put("valid", false);
                     response.put("message", "用户不存在");
                     return ResponseEntity.status(401).body(response);
                 }
-                
                 User user = userOpt.get();
                 if (user.getIsActive() == null || !user.getIsActive()) {
                     response.put("valid", false);
                     response.put("message", "账户已被禁用");
                     return ResponseEntity.status(401).body(response);
                 }
-                
                 Map<String, Object> userInfo = new HashMap<>();
                 userInfo.put("id", user.getId());
                 userInfo.put("username", user.getUsername());
                 userInfo.put("role", user.getRole().name().toLowerCase());
-                
                 response.put("valid", true);
                 response.put("message", "Token有效");
                 response.put("user", userInfo);
-                log.debug("Token验证成功，用户: {}, 角色: {}", user.getUsername(), user.getRole());
                 return ResponseEntity.ok(response);
-                
+            } catch (Exception e) {
+                log.error("JWT验证异常", e);
+                response.put("valid", false);
+                response.put("message", "验证失败");
+                return ResponseEntity.status(500).body(response);
+            }
+        }
+
+        // 兼容旧格式
+        if (token.startsWith("jwt-token-")) {
+            try {
+                String payload = token.substring(10);
+                int lastDash = payload.lastIndexOf('-');
+                if (lastDash <= 0) {
+                    response.put("valid", false);
+                    response.put("message", "无效的Token格式");
+                    return ResponseEntity.status(401).body(response);
+                }
+                String username = payload.substring(0, lastDash);
+                String timestampStr = payload.substring(lastDash + 1);
+                long timestamp = Long.parseLong(timestampStr);
+                long currentTime = System.currentTimeMillis();
+                long expirationTime = 24 * 60 * 60 * 1000L;
+
+                if (currentTime - timestamp >= expirationTime) {
+                    response.put("valid", false);
+                    response.put("message", "Token已过期");
+                    log.warn("Token已过期，用户: {}", username);
+                    return ResponseEntity.status(401).body(response);
+                }
+
+                Optional<User> userOpt = userService.findByUsername(username);
+                if (!userOpt.isPresent()) {
+                    response.put("valid", false);
+                    response.put("message", "用户不存在");
+                    return ResponseEntity.status(401).body(response);
+                }
+
+                User user = userOpt.get();
+                if (user.getIsActive() == null || !user.getIsActive()) {
+                    response.put("valid", false);
+                    response.put("message", "账户已被禁用");
+                    return ResponseEntity.status(401).body(response);
+                }
+
+                Map<String, Object> userInfo = new HashMap<>();
+                userInfo.put("id", user.getId());
+                userInfo.put("username", user.getUsername());
+                userInfo.put("role", user.getRole().name().toLowerCase());
+
+                response.put("valid", true);
+                response.put("message", "Token有效");
+                response.put("user", userInfo);
+                return ResponseEntity.ok(response);
+
             } catch (NumberFormatException e) {
                 response.put("valid", false);
                 response.put("message", "Token格式错误");
@@ -263,11 +301,11 @@ public class AuthController {
                 response.put("message", "验证失败");
                 return ResponseEntity.status(500).body(response);
             }
-        } else {
-            response.put("valid", false);
-            response.put("message", "无效的Token格式");
-            return ResponseEntity.status(401).body(response);
         }
+
+        response.put("valid", false);
+        response.put("message", "无效的Token格式");
+        return ResponseEntity.status(401).body(response);
     }
 
     @PostMapping("/change-password")
@@ -304,4 +342,3 @@ public class AuthController {
     }
 
 }
-

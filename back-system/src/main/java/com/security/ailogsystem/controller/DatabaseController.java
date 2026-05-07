@@ -206,6 +206,7 @@ public class DatabaseController {
 
     @PostMapping("/query")
     @Operation(summary = "执行SQL查询", description = "执行数据库查询（仅管理用途）")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> executeQuery(@RequestBody Map<String, Object> payload) {
         try {
             String sql = String.valueOf(payload.getOrDefault("sql", ""));
@@ -230,6 +231,7 @@ public class DatabaseController {
 
     @PostMapping("/transaction")
     @Operation(summary = "执行事务", description = "按顺序执行SQL语句事务")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, Object>> executeTransaction(@RequestBody Map<String, Object> payload) {
         try {
             @SuppressWarnings("unchecked")

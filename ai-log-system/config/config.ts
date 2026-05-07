@@ -35,7 +35,7 @@ export default defineConfig({
   ],
   npmClient: 'pnpm',
   proxy: {
-    '/api': { target: 'http://localhost:8080', changeOrigin: true, pathRewrite: { '^/api': '/api' } },
+    '/api': { target: 'http://localhost:8080', changeOrigin: true, ws: true, pathRewrite: { '^/api': '/api' } },
   },
   theme: {
     '@primary-color': '#1890ff',

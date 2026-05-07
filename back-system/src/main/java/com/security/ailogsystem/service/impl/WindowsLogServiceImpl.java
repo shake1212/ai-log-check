@@ -79,7 +79,7 @@ public class WindowsLogServiceImpl implements WindowsLogService {
 
         } catch (Exception e) {
             logger.error("采集安全日志失败", e);
-            webSocketService.sendSystemNotification("日志采集失败: " + e.getMessage(), "ERROR");
+            webSocketService.sendNotification("日志采集失败: " + e.getMessage(), "ERROR");
         }
 
         return Collections.emptyList();
@@ -132,7 +132,7 @@ public class WindowsLogServiceImpl implements WindowsLogService {
             try {
                 isMonitoring.set(true);
                 logger.info("启动实时日志监控");
-                webSocketService.sendSystemNotification("启动实时日志监控", "INFO");
+                webSocketService.sendNotification("启动实时日志监控", "INFO");
 
                 // 使用Windows事件查询进行实时监控
                 String query = "SELECT * FROM Win32_NTLogEvent WHERE LogFile='Security'";
@@ -158,7 +158,7 @@ public class WindowsLogServiceImpl implements WindowsLogService {
             } finally {
                 isMonitoring.set(false);
                 logger.info("实时日志监控已停止");
-                webSocketService.sendSystemNotification("实时日志监控已停止", "INFO");
+                webSocketService.sendNotification("实时日志监控已停止", "INFO");
             }
         });
     }

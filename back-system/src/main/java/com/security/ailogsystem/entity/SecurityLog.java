@@ -8,7 +8,13 @@ import java.time.LocalDateTime;
 
 @Entity
 @Data
-@Table(name = "windows_security_logs")
+@Table(name = "windows_security_logs", indexes = {
+    @Index(name = "idx_wsl_event_time", columnList = "event_time"),
+    @Index(name = "idx_wsl_event_id_event_time", columnList = "event_id, event_time"),
+    @Index(name = "idx_wsl_threat_level_event_time", columnList = "threat_level, event_time"),
+    @Index(name = "idx_wsl_ip_address", columnList = "ip_address"),
+    @Index(name = "idx_wsl_user_name", columnList = "user_name")
+})
 public class SecurityLog {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

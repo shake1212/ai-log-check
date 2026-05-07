@@ -206,47 +206,56 @@ def collect_disk_info():
         return {"error": f"磁盘信息收集失败: {str(e)}"}
 
 def collect_process_info():
-    """收集进程信息"""
+    """收集进程信息（双采样机制获取准确CPU使用率）"""
     try:
-        processes = []
+        SAMPLE_INTERVAL = 0.5
+
+        for proc in psutil.process_iter(['pid']):
+            try:
+                proc.cpu_percent(interval=None)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+
+        time.sleep(SAMPLE_INTERVAL)
+
         process_count = 0
         running_count = 0
         sleeping_count = 0
+        processes = []
 
-        # 获取进程列表
-        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'status']):
+        for proc in psutil.process_iter(['pid', 'name', 'memory_percent', 'status', 'username']):
             try:
-                process_info = proc.info
+                info = proc.info
                 process_count += 1
 
-                # 统计状态
-                if process_info['status'] == psutil.STATUS_RUNNING:
+                status = info.get('status', '')
+                if status == psutil.STATUS_RUNNING:
                     running_count += 1
-                elif process_info['status'] == psutil.STATUS_SLEEPING:
+                elif status == psutil.STATUS_SLEEPING:
                     sleeping_count += 1
 
-                # 只收集前20个进程的信息，避免数据量过大
-                if len(processes) < 20:
-                    processes.append({
-                        "pid": process_info['pid'],
-                        "name": process_info['name'],
-                        "cpu": process_info['cpu_percent'] or 0,
-                        "memory": process_info['memory_percent'] or 0,
-                        "status": process_info['status'],
-                        "memory_rss": proc.memory_info().rss if hasattr(proc, 'memory_info') else 0
-                    })
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                # 进程可能已经结束或无权限访问
+                cpu = proc.cpu_percent(interval=None)
+                memory = info.get('memory_percent') or 0.0
+
+                processes.append({
+                    "pid": info['pid'],
+                    "name": info.get('name') or "unknown",
+                    "cpu": round(cpu, 2),
+                    "memory": round(memory, 2),
+                    "status": (status or '').lower(),
+                    "user": info.get('username') or ""
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
 
-        # 按CPU使用率排序
         processes.sort(key=lambda x: x['cpu'], reverse=True)
+        top50 = processes[:50]
 
         return {
             "total": process_count,
             "running": running_count,
             "sleeping": sleeping_count,
-            "processes": processes,
+            "processes": top50,
             "timestamp": time.time(),
             "host": HOST_NAME,
             "collected_at": datetime.now().isoformat()

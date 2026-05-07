@@ -270,10 +270,14 @@ class SystemInfoApiService {
       return [];
     };
 
+    const total = processData.total || processData.total_count || 0;
+    const running = processData.running || 0;
+    const sleeping = processData.sleeping || (total > running ? total - running : 0);
+
     const result: RealTimeProcessInfo = {
-      total: processData.total || processData.total_count || 0,
-      running: processData.running || 0,
-      sleeping: processData.sleeping || 0,
+      total,
+      running,
+      sleeping,
       processes: parseProcesses(processData.processes),
     };
 
@@ -752,7 +756,7 @@ class SystemInfoApiService {
   async getBatchRealTimeData(): Promise<any> {
     try {
       const result = await request.get(`${this.baseUrl}/real-time/batch-data`, {
-        timeout: 20000
+        timeout: 60000
       });
       
       if (result.success && result.data) {

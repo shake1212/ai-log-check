@@ -16,7 +16,19 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Entity
-@Table(name = "unified_security_events")
+@Table(name = "unified_security_events", indexes = {
+    @Index(name = "idx_use_timestamp", columnList = "timestamp"),
+    @Index(name = "idx_use_is_anomaly", columnList = "is_anomaly"),
+    @Index(name = "idx_use_source_system", columnList = "source_system"),
+    @Index(name = "idx_use_event_type", columnList = "event_type"),
+    @Index(name = "idx_use_severity", columnList = "severity"),
+    @Index(name = "idx_use_threat_level", columnList = "threat_level"),
+    @Index(name = "idx_use_status", columnList = "status"),
+    @Index(name = "idx_use_source_ip", columnList = "source_ip"),
+    @Index(name = "idx_use_level", columnList = "level"),
+    @Index(name = "idx_use_anomaly_timestamp", columnList = "is_anomaly, timestamp"),
+    @Index(name = "idx_use_source_event_timestamp", columnList = "source_system, event_type, timestamp")
+})
 @Data
 @Builder
 @NoArgsConstructor

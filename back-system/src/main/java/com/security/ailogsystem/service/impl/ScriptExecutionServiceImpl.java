@@ -332,7 +332,7 @@ public class ScriptExecutionServiceImpl implements ScriptExecutionService {
             }
 
             List<UnifiedSecurityEventDTO> savedEvents = unifiedEventService.createEvents(events);
-            webSocketService.sendSystemNotification(
+            webSocketService.sendNotification(
                     String.format("脚本 %s 生成 %d 条安全事件", definition.getName(), savedEvents.size()),
                     "info");
             log.info("脚本 {} 输出已转换为 {} 条安全事件", definition.getName(), savedEvents.size());
@@ -348,7 +348,7 @@ public class ScriptExecutionServiceImpl implements ScriptExecutionService {
                                     boolean isError) {
         UnifiedSecurityEventDTO event = buildFallbackEvent(definition, record, output, isError);
         unifiedEventService.createEvent(event);
-        webSocketService.sendSystemNotification(event.getNormalizedMessage(), isError ? "error" : "info");
+        webSocketService.sendNotification(event.getNormalizedMessage(), isError ? "error" : "info");
     }
 
     private List<UnifiedSecurityEventDTO> extractEventsFromOutput(String output,

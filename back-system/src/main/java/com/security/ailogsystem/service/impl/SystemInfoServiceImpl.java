@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.lang.management.ManagementFactory;
+import java.lang.management.OperatingSystemMXBean;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
@@ -68,7 +70,13 @@ public class SystemInfoServiceImpl implements SystemInfoService {
 
     @Override
     public Map<String, Object> collectSpecificInfo(String infoType) {
-        // 检查缓存
+        // process_info 强制走Python，不缓存
+        if ("process_info".equals(infoType)) {
+            log.info("[强制Python] 收集进程信息，跳过缓存");
+            return executePythonCollection(infoType, true);
+        }
+
+        // 其他类型：检查缓存
         Long cachedTime = cacheTimestamps.get(infoType);
         if (cachedTime != null && System.currentTimeMillis() - cachedTime < CACHE_EXPIRY_MS) {
             Object cached = realTimeCache.get(infoType);
@@ -81,32 +89,37 @@ public class SystemInfoServiceImpl implements SystemInfoService {
         }
 
         log.info("收集特定类型信息: {}", infoType);
+        return executePythonCollection(infoType, false);
+    }
+
+    private Map<String, Object> executePythonCollection(String infoType, boolean forcePython) {
         String scriptPath = getPythonScriptPath();
+        String pythonExec = resolvePythonExecutable();
+
+        File scriptFile = new File(scriptPath);
+        if (!scriptFile.exists()) {
+            if (forcePython) {
+                log.error("[强制Python] Python脚本不存在: {}，process_info采集失败", scriptPath);
+                throw new RuntimeException("Python脚本不存在: " + scriptPath + "，进程信息采集失败");
+            }
+            log.warn("Python脚本文件不存在: {}，使用Java原生采集", scriptPath);
+            return collectJavaNativeInfo(infoType);
+        }
+
+        List<String> command = new ArrayList<>();
+        command.add(pythonExec);
+        command.add(scriptPath);
+        command.add(infoType);
 
         try {
-            // 验证脚本文件是否存在
-            File scriptFile = new File(scriptPath);
-            if (!scriptFile.exists()) {
-                log.error("Python脚本文件不存在: {}", scriptPath);
-                return createErrorResponse("Python脚本文件不存在: " + scriptPath);
-            }
-
-            // 构建进程命令
-            List<String> command = new ArrayList<>();
-            command.add(resolvePythonExecutable());
-            command.add(scriptPath);
-            command.add(infoType);
-
             ProcessBuilder processBuilder = new ProcessBuilder(command);
             processBuilder.directory(scriptFile.getParentFile());
-            // 不合并 stderr 到 stdout，避免非 JSON 输出污染解析
             processBuilder.redirectErrorStream(false);
 
-            log.info("执行Python命令: {}", String.join(" ", command));
+            log.info("[Python采集] 执行命令: {}", String.join(" ", command));
 
             Process process = processBuilder.start();
 
-            // 异步读取 stderr，防止缓冲区满导致死锁
             final StringBuilder stderrBuilder = new StringBuilder();
             Thread stderrReader = new Thread(() -> {
                 try (BufferedReader errReader = new BufferedReader(
@@ -122,7 +135,6 @@ public class SystemInfoServiceImpl implements SystemInfoService {
             stderrReader.setDaemon(true);
             stderrReader.start();
 
-            // 读取 stdout
             BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream()));
 
@@ -132,42 +144,71 @@ public class SystemInfoServiceImpl implements SystemInfoService {
                 output.append(line);
             }
 
-            // 等待进程结束，最多 30 秒
-            boolean finished = process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+            int timeoutSeconds = "process_info".equals(infoType) ? 15 : 30;
+            boolean finished = process.waitFor(timeoutSeconds, java.util.concurrent.TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
-                log.warn("Python脚本执行超时（30秒），类型: {}，已强制终止", infoType);
-                return createErrorResponse("Python脚本执行超时（30秒）");
+                String msg = "Python脚本执行超时(" + timeoutSeconds + "秒)，类型: " + infoType;
+                if (forcePython) {
+                    log.error("[强制Python] {}", msg);
+                    throw new RuntimeException(msg);
+                }
+                log.warn("{}，降级为Java原生采集", msg);
+                return collectJavaNativeInfo(infoType);
             }
             stderrReader.join(3000);
 
             int exitCode = process.exitValue();
+            String outputStr = output.toString().trim();
 
             if (exitCode == 0) {
-                String outputStr = output.toString().trim();
-                // 只取第一行 JSON，忽略后续非 JSON 输出
                 String jsonLine = outputStr.contains("\n") ? outputStr.substring(0, outputStr.indexOf('\n')).trim() : outputStr;
-                log.debug("Python脚本执行成功，类型: {}, 输出长度: {}", infoType, jsonLine.length());
-                if (!stderrBuilder.isEmpty()) {
-                    log.debug("Python脚本stderr: {}", stderrBuilder.toString().trim());
+
+                int processCount = 0;
+                if (jsonLine.contains("\"processes\"")) {
+                    try {
+                        Map<String, Object> preview = objectMapper.readValue(jsonLine,
+                                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                        Object procs = preview.get("processes");
+                        if (procs instanceof List) processCount = ((List<?>) procs).size();
+                    } catch (Exception ignored) {}
                 }
+                log.info("[Python采集] 成功 type={}, 输出长度={}, 进程数={}, stderr={}",
+                        infoType, jsonLine.length(), processCount,
+                        stderrBuilder.isEmpty() ? "(空)" : stderrBuilder.toString().trim().substring(0, Math.min(200, stderrBuilder.length())));
+
                 Map<String, Object> result = objectMapper.readValue(
                         jsonLine,
                         new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
                 );
                 result.put("collection_timestamp", System.currentTimeMillis());
-                // 写入缓存
-                realTimeCache.put(infoType, result);
-                cacheTimestamps.put(infoType, System.currentTimeMillis());
+
+                if (!forcePython) {
+                    realTimeCache.put(infoType, result);
+                    cacheTimestamps.put(infoType, System.currentTimeMillis());
+                }
+
                 return result;
             } else {
-                log.error("Python脚本执行失败，类型: {}, 退出码: {}, stderr: {}", infoType, exitCode, stderrBuilder.toString().trim());
-                return createErrorResponse("Python脚本执行失败，退出码: " + exitCode);
+                String stderr = stderrBuilder.toString().trim();
+                String msg = "Python脚本退出码=" + exitCode + ", type=" + infoType + ", stderr=" + stderr;
+                if (forcePython) {
+                    log.error("[强制Python] {}", msg);
+                    throw new RuntimeException("进程信息Python采集失败: " + msg);
+                }
+                log.warn("{}, 降级为Java原生采集", msg);
+                return collectJavaNativeInfo(infoType);
             }
 
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("执行Python信息采集失败，类型: {}, 错误: {}", infoType, e.getMessage(), e);
-            return createErrorResponse("执行Python脚本异常: " + e.getMessage());
+            if (forcePython) {
+                log.error("[强制Python] Python采集异常 type={}, error={}", infoType, e.getMessage(), e);
+                throw new RuntimeException("进程信息Python采集异常: " + e.getMessage(), e);
+            }
+            log.warn("执行Python信息采集失败，类型: {}，降级为Java原生采集: {}", infoType, e.getMessage());
+            return collectJavaNativeInfo(infoType);
         }
     }
 
@@ -473,6 +514,114 @@ public class SystemInfoServiceImpl implements SystemInfoService {
         errorResponse.put("status", "error");
         return errorResponse;
     }
+
+    private Map<String, Object> collectJavaNativeInfo(String infoType) {
+        try {
+            OperatingSystemMXBean osBean = ManagementFactory.getOperatingSystemMXBean();
+            Runtime runtime = Runtime.getRuntime();
+            long now = System.currentTimeMillis();
+
+            switch (infoType) {
+                case "cpu_info": {
+                    Map<String, Object> data = new HashMap<>();
+                    double cpuUsage = osBean.getSystemLoadAverage() >= 0
+                            ? Math.min(osBean.getSystemLoadAverage() / osBean.getAvailableProcessors() * 100, 100.0)
+                            : 0;
+                    data.put("usage", Math.round(cpuUsage * 100.0) / 100.0);
+                    data.put("cpu_percent", data.get("usage"));
+                    data.put("cores", osBean.getAvailableProcessors());
+                    data.put("physical_cores", osBean.getAvailableProcessors());
+                    data.put("load_average", Arrays.asList(osBean.getSystemLoadAverage(), 0.0, 0.0));
+                    data.put("timestamp", now);
+                    cacheResult(infoType, data);
+                    return data;
+                }
+                case "memory_info": {
+                    Map<String, Object> data = new HashMap<>();
+                    long totalMem = runtime.totalMemory();
+                    long freeMem = runtime.freeMemory();
+                    long usedMem = totalMem - freeMem;
+                    long maxMem = runtime.maxMemory();
+                    double usagePercent = maxMem > 0 ? (double) usedMem / maxMem * 100 : 0;
+                    data.put("total", maxMem);
+                    data.put("used", usedMem);
+                    data.put("available", maxMem - usedMem);
+                    data.put("free", freeMem);
+                    data.put("usage_percent", Math.round(usagePercent * 100.0) / 100.0);
+                    data.put("swap_total", 0L);
+                    data.put("swap_used", 0L);
+                    data.put("swap_free", 0L);
+                    data.put("swap_percent", 0.0);
+                    data.put("timestamp", now);
+                    cacheResult(infoType, data);
+                    return data;
+                }
+                case "disk_info": {
+                    Map<String, Object> data = new HashMap<>();
+                    File[] roots = File.listRoots();
+                    if (roots != null && roots.length > 0) {
+                        File root = roots[0];
+                        long total = root.getTotalSpace();
+                        long free = root.getFreeSpace();
+                        long used = total - free;
+                        double usagePercent = total > 0 ? (double) used / total * 100 : 0;
+                        data.put("total", total);
+                        data.put("used", used);
+                        data.put("available", free);
+                        data.put("usage_percent", Math.round(usagePercent * 100.0) / 100.0);
+                    }
+                    data.put("timestamp", now);
+                    cacheResult(infoType, data);
+                    return data;
+                }
+                case "process_info":
+                    throw new UnsupportedOperationException("process_info 不允许Java/PowerShell降级，必须通过Python(psutil)采集");
+                case "system_basic": {
+                    Map<String, Object> data = new HashMap<>();
+                    data.put("hostname", java.net.InetAddress.getLocalHost().getHostName());
+                    data.put("platform", System.getProperty("os.name"));
+                    data.put("platform_version", System.getProperty("os.version"));
+                    data.put("architecture", System.getProperty("os.arch"));
+                    data.put("processor", System.getProperty("os.arch"));
+                    data.put("timestamp", now);
+                    cacheResult(infoType, data);
+                    return data;
+                }
+                case "performance": {
+                    Map<String, Object> data = new HashMap<>();
+                    double cpuUsage = osBean.getSystemLoadAverage() >= 0
+                            ? Math.min(osBean.getSystemLoadAverage() / osBean.getAvailableProcessors() * 100, 100.0)
+                            : 0;
+                    long totalMem = runtime.totalMemory();
+                    long usedMem = totalMem - runtime.freeMemory();
+                    long maxMem = runtime.maxMemory();
+                    double memUsage = maxMem > 0 ? (double) usedMem / maxMem * 100 : 0;
+                    data.put("cpu_percent", Math.round(cpuUsage * 100.0) / 100.0);
+                    data.put("memory_percent", Math.round(memUsage * 100.0) / 100.0);
+                    data.put("memory_used", usedMem);
+                    data.put("memory_available", maxMem - usedMem);
+                    data.put("timestamp", now);
+                    cacheResult(infoType, data);
+                    return data;
+                }
+                default: {
+                    Map<String, Object> data = new HashMap<>();
+                    data.put("timestamp", now);
+                    data.put("source", "java-native");
+                    return data;
+                }
+            }
+        } catch (Exception e) {
+            log.error("Java原生采集失败: {}", e.getMessage());
+            return createErrorResponse("Java原生采集失败: " + e.getMessage());
+        }
+    }
+
+    private void cacheResult(String infoType, Map<String, Object> data) {
+        realTimeCache.put(infoType, data);
+        cacheTimestamps.put(infoType, System.currentTimeMillis());
+    }
+
 
     private Map<String, Object> extractMetricsFromPerformanceData(Map<String, Object> performanceData) {
         Map<String, Object> metrics = new HashMap<>();

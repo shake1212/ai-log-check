@@ -3,9 +3,7 @@ package com.security.ailogsystem.service.impl;
 import com.security.ailogsystem.dto.request.AlertRequest;
 import com.security.ailogsystem.dto.response.AlertResponse;
 import com.security.ailogsystem.model.Alert;
-import com.security.ailogsystem.model.LogEntry;
 import com.security.ailogsystem.repository.AlertRepository;
-import com.security.ailogsystem.repository.LogEntryRepository;
 import com.security.ailogsystem.service.AlertService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -23,11 +22,12 @@ import java.util.Map;
 public class AlertServiceImpl implements AlertService {
 
     private final AlertRepository alertRepository;
-    private final LogEntryRepository logEntryRepository;
     private final com.security.ailogsystem.repository.SecurityAlertRepository securityAlertRepository;
+    private final com.security.ailogsystem.service.WebSocketService webSocketService;
 
     @Override
     @Transactional
+    @org.springframework.cache.annotation.CacheEvict(value = {"logs:statistics", "analysis:real-time-stats", "events:dashboard-stats"}, allEntries = true)
     public AlertResponse createAlert(AlertRequest request) {
         Alert alert = Alert.builder()
                 .alertId(request.getAlertId())
@@ -41,12 +41,6 @@ public class AlertServiceImpl implements AlertService {
                 .handled(false)
                 .status(Alert.AlertStatus.PENDING)
                 .build();
-
-        if (request.getLogEntryId() != null) {
-            LogEntry logEntry = logEntryRepository.findById(request.getLogEntryId())
-                    .orElseThrow(() -> new RuntimeException("日志条目不存在: " + request.getLogEntryId()));
-            alert.setLogEntry(logEntry);
-        }
 
         if (request.getUnifiedEventId() != null) {
             alert.setUnifiedEventId(request.getUnifiedEventId());
@@ -65,7 +59,6 @@ public class AlertServiceImpl implements AlertService {
             secAlert.setCreatedTime(java.time.LocalDateTime.now());
             secAlert.setMetricValue(request.getMetricValue());
             secAlert.setThreshold(request.getThreshold());
-            // 映射 alertLevel 字符串 -> 枚举
             try {
                 secAlert.setAlertLevel(com.security.ailogsystem.entity.SecurityAlert.AlertLevel
                         .valueOf(request.getAlertLevel().toUpperCase()));
@@ -73,26 +66,14 @@ public class AlertServiceImpl implements AlertService {
                 secAlert.setAlertLevel(com.security.ailogsystem.entity.SecurityAlert.AlertLevel.MEDIUM);
             }
 
-            // 设置事件关联 - 如果有unifiedEventId，查询并关联SecurityLog
-            if (request.getUnifiedEventId() != null) {
-                try {
-                    // 查询unified_security_events表获取对应的security_log_id
-                    Long securityLogId = getSecurityLogIdByUnifiedEventId(request.getUnifiedEventId());
-                    if (securityLogId != null) {
-                        com.security.ailogsystem.entity.SecurityLog securityLog =
-                            securityAlertRepository.findSecurityLogById(securityLogId);
-                        if (securityLog != null) {
-                            secAlert.setSecurityLog(securityLog);
-                            log.info("告警关联到安全日志: alertId={}, logId={}",
-                                request.getAlertId(), securityLogId);
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("关联安全日志失败: {}", e.getMessage());
-                }
-            }
-
             securityAlertRepository.save(secAlert);
+
+            // 通过WebSocket推送告警事件
+            try {
+                webSocketService.sendAlert(secAlert);
+            } catch (Exception wsEx) {
+                log.warn("推送告警WebSocket失败: {}", wsEx.getMessage());
+            }
         } catch (Exception e) {
             log.warn("同步写入 SecurityAlert 失败: {}", e.getMessage());
         }
@@ -135,6 +116,7 @@ public class AlertServiceImpl implements AlertService {
 
     @Override
     @Transactional
+    @org.springframework.cache.annotation.CacheEvict(value = {"logs:statistics", "analysis:real-time-stats", "events:dashboard-stats"}, allEntries = true)
     public boolean markAlertAsHandled(Long id, String handledBy, String resolution) {
         Alert alert = alertRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("告警不存在: " + id));
@@ -174,6 +156,7 @@ public class AlertServiceImpl implements AlertService {
 
     @Override
     @Transactional
+    @org.springframework.cache.annotation.CacheEvict(value = {"logs:statistics", "analysis:real-time-stats", "events:dashboard-stats"}, allEntries = true)
     public boolean deleteAlert(Long id) {
         if (!alertRepository.existsById(id)) {
             throw new RuntimeException("告警不存在: " + id);
@@ -197,12 +180,18 @@ public class AlertServiceImpl implements AlertService {
         long unhandledAlerts = alertRepository.countByHandledFalse();
         stats.put("unhandledAlerts", unhandledAlerts);
 
-        // 按级别统计
+        // 按级别统计（1次GROUP BY替代4次独立查询）
         Map<String, Long> levelStats = new HashMap<>();
-        levelStats.put("CRITICAL", alertRepository.countByAlertLevel("CRITICAL"));
-        levelStats.put("HIGH", alertRepository.countByAlertLevel("HIGH"));
-        levelStats.put("MEDIUM", alertRepository.countByAlertLevel("MEDIUM"));
-        levelStats.put("LOW", alertRepository.countByAlertLevel("LOW"));
+        levelStats.put("CRITICAL", 0L);
+        levelStats.put("HIGH", 0L);
+        levelStats.put("MEDIUM", 0L);
+        levelStats.put("LOW", 0L);
+        List<Object[]> levelGroups = alertRepository.countByAlertLevelGroup();
+        for (Object[] row : levelGroups) {
+            String level = (String) row[0];
+            Long count = ((Number) row[1]).longValue();
+            levelStats.put(level, count);
+        }
         stats.put("alertsByLevel", levelStats);
 
         // 最近24小时告警数（需要创建对应的方法）
@@ -315,22 +304,5 @@ public class AlertServiceImpl implements AlertService {
             log.error("解决告警失败: ID={}", id, e);
             return false;
         }
-    }
-
-    /**
-     * 根据统一事件ID查询关联的安全日志ID
-     */
-    private Long getSecurityLogIdByUnifiedEventId(Long unifiedEventId) {
-        try {
-            // 通过JPA查询unified_security_events表
-            String sql = "SELECT security_log_id FROM unified_security_events WHERE id = ?";
-            java.util.List<Object[]> results = alertRepository.findSecurityLogIdByUnifiedEventId(unifiedEventId);
-            if (!results.isEmpty() && results.get(0)[0] != null) {
-                return ((Number) results.get(0)[0]).longValue();
-            }
-        } catch (Exception e) {
-            log.warn("查询安全日志ID失败: unifiedEventId={}, error={}", unifiedEventId, e.getMessage());
-        }
-        return null;
     }
 }

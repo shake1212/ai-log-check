@@ -8,6 +8,9 @@ import com.security.ailogsystem.repository.SecurityLogRepository;
 import com.security.ailogsystem.service.AnalysisService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.HashMap;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -24,9 +27,16 @@ public class AnalysisServiceImpl implements AnalysisService {
     public List<SecurityAnalysisItemDTO> getSecurityAnalyses() {
         log.info("获取安全分析数据");
         LocalDateTime since = LocalDateTime.now().minusDays(7);
-        long critical = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("CRITICAL", since)).orElse(0L);
-        long high = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("HIGH", since)).orElse(0L);
-        long medium = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("MEDIUM", since)).orElse(0L);
+        Map<String, Long> levelMap = new HashMap<>();
+        levelMap.put("CRITICAL", 0L);
+        levelMap.put("HIGH", 0L);
+        levelMap.put("MEDIUM", 0L);
+        for (Object[] row : securityLogRepository.countByThreatLevelGroup(since)) {
+            levelMap.put((String) row[0], ((Number) row[1]).longValue());
+        }
+        long critical = levelMap.getOrDefault("CRITICAL", 0L);
+        long high = levelMap.getOrDefault("HIGH", 0L);
+        long medium = levelMap.getOrDefault("MEDIUM", 0L);
         long failedLogins = Optional.ofNullable(securityLogRepository.countByEventIdAndEventTimeBetween(4625, since, LocalDateTime.now())).orElse(0L);
 
         List<SecurityAnalysisItemDTO> analyses = new ArrayList<>();
@@ -144,9 +154,16 @@ public class AnalysisServiceImpl implements AnalysisService {
     public List<ThreatIntelItemDTO> getThreatIntelligence() {
         log.info("获取威胁情报数据");
         LocalDateTime since = LocalDateTime.now().minusDays(7);
-        long critical = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("CRITICAL", since)).orElse(0L);
-        long high = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("HIGH", since)).orElse(0L);
-        long medium = Optional.ofNullable(securityLogRepository.countByThreatLevelAndEventTimeAfter("MEDIUM", since)).orElse(0L);
+        Map<String, Long> levelMap2 = new HashMap<>();
+        levelMap2.put("CRITICAL", 0L);
+        levelMap2.put("HIGH", 0L);
+        levelMap2.put("MEDIUM", 0L);
+        for (Object[] row : securityLogRepository.countByThreatLevelGroup(since)) {
+            levelMap2.put((String) row[0], ((Number) row[1]).longValue());
+        }
+        long critical = levelMap2.getOrDefault("CRITICAL", 0L);
+        long high = levelMap2.getOrDefault("HIGH", 0L);
+        long medium = levelMap2.getOrDefault("MEDIUM", 0L);
 
         List<ThreatIntelItemDTO> threats = new ArrayList<>();
         if (critical > 0) {

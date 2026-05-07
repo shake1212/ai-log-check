@@ -41,6 +41,8 @@ public class DataExportServiceImpl implements DataExportService {
     private final ObjectMapper objectMapper;
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final int MAX_EXPORT_ROWS = 50000;
+    private static final String CSV_BOM = "\uFEFF";
 
     // ==================== exportLogs ====================
 
@@ -56,6 +58,10 @@ public class DataExportServiceImpl implements DataExportService {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         List<LogEntry> logs = logEntryRepository.findAll(spec);
+        if (logs.size() > MAX_EXPORT_ROWS) {
+            log.warn("导出日志超限 {} 条，截断为 {} 条", logs.size(), MAX_EXPORT_ROWS);
+            logs = logs.subList(0, MAX_EXPORT_ROWS);
+        }
         log.info("导出日志 {} 条", logs.size());
         return switch (format.toLowerCase()) {
             case "excel" -> exportLogsToExcel(logs);
@@ -80,6 +86,10 @@ public class DataExportServiceImpl implements DataExportService {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         List<Alert> alerts = alertRepository.findAll(spec);
+        if (alerts.size() > MAX_EXPORT_ROWS) {
+            log.warn("导出告警超限 {} 条，截断为 {} 条", alerts.size(), MAX_EXPORT_ROWS);
+            alerts = alerts.subList(0, MAX_EXPORT_ROWS);
+        }
         log.info("导出告警 {} 条", alerts.size());
         return switch (format.toLowerCase()) {
             case "excel" -> exportAlertsToExcel(alerts);
@@ -102,6 +112,10 @@ public class DataExportServiceImpl implements DataExportService {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         List<UnifiedSecurityEvent> events = eventRepository.findAll(spec);
+        if (events.size() > MAX_EXPORT_ROWS) {
+            log.warn("导出事件超限 {} 条，截断为 {} 条", events.size(), MAX_EXPORT_ROWS);
+            events = events.subList(0, MAX_EXPORT_ROWS);
+        }
         log.info("导出安全事件 {} 条", events.size());
         return switch (format.toLowerCase()) {
             case "excel" -> exportEventsToExcel(events);
@@ -124,6 +138,10 @@ public class DataExportServiceImpl implements DataExportService {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         List<SecurityLog> logs = securityLogRepository.findAll(spec);
+        if (logs.size() > MAX_EXPORT_ROWS) {
+            log.warn("导出安全日志超限 {} 条，截断为 {} 条", logs.size(), MAX_EXPORT_ROWS);
+            logs = logs.subList(0, MAX_EXPORT_ROWS);
+        }
         log.info("导出Windows安全日志 {} 条", logs.size());
         return switch (format.toLowerCase()) {
             case "excel" -> exportSecurityLogsToExcel(logs);
@@ -141,9 +159,14 @@ public class DataExportServiceImpl implements DataExportService {
             List<Predicate> predicates = new ArrayList<>();
             if (startTime != null) predicates.add(cb.greaterThanOrEqualTo(root.get("timestamp"), startTime));
             if (endTime != null)   predicates.add(cb.lessThanOrEqualTo(root.get("timestamp"), endTime));
+            if (metricType != null && !metricType.isEmpty()) predicates.add(cb.equal(root.get("metricType"), metricType));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         List<SystemMetrics> metrics = metricsRepository.findAll(spec);
+        if (metrics.size() > MAX_EXPORT_ROWS) {
+            log.warn("导出指标超限 {} 条，截断为 {} 条", metrics.size(), MAX_EXPORT_ROWS);
+            metrics = metrics.subList(0, MAX_EXPORT_ROWS);
+        }
         log.info("导出系统性能指标 {} 条", metrics.size());
         return switch (format.toLowerCase()) {
             case "excel" -> exportMetricsToExcel(metrics);
@@ -166,7 +189,7 @@ public class DataExportServiceImpl implements DataExportService {
     // ==================== CSV ====================
 
     private Resource exportLogsToCsv(List<LogEntry> logs) {
-        StringBuilder csv = new StringBuilder("ID,时间戳,日志级别,内容,来源,用户ID,IP地址\n");
+        StringBuilder csv = new StringBuilder(CSV_BOM).append("ID,时间戳,日志级别,内容,来源,用户ID,IP地址\n");
         for (LogEntry e : logs) {
             csv.append(String.format("%d,%s,%s,\"%s\",%s,%s,%s\n",
                     e.getId(), fmt(e.getTimestamp()), e.getLevel(),
@@ -176,41 +199,41 @@ public class DataExportServiceImpl implements DataExportService {
     }
 
     private Resource exportAlertsToCsv(List<Alert> alerts) {
-        StringBuilder csv = new StringBuilder("告警ID,告警类型,告警级别,状态,来源,描述,创建时间,处理人\n");
+        StringBuilder csv = new StringBuilder(CSV_BOM).append("告警ID,告警类型,告警级别,状态,来源,描述,创建时间,处理人\n");
         for (Alert a : alerts) {
             csv.append(String.format("%s,%s,%s,%s,%s,\"%s\",%s,%s\n",
-                    a.getAlertId(), a.getAlertType(), a.getAlertLevel(),
-                    a.getStatus(), a.getSource(), esc(a.getDescription()),
+                    a.getAlertId(), zhEventType(a.getAlertType()), zhSeverity(a.getAlertLevel().toString()),
+                    zhAlertStatus(a.getStatus().toString()), zhSource(a.getSource()), esc(a.getDescription()),
                     fmt(a.getCreatedTime()), nvl(a.getAssignee())));
         }
         return bytes(csv.toString());
     }
 
     private Resource exportEventsToCsv(List<UnifiedSecurityEvent> events) {
-        StringBuilder csv = new StringBuilder("ID,事件类型,严重程度,来源系统,来源IP,目标IP,时间戳,威胁等级\n");
+        StringBuilder csv = new StringBuilder(CSV_BOM).append("ID,事件类型,严重程度,来源系统,来源IP,目标IP,时间戳,威胁等级\n");
         for (UnifiedSecurityEvent e : events) {
             csv.append(String.format("%d,%s,%s,%s,%s,%s,%s,%s\n",
-                    e.getId(), e.getEventType(), e.getSeverity(), e.getSourceSystem(),
+                    e.getId(), zhEventType(e.getEventType()), zhSeverity(e.getSeverity()), zhSource(e.getSourceSystem()),
                     nvl(e.getSourceIp()), nvl(e.getDestinationIp()),
-                    fmt(e.getTimestamp()), nvl(e.getThreatLevel())));
+                    fmt(e.getTimestamp()), zhSeverity(nvl(e.getThreatLevel()))));
         }
         return bytes(csv.toString());
     }
 
     private Resource exportSecurityLogsToCsv(List<SecurityLog> logs) {
-        StringBuilder csv = new StringBuilder("事件ID,时间,计算机名,来源,用户名,IP地址,登录类型,威胁等级\n");
+        StringBuilder csv = new StringBuilder(CSV_BOM).append("事件ID,时间,计算机名,来源,用户名,IP地址,登录类型,威胁等级\n");
         for (SecurityLog l : logs) {
             csv.append(String.format("%d,%s,%s,%s,%s,%s,%s,%s\n",
                     l.getEventId(), fmt(l.getEventTime()), nvl(l.getComputerName()),
                     nvl(l.getSourceName()), nvl(l.getUserName()), nvl(l.getIpAddress()),
                     nvl(l.getLogonType() != null ? l.getLogonType().toString() : null),
-                    nvl(l.getThreatLevel())));
+                    zhSeverity(nvl(l.getThreatLevel()))));
         }
         return bytes(csv.toString());
     }
 
     private Resource exportMetricsToCsv(List<SystemMetrics> metrics) {
-        StringBuilder csv = new StringBuilder("时间戳,主机名,IP,CPU使用率,内存使用率,磁盘使用率,网络发送,网络接收\n");
+        StringBuilder csv = new StringBuilder(CSV_BOM).append("时间戳,主机名,IP,CPU使用率,内存使用率,磁盘使用率,网络发送,网络接收\n");
         for (SystemMetrics m : metrics) {
             csv.append(String.format("%s,%s,%s,%.2f,%.2f,%.2f,%d,%d\n",
                     fmt(m.getTimestamp()), nvl(m.getHostname()), nvl(m.getIpAddress()),
@@ -253,10 +276,10 @@ public class DataExportServiceImpl implements DataExportService {
             for (Alert a : alerts) {
                 Row r = sheet.createRow(row++);
                 r.createCell(0).setCellValue(a.getAlertId());
-                r.createCell(1).setCellValue(a.getAlertType());
-                r.createCell(2).setCellValue(a.getAlertLevel());
-                r.createCell(3).setCellValue(a.getStatus().toString());
-                r.createCell(4).setCellValue(a.getSource());
+                r.createCell(1).setCellValue(zhEventType(a.getAlertType()));
+                r.createCell(2).setCellValue(zhSeverity(a.getAlertLevel().toString()));
+                r.createCell(3).setCellValue(zhAlertStatus(a.getStatus().toString()));
+                r.createCell(4).setCellValue(zhSource(a.getSource()));
                 r.createCell(5).setCellValue(nvl(a.getDescription()));
                 r.createCell(6).setCellValue(fmt(a.getCreatedTime()));
                 r.createCell(7).setCellValue(nvl(a.getAssignee()));
@@ -276,13 +299,13 @@ public class DataExportServiceImpl implements DataExportService {
             for (UnifiedSecurityEvent e : events) {
                 Row r = sheet.createRow(row++);
                 r.createCell(0).setCellValue(e.getId());
-                r.createCell(1).setCellValue(e.getEventType());
-                r.createCell(2).setCellValue(e.getSeverity());
-                r.createCell(3).setCellValue(e.getSourceSystem());
+                r.createCell(1).setCellValue(zhEventType(e.getEventType()));
+                r.createCell(2).setCellValue(zhSeverity(e.getSeverity()));
+                r.createCell(3).setCellValue(zhSource(e.getSourceSystem()));
                 r.createCell(4).setCellValue(nvl(e.getSourceIp()));
                 r.createCell(5).setCellValue(nvl(e.getDestinationIp()));
                 r.createCell(6).setCellValue(fmt(e.getTimestamp()));
-                r.createCell(7).setCellValue(nvl(e.getThreatLevel()));
+                r.createCell(7).setCellValue(zhSeverity(nvl(e.getThreatLevel())));
             }
             autoSize(sheet, headers.length);
             wb.write(out);
@@ -305,7 +328,7 @@ public class DataExportServiceImpl implements DataExportService {
                 r.createCell(4).setCellValue(nvl(l.getUserName()));
                 r.createCell(5).setCellValue(nvl(l.getIpAddress()));
                 r.createCell(6).setCellValue(l.getLogonType() != null ? l.getLogonType().toString() : "");
-                r.createCell(7).setCellValue(nvl(l.getThreatLevel()));
+                r.createCell(7).setCellValue(zhSeverity(nvl(l.getThreatLevel())));
             }
             autoSize(sheet, headers.length);
             wb.write(out);
@@ -413,10 +436,10 @@ public class DataExportServiceImpl implements DataExportService {
         for (Alert item : data) {
             Row r = sheet.createRow(row++);
             r.createCell(0).setCellValue(item.getAlertId());
-            r.createCell(1).setCellValue(item.getAlertType());
-            r.createCell(2).setCellValue(item.getAlertLevel());
-            r.createCell(3).setCellValue(item.getStatus().toString());
-            r.createCell(4).setCellValue(item.getSource());
+            r.createCell(1).setCellValue(zhEventType(item.getAlertType()));
+            r.createCell(2).setCellValue(zhSeverity(item.getAlertLevel().toString()));
+            r.createCell(3).setCellValue(zhAlertStatus(item.getStatus().toString()));
+            r.createCell(4).setCellValue(zhSource(item.getSource()));
             r.createCell(5).setCellValue(nvl(item.getDescription()));
             r.createCell(6).setCellValue(fmt(item.getCreatedTime()));
         }
@@ -432,9 +455,9 @@ public class DataExportServiceImpl implements DataExportService {
         for (UnifiedSecurityEvent item : data) {
             Row r = sheet.createRow(row++);
             r.createCell(0).setCellValue(item.getId());
-            r.createCell(1).setCellValue(item.getEventType());
-            r.createCell(2).setCellValue(item.getSeverity());
-            r.createCell(3).setCellValue(item.getSourceSystem());
+            r.createCell(1).setCellValue(zhEventType(item.getEventType()));
+            r.createCell(2).setCellValue(zhSeverity(item.getSeverity()));
+            r.createCell(3).setCellValue(zhSource(item.getSourceSystem()));
             r.createCell(4).setCellValue(nvl(item.getSourceIp()));
             r.createCell(5).setCellValue(nvl(item.getDestinationIp()));
             r.createCell(6).setCellValue(fmt(item.getTimestamp()));
@@ -455,7 +478,7 @@ public class DataExportServiceImpl implements DataExportService {
             r.createCell(2).setCellValue(nvl(item.getComputerName()));
             r.createCell(3).setCellValue(nvl(item.getUserName()));
             r.createCell(4).setCellValue(nvl(item.getIpAddress()));
-            r.createCell(5).setCellValue(nvl(item.getThreatLevel()));
+            r.createCell(5).setCellValue(zhSeverity(nvl(item.getThreatLevel())));
         }
         autoSize(sheet, h.length);
     }
@@ -524,4 +547,44 @@ public class DataExportServiceImpl implements DataExportService {
     private String nvl(String v) { return v != null ? v : ""; }
     private double nvl(Double v) { return v != null ? v : 0.0; }
     private long   nvl(Long v)   { return v != null ? v : 0L; }
+
+    private static final java.util.Map<String, String> SEVERITY_ZH = java.util.Map.of(
+            "CRITICAL", "严重", "HIGH", "高危", "MEDIUM", "中危", "LOW", "低危", "INFO", "信息"
+    );
+
+    private static final java.util.Map<String, String> EVENT_TYPE_ZH = java.util.Map.ofEntries(
+            java.util.Map.entry("LOGIN_FAILURE", "登录失败"), java.util.Map.entry("LOGIN_SUCCESS", "登录成功"),
+            java.util.Map.entry("AUTH_FAILURE", "认证失败"), java.util.Map.entry("AUTH_SUCCESS", "认证成功"),
+            java.util.Map.entry("LOGOFF", "注销"), java.util.Map.entry("BRUTE_FORCE", "暴力破解"),
+            java.util.Map.entry("BRUTE_FORCE_ATTACK", "暴力破解攻击"), java.util.Map.entry("PRIVILEGE_ESCALATION", "权限提升"),
+            java.util.Map.entry("SUSPICIOUS_ACTIVITY", "可疑活动"), java.util.Map.entry("SUSPICIOUS_LOGIN", "可疑登录"),
+            java.util.Map.entry("OFF_HOURS_LOGIN", "非工作时间登录"), java.util.Map.entry("ACCOUNT_LOCKOUT", "账户锁定"),
+            java.util.Map.entry("SECURITY_POLICY_CHANGE", "安全策略变更"), java.util.Map.entry("MALWARE", "恶意软件"),
+            java.util.Map.entry("NETWORK_ATTACK", "网络攻击"), java.util.Map.entry("DATA_EXFILTRATION", "数据渗出"),
+            java.util.Map.entry("COMMAND_INJECTION", "命令注入"), java.util.Map.entry("SQL_INJECTION", "SQL注入"),
+            java.util.Map.entry("XSS_ATTACK", "跨站脚本攻击"), java.util.Map.entry("UNAUTHORIZED_ACCESS", "未授权访问"),
+            java.util.Map.entry("MEMORY_USAGE", "内存使用异常"), java.util.Map.entry("CPU_USAGE", "CPU使用异常"),
+            java.util.Map.entry("DISK_USAGE", "磁盘使用异常"), java.util.Map.entry("PROCESS_ANOMALY", "进程异常"),
+            java.util.Map.entry("SCRIPT_EXECUTION_FAILURE", "脚本执行失败"), java.util.Map.entry("PORT_SCAN", "端口扫描"),
+            java.util.Map.entry("LATERAL_MOVEMENT", "横向移动"), java.util.Map.entry("PERSISTENCE", "持久化"),
+            java.util.Map.entry("EXPLOIT", "漏洞利用"), java.util.Map.entry("BACKDOOR", "后门程序"),
+            java.util.Map.entry("RANSOMWARE", "勒索软件"), java.util.Map.entry("CRYPTO_MINING", "加密货币挖矿"),
+            java.util.Map.entry("ANOMALY_DETECTED", "异常检测"), java.util.Map.entry("POLICY_VIOLATION", "策略违规"),
+            java.util.Map.entry("SYSTEM_ANOMALY", "系统异常"), java.util.Map.entry("SECURITY_ANOMALY", "安全异常")
+    );
+
+    private static final java.util.Map<String, String> SOURCE_ZH = java.util.Map.of(
+            "WINDOWS", "Windows系统", "APPLICATION", "应用程序", "NETWORK", "网络设备",
+            "LINUX", "Linux系统", "DATABASE", "数据库", "FIREWALL", "防火墙",
+            "IDS", "入侵检测", "ANTIVIRUS", "防病毒", "安全日志采集脚本", "安全日志采集脚本"
+    );
+
+    private static final java.util.Map<String, String> ALERT_STATUS_ZH = java.util.Map.of(
+            "PENDING", "待处理", "PROCESSING", "处理中", "RESOLVED", "已解决", "FALSE_POSITIVE", "误报"
+    );
+
+    private String zhSeverity(String v) { return v != null ? SEVERITY_ZH.getOrDefault(v.toUpperCase(), v) : ""; }
+    private String zhEventType(String v) { return v != null ? EVENT_TYPE_ZH.getOrDefault(v, EVENT_TYPE_ZH.getOrDefault(v.toUpperCase(), v)) : ""; }
+    private String zhSource(String v) { return v != null ? SOURCE_ZH.getOrDefault(v, SOURCE_ZH.getOrDefault(v.toUpperCase(), v)) : ""; }
+    private String zhAlertStatus(String v) { return v != null ? ALERT_STATUS_ZH.getOrDefault(v.toUpperCase(), v) : ""; }
 }

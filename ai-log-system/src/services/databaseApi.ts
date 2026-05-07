@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios';
+import { getToken } from '@/utils/authStorage';
 
 // 创建axios实例
 const api = axios.create({
@@ -18,7 +19,7 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     // 添加认证token（如果需要）
-    const token = localStorage.getItem('token');
+    const token = getToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

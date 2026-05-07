@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios';
 import { message } from 'antd';
 import { isTokenExpired } from '@/app';
+import { getToken, setToken, setUser, clearAuth } from '@/utils/authStorage';
 
 let isRedirecting = false;
 let isRefreshing = false;
@@ -16,6 +17,7 @@ function addRefreshSubscriber(cb: (token: string) => void) {
 }
 
 type DataApiInstance = Omit<AxiosInstance, 'get' | 'post' | 'put' | 'delete' | 'patch' | 'request'> & {
+  <T = any>(url: string, config?: AxiosRequestConfig): Promise<T>;
   request<T = any>(config: AxiosRequestConfig): Promise<T>;
   get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>;
   delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T>;
@@ -32,7 +34,7 @@ const instance = axios.create({
 }) as unknown as DataApiInstance;
 
 instance.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
   }
@@ -47,7 +49,7 @@ instance.interceptors.response.use(
     const originalRequest = error.config;
 
     if (status === 401 && !url.includes('/auth/login') && !url.includes('/auth/validate') && !url.includes('/auth/refresh')) {
-      const token = localStorage.getItem('token');
+      const token = getToken();
 
       if (token && !isTokenExpired(token) && !isRefreshing) {
         isRefreshing = true;
@@ -59,10 +61,10 @@ instance.interceptors.response.use(
 
           if (res.data?.token) {
             const newToken = res.data.token;
-            localStorage.setItem('token', newToken);
+            setToken(newToken);
             const user = res.data.user;
             if (user) {
-              localStorage.setItem('user', JSON.stringify(user));
+              setUser(JSON.stringify(user));
             }
             onRefreshed(newToken);
             originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
@@ -84,12 +86,10 @@ instance.interceptors.response.use(
 
       if (!isRedirecting) {
         isRedirecting = true;
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        clearAuth();
         message.warning('登录已过期，请重新登录');
-        const currentPath = window.location.pathname + window.location.search;
         setTimeout(() => {
-          window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
+          window.location.href = '/login';
           isRedirecting = false;
         }, 500);
       }

@@ -26,9 +26,10 @@ import java.util.Map;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/export")
+@RequestMapping("/export")
 @RequiredArgsConstructor
 @Tag(name = "数据导出", description = "数据导出相关接口")
+@org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
 public class DataExportController {
 
     private final DataExportService dataExportService;

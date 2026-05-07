@@ -3,6 +3,7 @@ import { Form, Input, Button, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined, SafetyOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { useModel } from '@/utils/useModel';
 import { history, useLocation } from 'umi';
+import { setToken, setUser } from '@/utils/authStorage';
 import styles from './index.less';
 
 const { Title, Text } = Typography;
@@ -132,8 +133,8 @@ const LoginPage: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        setToken(data.token);
+        setUser(JSON.stringify(data.user));
         
         setInitialState({
           user: data.user,
@@ -274,16 +275,11 @@ const LoginPage: React.FC = () => {
           {/* 底部信息 */}
           <div className={styles.footer}>
             <div className={styles.divider}>
-              <span>测试账号</span>
+              <span>提示</span>
             </div>
             <div className={styles.accountInfo}>
               <div className={styles.accountItem}>
-                <span className={styles.accountLabel}>管理员</span>
-                <span className={styles.accountValue}>admin / 123456</span>
-              </div>
-              <div className={styles.accountItem}>
-                <span className={styles.accountLabel}>操作员</span>
-                <span className={styles.accountValue}>operator / 123456</span>
+                <span className={styles.accountLabel}>请联系管理员获取账号</span>
               </div>
             </div>
           </div>

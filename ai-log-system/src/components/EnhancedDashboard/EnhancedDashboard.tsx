@@ -1,13 +1,51 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useNotification } from '../../hooks/useNotification';
-import { useWebSocket } from '@/services/websocket';
+import { useWebSocketContext } from '@/contexts/WebSocketContext';
 import { logApi, alertApi } from '@/services/api';
 import DashboardTopBar from './DashboardTopBar';
 import OverviewPage from './pages/OverviewPage';
 import NotificationPanel from '../NotificationPanel';
-import {
-  SecurityEvent,
-} from './types/dashboard';
+import { SecurityEvent } from './types/dashboard';
+
+const wsEventToSecurityEvent = (wsEvent: any): SecurityEvent | null => {
+  const d = wsEvent.data;
+  if (wsEvent.type === 'ALERT' && d?.alertLevel) {
+    return {
+      id: `alert-${d.id || wsEvent.id}`,
+      timestamp: d.createdTime || new Date(wsEvent.ts).toISOString(),
+      level: normalizeLevel(d.alertLevel),
+      type: d.alertType,
+      message: d.description,
+      status: 'NEW',
+      tags: [],
+    };
+  }
+  if (wsEvent.type === 'LOG') {
+    const log = d?.log || d;
+    if (log?.eventId || log?.id) {
+      return {
+        id: `log-${log.id ?? `${log.eventId}-${wsEvent.ts}`}`,
+        timestamp: log.eventTime || new Date(wsEvent.ts).toISOString(),
+        level: normalizeLevel(log.threatLevel || log.level),
+        type: `事件ID ${log.eventId ?? 'UNKNOWN'}`,
+        message: log.rawMessage || log.normalizedMessage || '实时日志事件',
+        status: 'NEW',
+        tags: ['日志'],
+      };
+    }
+  }
+  return null;
+};
+
+function normalizeLevel(level?: string): SecurityEvent['level'] {
+  const upper = (level || '').toUpperCase();
+  if (upper === 'CRITICAL' || upper === 'HIGH' || upper === 'MEDIUM' || upper === 'LOW') {
+    return upper as SecurityEvent['level'];
+  }
+  if (upper === 'ERROR') return 'HIGH';
+  if (upper === 'WARN' || upper === 'WARNING') return 'MEDIUM';
+  return 'LOW';
+}
 
 const EnhancedDashboard: React.FC = () => {
   const [isPaused, setIsPaused] = useState(false);
@@ -22,89 +60,24 @@ const EnhancedDashboard: React.FC = () => {
   const { unreadCount } = useNotification();
 
   const {
-    connected,
-    logs: socketLogs,
-    alerts: socketAlerts,
-    statistics,
+    status: wsStatus,
+    events: wsEvents,
     reconnect,
-  } = useWebSocket();
+  } = useWebSocketContext();
 
-  const normalizeLevel = useCallback((level?: string): SecurityEvent['level'] => {
-    const upper = (level || '').toUpperCase();
-    if (upper === 'CRITICAL' || upper === 'HIGH' || upper === 'MEDIUM' || upper === 'LOW') {
-      return upper as SecurityEvent['level'];
-    }
-    if (upper === 'ERROR') return 'HIGH';
-    if (upper === 'WARN' || upper === 'WARNING') return 'MEDIUM';
-    return 'LOW';
-  }, []);
+  const connected = wsStatus === 'OPEN';
 
-  const hydrateFromSocket = useCallback(() => {
-    if (!isMounted.current || isPaused) return;
-
-    const socketAlertEvents: SecurityEvent[] = (socketAlerts || []).map(alert => ({
-      id: `alert-${alert.id}`,
-      timestamp: alert.createdTime,
-      level: normalizeLevel(alert.alertLevel),
-      type: alert.alertType,
-      message: alert.description,
-      status: alert.handled ? 'RESOLVED' : 'NEW',
-      tags: alert.eventData ? [alert.eventData] : [],
-    }));
-
-    const socketLogEvents: SecurityEvent[] = (socketLogs || []).map((log: any) => ({
-      id: `log-${log.id ?? `${log.eventId}-${log.eventTime}`}`,
-      timestamp: log.eventTime || new Date().toISOString(),
-      level: normalizeLevel(log.threatLevel || log.level),
-      type: `事件ID ${log.eventId ?? 'UNKNOWN'}`,
-      message: log.rawMessage || log.normalizedMessage || '实时日志事件',
-      status: 'NEW',
-      tags: ['日志'],
-    }));
-
-    const mergedSocketEvents = [...socketAlertEvents, ...socketLogEvents];
-    if (mergedSocketEvents.length > 0) {
-      const mapped: SecurityEvent[] = mergedSocketEvents.map(alert => ({
-        id: `${alert.id}`,
-        timestamp: alert.timestamp,
-        level: alert.level,
-        type: alert.alertType,
-        message: alert.message,
-        status: alert.status,
-        tags: alert.tags || [],
-      }));
-
-      setEvents(prev => {
-        const existingIds = new Set(prev.map(e => e.id));
-        const newItems = mapped.filter(e => !existingIds.has(e.id));
-        return [...newItems, ...prev].slice(0, 50);
-      });
-      setEventLoading(false);
-    }
-
-    if (statistics) {
-      setLoading(false);
-    }
-  }, [socketAlerts, socketLogs, statistics, isPaused, normalizeLevel]);
-
-  useEffect(() => {
-    hydrateFromSocket();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socketLogs, socketAlerts]);
-
+  // 首次加载：一次性 REST 获取初始事件列表
   const loadInitialData = useCallback(async () => {
     if (!isMounted.current) return;
 
-    const startTime = performance.now();
     setLoading(true);
     setFetchError(null);
 
     try {
-      // 减少初始加载数据量：从100条减少到20条
-      const [statsResult, alertsResult, recentLogsResult] = await Promise.allSettled([
-        logApi.getStatistics(),
+      const [alertsResult, recentLogsResult] = await Promise.allSettled([
         alertApi.getUnhandledAlerts(),
-        logApi.getRecentLogs(20),  // 从100减少到20
+        logApi.getRecentLogs(20),
       ]);
 
       if (!isMounted.current) return;
@@ -115,65 +88,73 @@ const EnhancedDashboard: React.FC = () => {
       const alertPayload = (alertsRes?.data || alertsRes || []) as any[];
       const logPayload = (recentLogsRes?.data || recentLogsRes || []) as any[];
 
-      const mappedAlerts: SecurityEvent[] = alertPayload.map((alert: any) => ({
-        id: `alert-${alert.id}`,
-        timestamp: alert.createdTime,
-        level: normalizeLevel(alert.alertLevel),
-        type: alert.alertType,
-        message: alert.description,
-        status: alert.handled ? 'RESOLVED' : 'NEW',
-        tags: alert.eventData ? [alert.eventData] : [],
+      const mappedAlerts: SecurityEvent[] = alertPayload.map((a: any) => ({
+        id: `alert-${a.id}`,
+        timestamp: a.createdTime,
+        level: normalizeLevel(a.alertLevel),
+        type: a.alertType,
+        message: a.description,
+        status: a.handled ? 'RESOLVED' : 'NEW',
+        tags: a.eventData ? [a.eventData] : [],
       }));
 
-      const mappedLogs: SecurityEvent[] = logPayload.map((log: any) => ({
-        id: `log-${log.id ?? `${log.eventId}-${log.eventTime}`}`,
-        timestamp: log.eventTime || new Date().toISOString(),
-        level: normalizeLevel(log.threatLevel || log.level),
-        type: `事件ID ${log.eventId ?? 'UNKNOWN'}`,
-        message: log.rawMessage || log.normalizedMessage || '日志事件',
+      const mappedLogs: SecurityEvent[] = logPayload.map((l: any) => ({
+        id: `log-${l.id ?? `${l.eventId}-${l.eventTime}`}`,
+        timestamp: l.eventTime || new Date().toISOString(),
+        level: normalizeLevel(l.threatLevel || l.level),
+        type: `事件ID ${l.eventId ?? 'UNKNOWN'}`,
+        message: l.rawMessage || l.normalizedMessage || '日志事件',
         status: 'NEW',
         tags: ['日志'],
       }));
 
       const merged = [...mappedAlerts, ...mappedLogs]
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, 50);  // 从100减少到50
+        .slice(0, 50);
+
       setEvents(merged);
       setEventLoading(false);
 
-      const allFailed =
-        statsResult.status === 'rejected' &&
-        alertsResult.status === 'rejected' &&
-        recentLogsResult.status === 'rejected';
+      const allFailed = alertsResult.status === 'rejected' && recentLogsResult.status === 'rejected';
       if (allFailed && merged.length === 0) {
         setFetchError('获取实时数据失败，请稍后重试');
-      } else {
-        setFetchError(null);
       }
-
-      // 性能监控日志
-      const endTime = performance.now();
-      const loadTime = Math.round(endTime - startTime);
-      console.log(`✅ 仪表盘数据加载完成，耗时: ${loadTime}ms`);
-      console.log(`📊 加载数据: ${mappedAlerts.length}条告警, ${mappedLogs.length}条日志`);
-    } catch (error) {
-      if (!isMounted.current) return;
-      console.error('加载实时数据失败', error);
+    } catch {
       setFetchError('获取实时数据失败，请稍后重试');
     } finally {
-      if (!isMounted.current) return;
-      setLoading(false);
+      if (isMounted.current) setLoading(false);
     }
-  }, [normalizeLevel]);
+  }, []);
 
+  // 首次加载
   useEffect(() => {
     isMounted.current = true;
     loadInitialData();
-    return () => {
-      isMounted.current = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => { isMounted.current = false; };
+  }, [loadInitialData]);
+
+  // WebSocket events 变化时，将新的 WSEvent 合并到 SecurityEvent 列表
+  useEffect(() => {
+    if (!wsEvents.length || isPaused) return;
+
+    setEvents(prev => {
+      const existingIds = new Set(prev.map(e => e.id));
+      let updated = prev;
+
+      for (let i = 0; i < wsEvents.length; i++) {
+        const se = wsEventToSecurityEvent(wsEvents[i]);
+        if (se && !existingIds.has(se.id)) {
+          updated = [se, ...updated];
+          existingIds.add(se.id);
+        }
+      }
+
+      return updated.slice(0, 50);
+    });
+
+    setEventLoading(false);
+    setLoading(false);
+  }, [wsEvents, isPaused]);
 
   const eventStats = useMemo(() => events.reduce((acc, e) => {
     acc.total += 1;
@@ -194,6 +175,7 @@ const EnhancedDashboard: React.FC = () => {
     <div>
       <DashboardTopBar
         connected={connected}
+        wsStatus={wsStatus}
         reconnect={reconnect}
         isPaused={isPaused}
         setIsPaused={setIsPaused}

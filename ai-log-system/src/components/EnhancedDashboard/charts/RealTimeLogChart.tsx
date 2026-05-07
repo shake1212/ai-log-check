@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Typography, Spin, Alert } from 'antd';
 import { analysisApi } from '@/services/api';
+import { useWebSocketContext } from '@/contexts/WebSocketContext';
 import { format } from 'date-fns';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -15,7 +16,6 @@ interface RealTimeLogChartProps {
   height?: number;
   loading?: boolean;
   isPaused?: boolean;
-  refreshInterval?: number;
 }
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -56,35 +56,21 @@ const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
   height = 220,
   loading = false,
   isPaused = false,
-  refreshInterval = 10000,
 }) => {
   const [chartData, setChartData] = useState<any[]>(initialData);
   const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dataRef = useRef(chartData);
-  const lastFetchRef = useRef(0);
-  const cacheRef = useRef<any>(null);
+  const { statistics, status: wsStatus } = useWebSocketContext();
 
+  // 首次加载一次
   const loadChartData = useCallback(async () => {
     if (isPaused) return;
-    const now = Date.now();
-    if (now - lastFetchRef.current < 5000 && cacheRef.current) {
-      const traffic = cacheRef.current;
-      const updated = [...dataRef.current, {
-        time: now,
-        value: Number(traffic.currentTraffic || 0),
-        type: Number(traffic.anomalyTraffic || 0) > 0 ? 'anomaly' : 'normal',
-      }].slice(-100);
-      setChartData(updated);
-      dataRef.current = updated;
-      return;
-    }
     setChartLoading(true);
     setError(null);
     try {
       const traffic = await analysisApi.getTrafficStats();
-      cacheRef.current = traffic;
-      lastFetchRef.current = now;
+      const now = Date.now();
       const updated = [...dataRef.current, {
         time: now,
         value: Number(traffic.currentTraffic || 0),
@@ -103,11 +89,29 @@ const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
 
   useEffect(() => {
     loadChartData();
-    if (!isPaused && refreshInterval > 0) {
-      const id = setInterval(loadChartData, refreshInterval);
-      return () => clearInterval(id);
-    }
-  }, [loadChartData, isPaused, refreshInterval]);
+  }, [loadChartData]);
+
+  // WS STATS 推送时追加数据点
+  useEffect(() => {
+    if (!statistics || isPaused) return;
+    const now = Date.now();
+    const throughput = statistics.throughput || statistics.cpu_percent || 0;
+    const isAnomaly = statistics.anomalyCount > 0;
+    const updated = [...dataRef.current, {
+      time: now,
+      value: Number(throughput),
+      type: isAnomaly ? 'anomaly' : 'normal',
+    }].slice(-100);
+    setChartData(updated);
+    dataRef.current = updated;
+  }, [statistics, isPaused]);
+
+  // WS断线时降级轮询(30秒)
+  useEffect(() => {
+    if (wsStatus === 'OPEN' || isPaused) return;
+    const id = setInterval(loadChartData, 30000);
+    return () => clearInterval(id);
+  }, [wsStatus, isPaused, loadChartData]);
 
   if (error && chartData.length === 0) {
     return (
@@ -120,13 +124,11 @@ const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
     );
   }
 
-  // 标题栏高度约 44px，图表占剩余空间
   const HEADER_H = 44;
   const chartH = height - HEADER_H;
 
   return (
     <div style={{ height, display: 'flex', flexDirection: 'column' }}>
-      {/* 标题栏 */}
       <div style={{
         height: HEADER_H, flexShrink: 0,
         padding: '0 16px',
@@ -144,7 +146,6 @@ const RealTimeLogChart: React.FC<RealTimeLogChartProps> = ({
         </div>
       </div>
 
-      {/* 图表区域 */}
       <Spin spinning={chartLoading} style={{ flex: 1 }}>
         <div style={{ height: chartH }}>
           <ResponsiveContainer width="100%" height="100%">

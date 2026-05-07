@@ -33,6 +33,9 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
     private AlertService alertService;
 
     @Autowired
+    private com.security.ailogsystem.repository.UnifiedEventRepository unifiedEventRepository;
+
+    @Autowired
     private WebSocketService webSocketService;
 
     @Value("${security.detection.brute-force.threshold:5}")
@@ -262,6 +265,16 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
             // 如果有相关的日志条目ID
             if (log.getId() != null) {
                 alertRequest.setLogEntryId(log.getId());
+            }
+
+            // 尝试关联统一安全事件
+            try {
+                Long unifiedEventId = findUnifiedEventId(log);
+                if (unifiedEventId != null) {
+                    alertRequest.setUnifiedEventId(unifiedEventId);
+                }
+            } catch (Exception e) {
+                logger.debug("查找关联统一事件失败: {}", e.getMessage());
             }
 
             // 设置 AI 置信度（这里可以根据威胁等级设置一个置信度）
@@ -526,5 +539,22 @@ public class ThreatDetectionServiceImpl implements ThreatDetectionService {
         }
 
         return stats;
+    }
+
+    private Long findUnifiedEventId(com.security.ailogsystem.entity.SecurityLog log) {
+        if (log == null || log.getEventTime() == null) return null;
+        try {
+            java.time.LocalDateTime eventTime = log.getEventTime();
+            java.time.LocalDateTime start = eventTime.minusSeconds(5);
+            java.time.LocalDateTime end = eventTime.plusSeconds(5);
+            var events = unifiedEventRepository.findByTimestampBetween(start, end,
+                    org.springframework.data.domain.PageRequest.of(0, 1));
+            if (!events.isEmpty()) {
+                return events.getContent().get(0).getId();
+            }
+        } catch (Exception e) {
+            logger.debug("通过时间查找统一事件失败: {}", e.getMessage());
+        }
+        return null;
     }
 }

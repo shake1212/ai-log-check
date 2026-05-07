@@ -113,6 +113,13 @@ public interface UnifiedEventRepository extends JpaRepository<UnifiedSecurityEve
     // 获取最近事件
     List<UnifiedSecurityEvent> findTop100ByOrderByTimestampDesc();
 
+    // 游标分页：基于最后一条记录的ID，避免深分页OFFSET性能问题
+    @Query("SELECT e FROM UnifiedSecurityEvent e WHERE e.id < :lastId ORDER BY e.id DESC")
+    List<UnifiedSecurityEvent> findByCursor(@Param("lastId") Long lastId, Pageable pageable);
+
+    @Query("SELECT e FROM UnifiedSecurityEvent e WHERE e.id < :lastId AND e.isAnomaly = true ORDER BY e.id DESC")
+    List<UnifiedSecurityEvent> findAnomalyByCursor(@Param("lastId") Long lastId, Pageable pageable);
+
     // 按事件类型查找最近的事件ID（用于关联告警）
     @Query(value = "SELECT e.id FROM unified_security_events e WHERE e.event_type = :eventType AND e.timestamp >= :since ORDER BY e.timestamp DESC LIMIT 1", nativeQuery = true)
     List<Long> findRecentIdByEventType(@Param("eventType") String eventType, @Param("since") LocalDateTime since);
@@ -160,4 +167,13 @@ public interface UnifiedEventRepository extends JpaRepository<UnifiedSecurityEve
     
     long countByUserIdAndIsAnomalyTrueAndTimestampBetween(
         String userId, LocalDateTime start, LocalDateTime end);
+
+    @Query("SELECT e.sourceIp, COUNT(e) FROM UnifiedSecurityEvent e " +
+            "WHERE e.eventType IN ('LOGIN_FAILURE', 'AUTH_FAILURE', 'BRUTE_FORCE', 'BRUTE_FORCE_ATTACK') " +
+            "AND e.timestamp >= :start " +
+            "GROUP BY e.sourceIp HAVING COUNT(e) > :threshold")
+    List<Object[]> findBruteForceAttempts(@Param("start") LocalDateTime start,
+                                           @Param("threshold") Long threshold);
+
+    long countByTimestampGreaterThanEqual(LocalDateTime timestamp);
 }

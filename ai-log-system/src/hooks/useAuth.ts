@@ -3,6 +3,7 @@ import { useModel, history } from 'umi';
 import { message } from 'antd';
 import { authApi } from '@/services/api';
 import { isTokenExpired as checkTokenExpired } from '@/app';
+import { setToken, setUser, clearAuth, getToken as getAuthToken } from '@/utils/authStorage';
 import type { LoginForm, User } from '@/types';
 
 export const useAuth = () => {
@@ -19,8 +20,8 @@ export const useAuth = () => {
         const { token, user } = response.data;
         
         // 保存到localStorage
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(user));
+        setToken(token);
+        setUser(JSON.stringify(user));
         
         // 更新全局状态
         setInitialState({
@@ -51,9 +52,7 @@ export const useAuth = () => {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      // 清除本地存储
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      clearAuth();
       
       // 更新全局状态
       setInitialState({
@@ -73,8 +72,7 @@ export const useAuth = () => {
       if (response.code === 200) {
         const user = response.data;
         
-        // 更新localStorage
-        localStorage.setItem('user', JSON.stringify(user));
+        setUser(JSON.stringify(user));
         
         // 更新全局状态
         setInitialState(prev => ({
@@ -101,7 +99,7 @@ export const useAuth = () => {
 
   // 获取token
   const getToken = useCallback((): string | undefined => {
-    return initialState?.token || localStorage.getItem('token') || undefined;
+    return initialState?.token || getAuthToken() || undefined;
   }, [initialState]);
 
   const isTokenExpired = useCallback((): boolean => {

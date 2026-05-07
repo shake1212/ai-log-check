@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Result, Button } from 'antd';
+import { getUser } from '@/utils/authStorage';
 
 interface PermissionWrapperProps {
   children: React.ReactNode;
@@ -17,8 +18,7 @@ const PermissionWrapper: React.FC<PermissionWrapperProps> = ({
     return <>{children}</>;
   }
   
-  // Get user from localStorage
-  const userStr = localStorage.getItem('user');
+  const userStr = getUser();
   if (!userStr) {
     return <Navigate to="/login" replace />;
   }

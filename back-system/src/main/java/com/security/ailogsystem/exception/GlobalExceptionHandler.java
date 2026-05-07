@@ -76,7 +76,7 @@ public class GlobalExceptionHandler {
         logger.error("Database error occurred: {}", ex.getMessage(), ex);
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "数据库操作失败: " + ex.getMessage(),
+                "数据库操作失败",
                 LocalDateTime.now()
         );
         return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -88,7 +88,7 @@ public class GlobalExceptionHandler {
         logger.error("Transaction error occurred: {}", ex.getMessage(), ex);
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "事务操作失败: " + ex.getMessage(),
+                "事务操作失败",
                 LocalDateTime.now()
         );
         return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -225,7 +225,7 @@ public class GlobalExceptionHandler {
         logger.error("Unexpected error occurred: {}", ex.getMessage(), ex);
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),
-                "系统内部错误: " + ex.getMessage(),
+                "系统内部错误，请联系管理员",
                 LocalDateTime.now()
         );
         return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);

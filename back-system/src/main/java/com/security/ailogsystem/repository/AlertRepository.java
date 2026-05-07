@@ -53,11 +53,19 @@ public interface AlertRepository extends JpaRepository<Alert, Long>, JpaSpecific
             @Param("status") Alert.AlertStatus status,
             Pageable pageable);
 
+    // 游标分页：避免深分页OFFSET性能问题
+    @Query("SELECT a FROM Alert a WHERE a.id < :lastId AND a.handled = false ORDER BY a.id DESC")
+    List<Alert> findUnhandledByCursor(@Param("lastId") Long lastId, Pageable pageable);
+
     // 统计未处理告警数量
     long countByHandledFalse();
 
     // 按级别统计
     long countByAlertLevel(String alertLevel);
+
+    // 按级别GROUP BY统计（替代4次countByAlertLevel）
+    @Query("SELECT a.alertLevel, COUNT(a) FROM Alert a GROUP BY a.alertLevel")
+    List<Object[]> countByAlertLevelGroup();
 
     long countByHandled(boolean b);
 
@@ -96,11 +104,10 @@ public interface AlertRepository extends JpaRepository<Alert, Long>, JpaSpecific
     List<Alert> findByHandledFalseOrderByCreatedTimeDesc();
 
     // 获取最近N条告警
-    @Query(value = "SELECT * FROM alerts ORDER BY created_time DESC LIMIT :limit", nativeQuery = true)
+    @Query(value = "SELECT id, alert_id, source, alert_type, alert_level, description, handled, status, created_time FROM alerts ORDER BY created_time DESC LIMIT :limit", nativeQuery = true)
     List<Alert> findRecentAlerts(@Param("limit") int limit);
 
-    // 获取最近N条未处理告警
-    @Query(value = "SELECT * FROM alerts WHERE handled = false ORDER BY created_time DESC LIMIT :limit", nativeQuery = true)
+    @Query(value = "SELECT id, alert_id, source, alert_type, alert_level, description, handled, status, created_time FROM alerts WHERE handled = false ORDER BY created_time DESC LIMIT :limit", nativeQuery = true)
     List<Alert> findRecentUnhandledAlerts(@Param("limit") int limit);
 
     // 获取热门源IP（前10个）
@@ -121,10 +128,6 @@ public interface AlertRepository extends JpaRepository<Alert, Long>, JpaSpecific
             "ORDER BY HOUR(a.createdTime) ASC")
     List<Object[]> getLast24HoursHourlyCounts(@Param("twentyFourHoursAgo") LocalDateTime twentyFourHoursAgo);
 
-    // 查询统一事件关联的安全日志ID
-    @Query(value = "SELECT security_log_id FROM unified_security_events WHERE id = :unifiedEventId", nativeQuery = true)
-    List<Object[]> findSecurityLogIdByUnifiedEventId(@Param("unifiedEventId") Long unifiedEventId);
-
     // 查询指定时间之前的告警（用于数据清理）
     List<Alert> findByCreatedTimeBefore(LocalDateTime time);
 
@@ -136,15 +139,19 @@ public interface AlertRepository extends JpaRepository<Alert, Long>, JpaSpecific
     default java.util.Map<String, Object> getDashboardStatistics() {
         java.util.Map<String, Object> stats = new java.util.HashMap<>();
 
-        // 总告警数
         stats.put("totalAlerts", count());
 
-        // 威胁等级分布
+        // 威胁等级分布（1次GROUP BY替代4次独立查询）
         java.util.Map<String, Long> threatLevels = new java.util.HashMap<>();
-        threatLevels.put("LOW", countByAlertLevel("LOW"));
-        threatLevels.put("MEDIUM", countByAlertLevel("MEDIUM"));
-        threatLevels.put("HIGH", countByAlertLevel("HIGH"));
-        threatLevels.put("CRITICAL", countByAlertLevel("CRITICAL"));
+        threatLevels.put("LOW", 0L);
+        threatLevels.put("MEDIUM", 0L);
+        threatLevels.put("HIGH", 0L);
+        threatLevels.put("CRITICAL", 0L);
+        for (Object[] row : countByAlertLevelGroup()) {
+            String level = (String) row[0];
+            Long count = ((Number) row[1]).longValue();
+            threatLevels.put(level, count);
+        }
         stats.put("threatLevels", threatLevels);
 
         // 安全事件总数（MEDIUM及以上）

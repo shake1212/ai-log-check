@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Badge, Dropdown, Space, Typography } from 'antd';
+import { Button, Badge, Dropdown, Space, Typography, Tag } from 'antd';
 import {
   RobotOutlined,
   PauseCircleOutlined,
@@ -8,12 +8,25 @@ import {
   ExportOutlined,
   FileExcelOutlined,
   CodeOutlined,
+  LoadingOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
+import type { WSStatus } from '@/contexts/WebSocketContext';
+import { getToken } from '@/utils/authStorage';
 
 const { Text } = Typography;
 
+const WS_STATUS_CONFIG: Record<WSStatus, { color: string; label: string }> = {
+  CONNECTING: { color: 'processing', label: '连接中' },
+  OPEN: { color: 'success', label: '已连接' },
+  CLOSED: { color: 'default', label: '已断开' },
+  RECONNECTING: { color: 'warning', label: '重连中' },
+  ERROR: { color: 'error', label: '连接错误' },
+};
+
 export interface DashboardTopBarProps {
   connected: boolean;
+  wsStatus: WSStatus;
   reconnect: () => void;
   isPaused: boolean;
   setIsPaused: (v: boolean) => void;
@@ -33,14 +46,14 @@ const TYPE_LABEL: Record<string, string> = {
 const handleExport = (key: string) => {
   const [dataType, format] = key.split('_');
   const ext = format === 'excel' ? 'xlsx' : format;
-  const token = localStorage.getItem('token');
+  const token = getToken();
   const label = TYPE_LABEL[dataType] ?? dataType;
   const ts = new Date().toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '');
   const filename = `${label}_${ts}.${ext}`;
   const backendBase = process.env.NODE_ENV === 'development' ? 'http://localhost:8080' : '';
 
   const xhr = new XMLHttpRequest();
-  xhr.open('GET', `${backendBase}/api/api/export/${dataType}?format=${format}`, true);
+  xhr.open('GET', `/api/export/${dataType}?format=${format}`, true);
   xhr.responseType = 'blob';
   if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
@@ -114,6 +127,7 @@ const exportMenuItems = [
 
 const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
   connected,
+  wsStatus,
   reconnect,
   isPaused,
   setIsPaused,
@@ -142,25 +156,14 @@ const DashboardTopBar: React.FC<DashboardTopBarProps> = ({
           AI 智能安全监控
         </Text>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <div
-            style={{
-              width: '10px',
-              height: '10px',
-              borderRadius: '50%',
-              background: connected ? '#52c41a' : '#ff4d4f',
-              boxShadow: `0 0 6px ${connected ? '#52c41a' : '#ff4d4f'}`,
-            }}
-          />
-          {connected ? (
-            <Text style={{ fontSize: '13px', color: '#52c41a' }}>已连接</Text>
-          ) : (
-            <Text
-              style={{ fontSize: '13px', color: '#ff4d4f', cursor: 'pointer', textDecoration: 'underline' }}
-              onClick={reconnect}
-            >
-              点击重连
-            </Text>
-          )}
+          <Tag
+            color={WS_STATUS_CONFIG[wsStatus].color}
+            icon={wsStatus === 'CONNECTING' || wsStatus === 'RECONNECTING' ? <LoadingOutlined spin /> : wsStatus === 'ERROR' ? <WarningOutlined /> : undefined}
+            style={{ margin: 0, fontSize: 11, lineHeight: '18px', cursor: wsStatus !== 'OPEN' ? 'pointer' : 'default' }}
+            onClick={() => { if (wsStatus !== 'OPEN') reconnect(); }}
+          >
+            {WS_STATUS_CONFIG[wsStatus].label}
+          </Tag>
         </div>
       </div>
 

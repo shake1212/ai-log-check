@@ -1,6 +1,9 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Layout, Menu, Typography, Avatar, Dropdown, Badge, Button, Space, Tabs, Spin } from 'antd';
 import { useNotification } from '../hooks/useNotification';
+import { WebSocketProvider } from '../contexts/WebSocketContext';
+import { getUser, clearAuth, getToken } from '@/utils/authStorage';
+import { isTokenExpired } from '@/app';
 import NotificationPanel from '../components/NotificationPanel';
 import {
   DashboardOutlined,
@@ -37,6 +40,14 @@ const { Title, Text } = Typography;
 const { TabPane } = Tabs;
 
 export default function DefaultLayout() {
+  // 认证检查：渲染前同步检查，避免闪烁
+  const token = getToken();
+  if (!token || isTokenExpired(token)) {
+    clearAuth();
+    window.location.href = '/login';
+    return null;
+  }
+
   const [collapsed, setCollapsed] = useState(false);
   const [notificationPanelVisible, setNotificationPanelVisible] = useState(false);
   const [currentPath, setCurrentPath] = useState('/dashboard');
@@ -44,17 +55,31 @@ export default function DefaultLayout() {
   const [tabQuery, setTabQuery] = useState<Record<string, string>>({});
   const [currentUser, setCurrentUser] = useState<{ username: string; role: string } | null>(null);
 
-  // 加载当前用户信息
+  // 加载当前用户信息（响应存储变化）
   useEffect(() => {
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      try {
-        const user = JSON.parse(userStr);
-        setCurrentUser(user);
-      } catch (e) {
-        console.error('解析用户信息失败:', e);
+    const loadUser = () => {
+      const userStr = getUser();
+      if (userStr) {
+        try {
+          const user = JSON.parse(userStr);
+          setCurrentUser(user);
+        } catch (e) {
+          console.error('解析用户信息失败:', e);
+        }
+      } else {
+        setCurrentUser(null);
       }
-    }
+    };
+
+    loadUser();
+
+    const handleStorage = () => loadUser();
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('auth-change', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('auth-change', handleStorage);
+    };
   }, []);
 
   // 监听URL hash变化
@@ -163,8 +188,7 @@ export default function DefaultLayout() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    clearAuth();
     window.location.href = '/login';
   };
 
@@ -212,6 +236,7 @@ export default function DefaultLayout() {
   };
 
   return (
+    <WebSocketProvider>
     <Layout style={{ minHeight: '100vh', display: 'flex' }}>
       {/* 通知面板 */}
       <NotificationPanel 
@@ -393,5 +418,6 @@ export default function DefaultLayout() {
         </Footer>
       </Layout>
     </Layout>
+    </WebSocketProvider>
   );
 }

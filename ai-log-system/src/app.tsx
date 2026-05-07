@@ -2,29 +2,44 @@
 // 注意：Umi 4 的运行时配置与 Umi 3 不同，这里只保留基本配置
 
 import { setupRequestInterceptor } from '@/utils/request';
+import { getToken, getUser, clearAuth } from '@/utils/authStorage';
 
 setupRequestInterceptor();
 
-const TOKEN_PREFIX = 'jwt-token-';
 const TOKEN_VALIDITY_MS = 24 * 60 * 60 * 1000;
 
 export function isTokenExpired(token: string): boolean {
-  if (!token || !token.startsWith(TOKEN_PREFIX)) return true;
+  if (!token) return true;
   try {
-    const payload = token.substring(TOKEN_PREFIX.length);
-    const lastDash = payload.lastIndexOf('-');
-    if (lastDash <= 0) return true;
-    const timestamp = parseInt(payload.substring(lastDash + 1), 10);
-    if (isNaN(timestamp)) return true;
-    return Date.now() - timestamp >= TOKEN_VALIDITY_MS;
+    // 标准JWT格式: eyJ...
+    const parts = token.split('.');
+    if (parts.length === 3) {
+      const payload = JSON.parse(atob(parts[1]));
+      if (payload.exp) {
+        return Date.now() >= payload.exp * 1000;
+      }
+    }
+    // 兼容自定义格式 jwt-token-payload-timestamp
+    if (token.startsWith('jwt-token-')) {
+      const payload = token.substring('jwt-token-'.length);
+      const lastDash = payload.lastIndexOf('-');
+      if (lastDash > 0) {
+        const timestamp = parseInt(payload.substring(lastDash + 1), 10);
+        if (!isNaN(timestamp)) {
+          return Date.now() - timestamp >= TOKEN_VALIDITY_MS;
+        }
+      }
+    }
+    // 无法解析过期时间的token，视为有效（由后端validate接口判定）
+    return false;
   } catch {
-    return true;
+    return false;
   }
 }
 
 export async function getInitialState() {
-  const token = localStorage.getItem('token');
-  const userStr = localStorage.getItem('user');
+  const token = getToken();
+  const userStr = getUser();
 
   if (token && !isTokenExpired(token)) {
     try {
@@ -37,8 +52,7 @@ export async function getInitialState() {
   }
 
   if (token && isTokenExpired(token)) {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    clearAuth();
   }
 
   return { isAuthenticated: false };

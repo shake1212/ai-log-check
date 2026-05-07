@@ -286,6 +286,7 @@ public class SecurityAnalysisController {
 
     // 新增接口：获取实时统计（基于事件）
     @GetMapping("/real-time-stats")
+    @org.springframework.cache.annotation.Cacheable(value = "analysis:real-time-stats")
     public ResponseEntity<Map<String, Object>> getRealTimeStats() {
         try {
             Map<String, Object> stats = new HashMap<>();
@@ -306,12 +307,18 @@ public class SecurityAnalysisController {
             // 4. 系统状态
             stats.put("systemStatus", "NORMAL");
 
-            // 5. 威胁分布
+            // 5. 威胁分布（1次GROUP BY替代4次独立查询）
             Map<String, Long> threatDistribution = new HashMap<>();
-            threatDistribution.put("CRITICAL", securityLogRepository.countByThreatLevel("CRITICAL"));
-            threatDistribution.put("HIGH", securityLogRepository.countByThreatLevel("HIGH"));
-            threatDistribution.put("MEDIUM", securityLogRepository.countByThreatLevel("MEDIUM"));
-            threatDistribution.put("LOW", securityLogRepository.countByThreatLevel("LOW"));
+            threatDistribution.put("CRITICAL", 0L);
+            threatDistribution.put("HIGH", 0L);
+            threatDistribution.put("MEDIUM", 0L);
+            threatDistribution.put("LOW", 0L);
+            List<Object[]> threatGroups = securityLogRepository.countByThreatLevelGroupAll();
+            for (Object[] row : threatGroups) {
+                String level = (String) row[0];
+                Long count = ((Number) row[1]).longValue();
+                threatDistribution.put(level, count);
+            }
             stats.put("threatDistribution", threatDistribution);
 
             return ResponseEntity.ok(stats);

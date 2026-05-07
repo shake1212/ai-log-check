@@ -521,7 +521,7 @@ const EventsPage: React.FC<{ initialEventId?: number }> = ({ initialEventId }) =
   // 更新事件状态
   const updateEventStatus = async (id: number, status: string) => {
     try {
-      await request.put(`/api/events/${id}/status?status=${status}`);
+      await request.put(`/api/events/${id}/status`, null, { params: { status } });
       if (!isMountedRef.current) return;
       message.success('事件状态更新成功');
       fetchEvents();

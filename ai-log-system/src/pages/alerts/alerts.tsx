@@ -57,7 +57,7 @@ import type { ColumnsType } from 'antd/es/table';
 // 导入统一 API 服务
 import { api } from '@/services/api';
 import type { SecurityAlert } from '@/types/alert';
-import { getAlertSourceLabel, getAlertTypeLabel, getSeverity, getStatus, normalizeStatusValue } from '@/utils/enumLabels';
+import { getAlertSourceLabel, getAlertTypeLabel, getSeverity, getStatus, normalizeStatusValue, ALERT_TYPE_MAP } from '@/utils/enumLabels';
 import { handleError, logError } from '@/utils/errorHandler';
 
 const { Option } = Select;
@@ -631,13 +631,6 @@ const AlertsPage: React.FC = () => {
           </div>
         );
       },
-      filters: [
-        { text: '严重', value: 'CRITICAL' },
-        { text: '高危', value: 'HIGH' },
-        { text: '中危', value: 'MEDIUM' },
-        { text: '低危', value: 'LOW' },
-      ],
-      onFilter: (value, record) => record.alertLevel === value,
     },
     {
       title: '告警类型',
@@ -1081,21 +1074,9 @@ const AlertsPage: React.FC = () => {
                     allowClear 
                     onChange={() => setTimeout(() => handleSearch(), 0)}
                   >
-                    <Option value="LOGIN_FAILURE">登录失败</Option>
-                    <Option value="LOGIN_SUCCESS">登录成功</Option>
-                    <Option value="BRUTE_FORCE">暴力破解</Option>
-                    <Option value="SUSPICIOUS_IP">可疑IP访问</Option>
-                    <Option value="SUSPICIOUS_PROCESS">可疑进程</Option>
-                    <Option value="UNAUTHORIZED_ACCESS">未授权访问</Option>
-                    <Option value="PRIVILEGE_ESCALATION">权限提升</Option>
-                    <Option value="SECURITY_ANOMALY">安全异常</Option>
-                    <Option value="SYSTEM_ANOMALY">系统异常</Option>
-                    <Option value="CPU_USAGE_HIGH">CPU使用率过高</Option>
-                    <Option value="MEMORY_USAGE_HIGH">内存使用率过高</Option>
-                    <Option value="DISK_USAGE_HIGH">磁盘使用率过高</Option>
-                    <Option value="NETWORK_TRAFFIC_HIGH">网络流量异常</Option>
-                    <Option value="HIGH_RESOURCE_PROCESS">进程资源过高</Option>
-                    <Option value="THREAT_SIGNATURE_MATCH">威胁规则匹配</Option>
+                    {Object.entries(ALERT_TYPE_MAP).map(([key, label]) => (
+                      <Option key={key} value={key}>{label}</Option>
+                    ))}
                   </Select>
                 </Form.Item>
                 <Form.Item name="status" style={{ marginBottom: 0, flex: '1 1 150px', minWidth: '120px' }}>

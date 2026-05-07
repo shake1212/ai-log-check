@@ -7,6 +7,8 @@ import com.security.ailogsystem.service.WindowsLogService;
 import com.security.ailogsystem.service.DataExportService;
 import com.security.ailogsystem.repository.SecurityLogRepository;
 import com.security.ailogsystem.repository.SecurityAlertRepository;
+import com.security.ailogsystem.repository.AlertRepository;
+import com.security.ailogsystem.repository.UnifiedEventRepository;
 import org.springframework.core.io.Resource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
@@ -32,6 +34,12 @@ public class LogController {
 
     @Autowired
     private SecurityAlertRepository alertRepository;
+
+    @Autowired
+    private AlertRepository alertStatsRepository;
+
+    @Autowired
+    private UnifiedEventRepository eventRepository;
 
     @Autowired
     private WindowsLogService logService;
@@ -105,6 +113,7 @@ public class LogController {
      * 获取统计信息（优化版）
      */
     @GetMapping("/statistics")
+    @org.springframework.cache.annotation.Cacheable(value = "logs:statistics")
     public ResponseEntity<Map<String, Object>> getStatistics() {
         LocalDateTime last24Hours = LocalDateTime.now().minusHours(24);
 
@@ -162,24 +171,6 @@ public class LogController {
 
         return ResponseEntity.ok(List.of());
     }
-
-    @GetMapping("/export")
-    public ResponseEntity<Resource> exportLogs(
-            @RequestParam(defaultValue = "csv") String format,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime,
-            @RequestParam(required = false) String level,
-            @RequestParam(required = false) String keyword) {
-        Resource resource = dataExportService.exportLogs(format, startTime, endTime, level, keyword);
-        String ext = "excel".equalsIgnoreCase(format) ? "xlsx" : ("json".equalsIgnoreCase(format) ? "json" : "csv");
-        MediaType mediaType = "excel".equalsIgnoreCase(format)
-                ? MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                : ("json".equalsIgnoreCase(format) ? MediaType.APPLICATION_JSON : MediaType.parseMediaType("text/csv"));
-        return ResponseEntity.ok()
-                .contentType(mediaType)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"logs-export." + ext + "\"")
-                .body(resource);
-    }
     @GetMapping("/threat-levels")
     public ResponseEntity<Map<String, Long>> getThreatLevels(
             @RequestParam(defaultValue = "24") int hours) {
@@ -202,4 +193,109 @@ public class LogController {
         return ResponseEntity.ok(threatLevels);
     }
 
+    /**
+     * Dashboard 聚合接口：一次请求返回所有 Dashboard 所需数据
+     * 替代前端 7 个并发请求为 1 个请求
+     * 统一从 UnifiedSecurityEvent 查询，消除 SecurityLog/UnifiedEvent 双表重复统计
+     */
+    @GetMapping("/dashboard/all-stats")
+    @org.springframework.cache.annotation.Cacheable(value = "dashboard:all-stats")
+    public ResponseEntity<Map<String, Object>> getDashboardAllStats() {
+        Map<String, Object> result = new HashMap<>();
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime last24Hours = now.minusHours(24);
+        LocalDateTime todayStart = now.with(java.time.LocalTime.MIN);
+
+        long totalEvents = eventRepository.count();
+        long todayLogs = eventRepository.countByTimestampAfter(todayStart);
+        long anomalyCount = eventRepository.countByIsAnomalyTrue();
+
+        // 1. 威胁等级分布（24小时）— 从 UnifiedSecurityEvent.threatLevel
+        Map<String, Long> threatLevels = new HashMap<>();
+        threatLevels.put("LOW", 0L);
+        threatLevels.put("MEDIUM", 0L);
+        threatLevels.put("HIGH", 0L);
+        threatLevels.put("CRITICAL", 0L);
+        try {
+            List<Object[]> threatLevelRows = eventRepository.countByThreatLevelGroup(last24Hours, now);
+            for (Object[] row : threatLevelRows) {
+                if (row[0] != null) threatLevels.put((String) row[0], ((Number) row[1]).longValue());
+            }
+        } catch (Exception ignored) {}
+
+        // 2. 严重级别分布（全量）— 从 UnifiedSecurityEvent.severity
+        Map<String, Long> severityCounts = new HashMap<>();
+        try {
+            List<Object[]> severityRows = eventRepository.countBySeverityGroupAll();
+            for (Object[] row : severityRows) {
+                if (row[0] != null) severityCounts.put((String) row[0], ((Number) row[1]).longValue());
+            }
+        } catch (Exception ignored) {}
+
+        // 3. 事件类型分布（24小时）
+        List<Object[]> eventCounts = List.of();
+        try { eventCounts = eventRepository.countByEventTypeGroup(last24Hours, now); } catch (Exception ignored) {}
+
+        // 4. 日统计（7天）
+        List<Object[]> dailyCounts = List.of();
+        try { dailyCounts = eventRepository.getDailyStatistics(now.minusDays(7)); } catch (Exception ignored) {}
+
+        // 5. 暴力破解（24小时，>=5次失败的同IP）
+        List<Object[]> bruteForceAttempts = List.of();
+        try { bruteForceAttempts = eventRepository.findBruteForceAttempts(last24Hours, 5L); } catch (Exception ignored) {}
+
+        // 6. 威胁等级全量分布
+        Map<String, Long> threatDist = new HashMap<>();
+        threatDist.put("CRITICAL", 0L);
+        threatDist.put("HIGH", 0L);
+        threatDist.put("MEDIUM", 0L);
+        threatDist.put("LOW", 0L);
+        try {
+            for (Object[] row : eventRepository.countByThreatLevelGroupAll()) {
+                threatDist.put((String) row[0], ((Number) row[1]).longValue());
+            }
+        } catch (Exception ignored) {}
+
+        // 组装 logsStatistics（前端用）
+        Map<String, Object> logsStats = new HashMap<>();
+        logsStats.put("threatLevels", threatLevels);
+        logsStats.put("totalAlerts", alertStatsRepository.count());
+        logsStats.put("unhandledAlerts", alertStatsRepository.countByHandledFalse());
+        logsStats.put("eventCounts", eventCounts);
+        logsStats.put("dailyCounts", dailyCounts);
+        logsStats.put("bruteForceAttempts", bruteForceAttempts);
+        result.put("logsStatistics", logsStats);
+
+        // 组装 eventDashboardStats（前端用）
+        Map<String, Object> eventStats = new HashMap<>();
+        eventStats.put("totalLogs", totalEvents);
+        eventStats.put("todayLogs", todayLogs);
+        eventStats.put("anomalyCount", anomalyCount);
+        eventStats.put("severityCounts", severityCounts);
+        eventStats.put("lastUpdate", now.toString());
+        result.put("eventDashboardStats", eventStats);
+
+        // 组装 realTimeStats
+        Map<String, Object> realTimeStats = new HashMap<>();
+        realTimeStats.put("totalEvents", totalEvents);
+        realTimeStats.put("activeAlerts", alertStatsRepository.countByHandled(false));
+        realTimeStats.put("eventsLastHour", eventRepository.countByTimestampAfter(now.minusHours(1)));
+        realTimeStats.put("threatDistribution", threatDist);
+        result.put("realTimeStats", realTimeStats);
+
+        // 告警级别分布
+        Map<String, Long> alertLevelStats = new HashMap<>();
+        alertLevelStats.put("CRITICAL", 0L);
+        alertLevelStats.put("HIGH", 0L);
+        alertLevelStats.put("MEDIUM", 0L);
+        alertLevelStats.put("LOW", 0L);
+        try {
+            for (Object[] row : alertStatsRepository.countByAlertLevelGroup()) {
+                alertLevelStats.put((String) row[0], ((Number) row[1]).longValue());
+            }
+        } catch (Exception ignored) {}
+        result.put("alertLevelStats", alertLevelStats);
+
+        return ResponseEntity.ok(result);
+    }
 }

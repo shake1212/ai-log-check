@@ -45,6 +45,7 @@ export const exportToCSV = (data: ExportData[], filename: string = 'data.csv') =
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   } catch (error) {
     console.error('Export to CSV failed:', error);
     throw error;
@@ -63,6 +64,7 @@ export const exportToJSON = (data: ExportData[], filename: string = 'data.json')
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   } catch (error) {
     console.error('Export to JSON failed:', error);
     throw error;
@@ -109,4 +111,5 @@ ${data.logs.map(log => `
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 };
