@@ -77,7 +77,7 @@ class CollectorConfig:
 
     # AI 异常检测配置
     enable_ai: bool = True
-    ai_service_url: str = "http://localhost:5001/predict"
+    ai_service_url: str = "http://localhost:5001/predict_ensemble"   # 修改为混合端点
     ai_timeout: int = 5
     ai_max_workers: int = 10
 
@@ -989,12 +989,19 @@ class IntegratedSecurityAlertCollector:
 
     # ==================== AI 分析 ====================
     def _update_event_with_ai(self, event: Dict, ai_result: Dict):
+        """处理AI分析结果（适配混合端点返回的ensemble结果）"""
         if 'error' in ai_result:
             score = 0.0
             is_anomaly = False
         else:
-            score = ai_result.get('anomaly_score', 0.0)
-            is_anomaly = ai_result.get('is_anomaly', False)
+            # 尝试从 ensemble 字段获取最终结果（混合端点）
+            if 'ensemble' in ai_result:
+                score = ai_result['ensemble'].get('anomaly_score', 0.0)
+                is_anomaly = ai_result['ensemble'].get('is_anomaly', False)
+            else:
+                # 兼容旧端点（直接返回 anomaly_score）
+                score = ai_result.get('anomaly_score', 0.0)
+                is_anomaly = ai_result.get('is_anomaly', False)
 
         event['anomaly_score'] = score
         event['is_anomaly'] = is_anomaly
@@ -1588,6 +1595,7 @@ class IntegratedSecurityAlertCollector:
 
     def stop(self):
         logger.info("收集器停止")
+
 
 # ==================== 主函数 ====================
 def main():

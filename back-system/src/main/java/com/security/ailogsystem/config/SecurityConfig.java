@@ -32,6 +32,7 @@ public class SecurityConfig {
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/ws/**", "/api/ws/**", "/api/ws-native/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

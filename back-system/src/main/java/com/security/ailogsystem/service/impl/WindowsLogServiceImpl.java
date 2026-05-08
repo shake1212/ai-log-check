@@ -207,6 +207,7 @@ public class WindowsLogServiceImpl implements WindowsLogService {
         return 0;
     }
 
+
     /**
      * 解析安全日志
      */
@@ -232,6 +233,17 @@ public class WindowsLogServiceImpl implements WindowsLogService {
                     logs.add(log);
                 }
             }
+
+            // ========== 新增：清洗 raw_message 中的非法 UTF-8 字符 ==========
+            for (SecurityLog log : logs) {
+                if (log.getRawMessage() != null) {
+                    // 使用 ISO-8859-1 中转，剥离非法字节序列
+                    byte[] bytes = log.getRawMessage().getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+                    String cleaned = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+                    log.setRawMessage(cleaned);
+                }
+            }
+            // =============================================================
 
             // 批量保存
             if (!logs.isEmpty()) {

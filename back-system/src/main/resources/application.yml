@@ -168,7 +168,7 @@ log:
 scripts:
   base-path: "src/scripts"
   python:
-    executable: "python"
+    executable: "D:\\projects2\\ai-log-check\\back-system\\.venv\\Scripts\\python.exe"
   allowed:
     unified_log_collector:
       name: "安全日志采集脚本"
